@@ -28,6 +28,22 @@ from ..paths import DATA
 
 CACHE_DIR = Path(os.getenv("OG_LLM_CACHE", DATA / "llm_cache"))
 
+# Provider: OG_PROVIDER=openrouter (default) or deepseek (DeepSeek's own API, key DEEPSEEK_API_KEY).
+# Mirrors orderguard_guard/llm.py. The cache key is hashed from the logical (OpenRouter-shaped) request;
+# only the body sent over the wire is translated.
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_MODELS = {"deepseek/deepseek-v4.1-flash": "deepseek-flash", "deepseek/deepseek-v4-pro": "deepseek-v4-pro"}
+PRICE_IN = float(os.getenv("OG_PRICE_IN", "0.051"))     # US$ per million tokens, used when the provider reports no cost
+PRICE_OUT = float(os.getenv("OG_PRICE_OUT", "0.567"))
+
+
+def provider() -> str:
+    return os.getenv("OG_PROVIDER", "openrouter").lower()
+
+
+def _key_var() -> str:
+    return "DEEPSEEK_API_KEY" if provider() == "deepseek" else KEY_VAR
+
 
 @dataclass
 class LLMCall:
@@ -44,6 +60,19 @@ class LLMUnavailable(RuntimeError):
 
 
 def _api_key() -> str | None:
+    if provider() == "deepseek":   # env var, else read by name from the dotenv file at OG_ENV_FILE; never printed
+        key = os.getenv("DEEPSEEK_API_KEY")
+        if key:
+            return key.strip()
+        env_file = os.getenv("OG_ENV_FILE")
+        if env_file and Path(env_file).exists():
+            for line in Path(env_file).read_text().splitlines():
+                line = line.strip()
+                if line.startswith("export "):
+                    line = line[7:]
+                if line.startswith("DEEPSEEK_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip("'\"")
+        return None
     key = os.getenv(KEY_VAR)
     if key:
         return key
@@ -53,6 +82,21 @@ def _api_key() -> str | None:
             if line.startswith(KEY_VAR + "="):
                 return line.split("=", 1)[1].strip().strip("'\"")
     return None
+
+
+def _wire(request: dict) -> tuple[str, dict]:
+    """Translate the logical (OpenRouter-shaped) request for the configured provider. Default: unchanged."""
+    if provider() != "deepseek":
+        return API_URL, request
+    wire = {k: v for k, v in request.items() if k not in ("usage", "provider")}
+    wire["model"] = DEEPSEEK_MODELS.get(request["model"], request["model"].split("/")[-1])
+    return DEEPSEEK_URL, wire
+
+
+def _cost(usage: dict) -> float:
+    if provider() == "deepseek" and usage.get("cost") is None:
+        return ((usage.get("prompt_tokens") or 0) * PRICE_IN + (usage.get("completion_tokens") or 0) * PRICE_OUT) / 1e6
+    return float(usage.get("cost") or 0.0)
 
 
 def _cache_path(model: str, system: str, user: str) -> Path:
@@ -70,7 +114,7 @@ def parse_json(text: str) -> dict:
 
 
 def ask_json(system: str, user: str, *, model: str | None = None, max_tokens: int | None = None) -> tuple[dict, LLMCall]:
-    model = model or os.getenv("OG_MODEL", DEFAULT_MODEL)
+    model = model or os.getenv("OG_MODEL") or ("deepseek/deepseek-v4.1-flash" if provider() == "deepseek" else DEFAULT_MODEL)
     max_tokens = max_tokens or int(os.getenv("OG_MAX_TOKENS", "24000"))   # reasoning models spend most of this thinking
     mode = os.getenv("OG_LLM", "auto")
     path = _cache_path(model, system, user)
@@ -81,14 +125,15 @@ def ask_json(system: str, user: str, *, model: str | None = None, max_tokens: in
         raise LLMUnavailable(f"OG_LLM=replay and no recorded answer for this prompt ({path.name})")
     key = _api_key()
     if not key:
-        raise LLMUnavailable(f"no {KEY_VAR}; run with the recorded answers (OG_LLM=replay) or set the key")
+        raise LLMUnavailable(f"no {_key_var()}; run with the recorded answers (OG_LLM=replay) or set the key")
     t0 = time.time()
     last_error = "no answer"
+    request = {"model": model, "temperature": 0, "max_tokens": max_tokens, "usage": {"include": True},
+               "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    url, wire = _wire(request)   # the cache key above uses the logical request; only the wire body is translated
     for attempt in range(6):   # busy and free models rate-limit or return empty text; back off and retry
         try:
-            r = httpx.post(API_URL, timeout=float(os.getenv("OG_TIMEOUT", "400")), headers={"Authorization": f"Bearer {key}"}, json={
-                "model": model, "temperature": 0, "max_tokens": max_tokens, "usage": {"include": True},
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]})
+            r = httpx.post(url, timeout=float(os.getenv("OG_TIMEOUT", "400")), headers={"Authorization": f"Bearer {key}"}, json=wire)
         except httpx.TransportError as e:   # timeouts and dropped connections are retried like rate limits
             last_error = type(e).__name__
             time.sleep(min(60, 4 * 2 ** attempt))
@@ -109,7 +154,7 @@ def ask_json(system: str, user: str, *, model: str | None = None, max_tokens: in
         raise LLMUnavailable(f"model {model} gave no usable JSON after retries: {last_error}")
     usage = body.get("usage", {})
     call = LLMCall(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
-                   float(usage.get("cost") or 0.0), round(time.time() - t0, 2), cached=False)
+                   _cost(usage), round(time.time() - t0, 2), cached=False)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"text": text, "call": {**call.__dict__, "cached": False}}, indent=1))
     return parsed, call

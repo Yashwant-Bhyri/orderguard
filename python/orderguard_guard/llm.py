@@ -33,6 +33,25 @@ CREDITS_URL = os.getenv("OG_CREDITS_URL", "https://openrouter.ai/api/v1/credits"
 KEY_VAR = "OPENROUTER_API_KEY"
 CREDIT_FLOOR_USD = 0.30
 
+# Provider: OG_PROVIDER=openrouter (default) or deepseek (DeepSeek's own API, key DEEPSEEK_API_KEY).
+# Replay keys hash the logical request (OpenRouter model ids), so recordings are provider-independent.
+DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance"
+DEEPSEEK_MODELS = {"deepseek/deepseek-v4.1-flash": "deepseek-flash", "deepseek/deepseek-v4-pro": "deepseek-v4-pro"}
+CNY_PER_USD = float(os.getenv("OG_CNY_PER_USD", "7.1"))
+# US$ per million tokens, used when the provider does not report cost (DeepSeek direct). Defaults are the
+# OpenRouter list prices for V4.1 Flash, a conservative stand-in; override with OG_PRICE_IN / OG_PRICE_OUT.
+PRICE_IN = float(os.getenv("OG_PRICE_IN", "0.051"))
+PRICE_OUT = float(os.getenv("OG_PRICE_OUT", "0.567"))
+
+
+def provider() -> str:
+    return os.getenv("OG_PROVIDER", "openrouter").lower()
+
+
+def key_var() -> str:
+    return "DEEPSEEK_API_KEY" if provider() == "deepseek" else KEY_VAR
+
 
 class LLMError(RuntimeError):
     """Base class for every failure the client reports."""
@@ -65,7 +84,8 @@ def default_mode() -> str:
 
 def api_key() -> str | None:
     """OPENROUTER_API_KEY from the environment, else read by name from the dotenv file at OG_ENV_FILE. Never printed."""
-    key = os.getenv(KEY_VAR)
+    var = key_var()
+    key = os.getenv(var)
     if key:
         return key.strip()
     env_file = os.getenv("OG_ENV_FILE")
@@ -74,7 +94,7 @@ def api_key() -> str | None:
             line = line.strip()
             if line.startswith("export "):
                 line = line[7:]
-            if line.startswith(KEY_VAR + "="):
+            if line.startswith(var + "="):
                 return line.split("=", 1)[1].strip().strip("'\"")
     return None
 
@@ -149,7 +169,7 @@ class LLM:
         cost = float((resp.get("usage") or {}).get("cost") or 0.0)
         self.replay_dir.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"hash": h, "model": body["model"], "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                    "cost_usd": cost, "request": body, "response": resp}, indent=1, ensure_ascii=False))
+                                    "cost_usd": cost, "request_summary": _summary(body), "response": resp}, indent=1, ensure_ascii=False))
         resp["_meta"] = {"cached": False, "cost_usd": cost, "hash": h}
         return resp
 
@@ -170,18 +190,26 @@ class LLM:
     def _headers(self) -> dict:
         key = api_key()
         if not key:
-            raise NoApiKey(f"no {KEY_VAR} in the environment and none in OG_ENV_FILE; use OG_LLM=replay or set the key")
+            raise NoApiKey(f"no {key_var()} in the environment and none in OG_ENV_FILE; use OG_LLM=replay or set the key")
         return {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                 "HTTP-Referer": "https://github.com/orderguard", "X-Title": "OrderGuard"}
 
     def check_credits(self) -> float:
         """GET /credits once per process; refuse under the floor. Returns the remaining balance."""
-        r = self._http().get(CREDITS_URL, headers=self._headers())
-        r.raise_for_status()
-        d = r.json().get("data") or {}
-        remaining = float(d.get("total_credits") or 0.0) - float(d.get("total_usage") or 0.0)
+        if provider() == "deepseek":
+            r = self._http().get(DEEPSEEK_BALANCE_URL, headers=self._headers())
+            r.raise_for_status()
+            remaining = 0.0
+            for b in r.json().get("balance_infos") or []:
+                v = float(b.get("total_balance") or 0.0)
+                remaining += v / CNY_PER_USD if b.get("currency") == "CNY" else v
+        else:
+            r = self._http().get(CREDITS_URL, headers=self._headers())
+            r.raise_for_status()
+            d = r.json().get("data") or {}
+            remaining = float(d.get("total_credits") or 0.0) - float(d.get("total_usage") or 0.0)
         if remaining < CREDIT_FLOOR_USD:
-            raise CreditFloor(f"OpenRouter balance US${remaining:.2f} is under the US${CREDIT_FLOOR_USD:.2f} floor; refusing live calls")
+            raise CreditFloor(f"{provider()} balance US${remaining:.2f} is under the US${CREDIT_FLOOR_USD:.2f} floor; refusing live calls")
         return remaining
 
     def _live(self, body: dict) -> dict:
@@ -195,7 +223,8 @@ class LLM:
         last = "no attempt"
         for attempt in range(self.retries + 1):
             try:
-                r = self._http().post(API_URL, headers=self._headers(), content=canonical(body).encode("utf-8"))
+                url, wire = self._wire(body)
+                r = self._http().post(url, headers=self._headers(), content=canonical(wire).encode("utf-8"))
             except (httpx.TransportError, http.client.IncompleteRead, ConnectionError) as e:
                 # httpx surfaces a truncated body as RemoteProtocolError / ReadError; retry like a timeout
                 last = f"{type(e).__name__}"
@@ -206,7 +235,7 @@ class LLM:
                 self._backoff(attempt)
                 continue
             if r.status_code >= 400:
-                raise LLMError(f"OpenRouter HTTP {r.status_code}: {r.text[:300]}")
+                raise LLMError(f"{provider()} HTTP {r.status_code}: {r.text[:300]}")
             try:
                 resp = r.json()
             except ValueError as e:
@@ -225,11 +254,26 @@ class LLM:
             return resp
         raise LLMError(f"OpenRouter unreachable after {self.retries + 1} attempts: {last}")
 
+    def _wire(self, body: dict) -> tuple[str, dict]:
+        """Translate the logical (OpenRouter-shaped) request for the configured provider."""
+        if provider() != "deepseek":
+            return API_URL, body
+        wire = {k: v for k, v in body.items() if k not in ("usage", "reasoning")}
+        effort = (body.get("reasoning") or {}).get("effort")
+        if effort:
+            wire["reasoning_effort"] = effort
+        wire["model"] = DEEPSEEK_MODELS.get(body["model"], body["model"].split("/")[-1])
+        return DEEPSEEK_URL, wire
+
     def _backoff(self, attempt: int) -> None:
         time.sleep(min(30.0, 1.5 * (2 ** attempt)))
 
     def _record_spend(self, model: str, resp: dict) -> None:
         usage = resp.get("usage") or {}
+        if usage.get("cost") is None:
+            usage["cost"] = ((usage.get("prompt_tokens") or 0) * PRICE_IN + (usage.get("completion_tokens") or 0) * PRICE_OUT) / 1e6
+            usage["cost_estimated"] = True
+            resp["usage"] = usage
         cost = float(usage.get("cost") or 0.0)
         with self.spend.lock:
             self.spend.spent_usd += cost
@@ -239,9 +283,16 @@ class LLM:
             with self.spend_file.open("a") as f:
                 f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "model": model, "cost_usd": cost,
                                     "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
-                                    "pid": os.getpid()}) + "\n")
+                                    "provider": provider(), "pid": os.getpid()}) + "\n")
         except OSError:
             pass
+
+
+def _summary(body: dict) -> dict:
+    """What a recording keeps of its request: the replay key is the hash, so the full prompt (often a whole 10-K) is not stored."""
+    msgs = body.get("messages") or []
+    return {"model": body.get("model"), "messages": len(msgs), "tools": len(body.get("tools") or []),
+            "max_tokens": body.get("max_tokens"), "chars": sum(len(str(m.get("content") or "")) for m in msgs)}
 
 
 def parse_json(text: str) -> dict:

@@ -290,7 +290,9 @@ class OrderGate:
         checks["figures"] = []
         if not figs:
             if self.require_figures:
-                reasons.append("The order cites no reported financial figures, and the mandate requires every order to cite the figures it relies on.")
+                reasons.append("The order cites no reported financial figures, and the mandate requires every order to cite the figures it relies on. "
+                               "To fix it, add at least one figure from the company's annual filing to key_figures "
+                               "(metric, fiscal_year, value, unit; e.g. revenue for the latest fiscal year in USD millions) and place the order again.")
         elif self.figure_checker is None:
             if self.require_figures:
                 holds.append("The cited figures could not be checked because no figure checker is configured.")
@@ -309,6 +311,8 @@ class OrderGate:
                 if st in BLOCKING_FIGURE_STATUSES:
                     word = {"contradicted": "contradicts the filings", "stale": "is out of date", "not_public_yet": "was not public yet on the decision date"}[st]
                     reasons.append(f"The cited figure {label} {word}" + (f": {why}." if why else "."))
+                elif st == "unverifiable" and state.get("l7_confirmed"):
+                    checks["figures"][-1]["note"] = "not required: the order carries out a standing rule that L7 confirmed"
                 elif st == "unverifiable":
                     holds.append(f"The cited figure {label} could not be verified" + (f": {why}." if why else "."))
 

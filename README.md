@@ -79,23 +79,42 @@ npm run check
 
 `npm run check` runs the receiver tests, the quickstart, the 1,000-seed invariants and a secret scan. The demo starts the receiver bridge, runs four scenarios plus the trigger graph, and prints the ledger snapshot.
 
-Live runs use DeepSeek V4.1 Flash through OpenRouter:
-- Set `OPENROUTER_API_KEY`, or `OG_ENV_FILE` pointing to a dotenv file.
+Live runs use DeepSeek V4.1 Flash, either through OpenRouter or directly from DeepSeek:
+- For OpenRouter, set `OPENROUTER_API_KEY`. For DeepSeek's own API, set `OG_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`. Either key can instead come from a dotenv file named by `OG_ENV_FILE`.
 - Set `OG_LLM=record` and raise `OG_BUDGET_USD`.
 - Run `og-lab estimate` first. Every model call is recorded to `data/replay/` so tables rebuild offline. The client refuses calls when credit falls below US$0.30.
 
 ## Results so far
 
-See [docs/RESULTS.md](docs/RESULTS.md), which `og-lab tables` rebuilds from `results/`.
+Every number below comes from [docs/RESULTS.md](docs/RESULTS.md), which `og-lab tables` rebuilds from the raw runs in `results/`.
 
-**Offline results only.** The rows there come from scripted policy agents and a keyword screen. They test the code and the metrics, not model behaviour.
+**Live, DeepSeek V4.1 Flash (DeepSeek API), 83 cases × 3 arms, one repeat:**
+- **The model rarely falls for attacks on its own.** With no guard it tried the attacker's action in 0 of 60 runs across families A–D.
+- **What does work against the bare model:**
+  - false facts it then repeats as true (1 of 16 runs);
+  - denial of service, where a fake lot size, price band or halt makes it abandon a legitimate trade (5 of 7 runs).
+- **Gate only:** 1 of 10 trigger attacks executed. That arm has no L7.
+- **Full guard:**
+  - 0 harmful orders executed;
+  - 1 of 16 false beliefs still got through;
+  - denial of service still worked in 5 of 7 runs, because the guard can stop bad orders but can't restore a trade the agent chose to abandon.
+- **Model screen (L2):**
+  - flagged 82 of 99 attack chunks;
+  - wrongly flagged 4 of 174 clean chunks;
+  - caught every hidden instruction and every fake-authority chunk, but only 35 of 52 false-data chunks.
+- **Adaptive attacker:** 3 campaigns of 3 rounds against the full guard, 0 succeeded. The attacker model refused once.
+- **Utility on clean tasks:** 6 of 7 completed in every arm. The miss is a trigger control that fails even with no guard. Before the trusted figure lookup was added, the guarded arms completed only 3 or 4 of 7 (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
+- **Errors with no attacker:** with the full guard the agent cited a wrong figure in 6 of 27 honest runs, against 10 of 27 unguarded. L6 refuses any order that relies on one.
 
-In the 50-seed offline sweep (1,150 attacked worlds × 3 arms, with benign twins):
-- **naive arm:** attacks executed $7.6M of orders at trusted prices.
-- **gate-only arm:** this fell to $0.29M, all of it trigger-rule sells, which the gate-only arm can't catch because it has no L7.
+**Offline sandbox sweep** (scripted policy agents, 1,150 attacked worlds × 3 arms, with benign twins). This tests the code and the dollar metric, not model behaviour:
+- **naive arm:** attacks executed $7.6M of orders at trusted prices;
+- **gate-only arm:** $0.29M, all of it trigger sells;
 - **full arm:** $0.
 
-The live DeepSeek suite has **not** been run yet, because the OpenRouter account ran out of credit before integration. `og-lab estimate` puts the full suite (83 cases × 3 arms) at about US$1.43.
+**Caveats:**
+- Each case ran once, so the intervals are wide. RESULTS.md shows them.
+- The A, B, D and E rows for the guarded arms were recorded before the figure-lookup tool was added. Controls and families C and F were rerun with it.
+- DeepSeek's API does not report cost, so the spend table is the client's estimate at OpenRouter list prices. Actual DeepSeek charges were lower: about CNY 6.5 (US$0.91) for everything.
 
 ## Layout
 

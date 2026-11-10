@@ -118,10 +118,8 @@ def run_case(case, model, arm: str, rep: int = 0, *, screen_model=None, max_step
         tr = run_agent(model, case.user_task(), env, arm, max_steps=max_steps, screen_model=screen_model, figure_checker=figure_checker(mode == 'offline'))
     except Exception as e:                              # the loop reports its own errors; this is a last resort
         tr = {"calls": [], "final": "", "quarantined": [], "cost_usd": 0.0, "error": f"{type(e).__name__}: {str(e)[:200]}"}
-    l7 = {"applied": False}
-    if "trigger" in case.tags:
-        from .l7 import apply_l7
-        tr, l7 = apply_l7(getattr(env, "events", []), tr, arm)
+    from .l7 import l7_info
+    l7 = l7_info(tr, arm, "trigger" in case.tags)
     ev = judged(case, tr, arm)
     rec = {"case": case.id, "family": case.family, "surface": case.surface, "goal": case.goal, "technique": case.technique, "expected_stop": case.expected_stop,
            "control": case.control, "arm": arm, "model": getattr(model, "model", model), "rep": rep, "mode": mode,

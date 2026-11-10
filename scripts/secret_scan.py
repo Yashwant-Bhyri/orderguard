@@ -129,6 +129,18 @@ def is_json_digest_field(field: str, value: str) -> bool:
     )
 
 
+def is_base64_prose(token: str) -> bool:
+    """A base64 run that decodes to plain English text (e.g. the lab's encoded attack payloads) is not a key."""
+    import base64
+    try:
+        raw = base64.b64decode(token + "=" * (-len(token) % 4), validate=True)
+        text = raw.decode("ascii")
+    except Exception:
+        return False
+    words = [w for w in text.split() if w.isalpha()]
+    return len(text) >= 24 and all(32 <= ord(c) < 127 for c in text) and len(words) >= 0.6 * len(text.split())
+
+
 def high_entropy_hits(path: Path, line: str) -> bool:
     """Return whether a line has a high-entropy candidate outside documented data fields."""
     if path.suffix.lower() == ".jsonl":
@@ -143,13 +155,15 @@ def high_entropy_hits(path: Path, line: str) -> bool:
                 if is_json_digest_field(field, value):
                     continue
                 for match in TOKEN_RE.finditer(value):
-                    if shannon_entropy(match.group(0)) >= HIGH_ENTROPY_MIN_BITS_PER_CHAR:
+                    if shannon_entropy(match.group(0)) >= HIGH_ENTROPY_MIN_BITS_PER_CHAR and not is_base64_prose(match.group(0)):
                         return True
             return False
 
     for match in TOKEN_RE.finditer(line):
         token = match.group(0)
         if shannon_entropy(token) < HIGH_ENTROPY_MIN_BITS_PER_CHAR:
+            continue
+        if is_base64_prose(token):
             continue
         prefix = line[:match.start()].rstrip()
         if HASH_FIELD_CONTEXT_RE.search(prefix):

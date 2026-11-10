@@ -84,7 +84,8 @@ class Screen:
         user = f"kind: {kind}\n<chunk>\n{chunk[:self.max_chars]}\n</chunk>"
         try:
             self.calls += 1
-            resp = self.llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], max_tokens=600)
+            resp = self.llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], max_tokens=2000,
+                                 extra={"reasoning": {"effort": "low"}})
             self.cost_usd += float((resp.get("_meta") or {}).get("cost_usd") or 0.0)
             d = parse_json(resp["choices"][0]["message"].get("content") or "")
             cat = str(d.get("category", "")).strip().lower()

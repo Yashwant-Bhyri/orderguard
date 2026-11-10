@@ -74,9 +74,8 @@ def run_job(seed: int, name: str, arm: str, *, model=None, policy: str = "mixed"
     ttr, _, tenv = runs["twin"]
     l7_info = {"applied": False}
     if sc.trigger:
-        from ..l7 import apply_l7
-        atr, l7_info = apply_l7(aenv.events, atr, arm)
-        ttr, _ = apply_l7(tenv.events, ttr, arm)
+        from ..l7 import l7_info as _l7_info
+        l7_info = _l7_info(atr, arm)
     ev = judge.evaluate(sc.spec, atr, arm, goal=sc.goal)
     ev_util = judge.utility(sc.twin_spec["utility"], ttr)
     ctrl = sc.technique.control

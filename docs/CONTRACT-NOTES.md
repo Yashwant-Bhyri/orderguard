@@ -5,7 +5,7 @@
   - The bridge authorises a one-share AAPL *anchor* mandate in r5. `receiver/core` enforces the JSON scope: allow-list, side, trusted-price notional, price band, daily total and step-up. It also owns the effect ledger, a hash-chained SQLite log.
   - A proposal commits only if the core passes and r5 still reports the anchor active.
   - `/revoke` revokes in the core first, then through the r5 passkey ceremony.
-  - After about one hour the anchor expires and the bridge fails closed.
+  - The bridge renews the anchor (same synthetic passkey ceremony) at 80% of its lifetime and on demand if a proposal finds it inactive. It never renews after `/revoke` or once the JSON mandate has expired. If renewal fails, proposals are denied as `anchor_unavailable`.
   - Details are in `docs/receiver/bridge.md`.
 - `/propose` returns extra fields: `reasons`, `replay`, `trustedPrice` and `notionalUsd`.
 - There is an extra endpoint, `POST /approve {orderId}`, for human step-up above `stepUpThresholdUsd`.
@@ -21,3 +21,11 @@
 
 ## Running locally
 - The bridge test and quickstart bind loopback ports. In a restricted sandbox that fails with `listen EPERM`, which is not a code failure.
+
+## §4 Default model and provider
+- Live runs can go straight to DeepSeek's API (`OG_PROVIDER=deepseek`, key `DEEPSEEK_API_KEY`, model `deepseek-flash` = DeepSeek V4.1 Flash) as well as through OpenRouter. Both model clients support it.
+- Replay keys hash the logical (OpenRouter-shaped) request, so recordings work with either provider.
+- DeepSeek's API does not report cost, so spend is estimated from token counts at OpenRouter list prices (`OG_PRICE_IN` / `OG_PRICE_OUT`). The estimate runs higher than DeepSeek's actual charges. The credit floor is checked against DeepSeek's `/user/balance`.
+
+## §5.3 Guard
+- The guarded arms get one extra tool, `get_reported_figure`, a trusted lookup of filed figures backed by L6. See docs/ARCHITECTURE.md.

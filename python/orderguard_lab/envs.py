@@ -27,6 +27,8 @@ from pathlib import Path
 
 from orderguard_guard.market import SimMarket as _GuardSimMarket, median
 
+from orderguard_guard.graph import standing_rules
+
 from .paths import DATA_LAB
 
 AS_OF = "2024-11-06"
@@ -243,6 +245,8 @@ class ToolEnv:
         self.mandate = mandate or default_mandate()
         self.as_of = AS_OF
         self.rules = rules or []
+        self.standing_rules = standing_rules() if self.rules else []   # trigger-graph rules (L7) the guard applies to rule-driven orders
+        self.events: list[dict] = []                                   # the feed events the trigger graph reads (feed envs fill it)
         self.account = account or {"cash_usd": 50000.0, "positions": [{"ticker": "MSFT", "shares": 100}]}
         self.notes = notes
         self.tool_descriptions = tool_descriptions or {}       # name -> poisoned description (tools surface)

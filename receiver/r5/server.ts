@@ -361,6 +361,13 @@ function checkOwnerBootstrapCode(code: unknown): boolean {
   return matches;
 }
 
+// Release patch: ORDERGUARD_HUMAN_MANDATE_TTL_MS shortens the human mandate lifetime (for the bridge's anchor renewal and its tests).
+// Clamped to 2 s .. 1 h; unset keeps the 1 h default, and a value above 1 h can never lengthen it.
+function humanMandateTtlMs(): number {
+  const raw = Number(process.env.ORDERGUARD_HUMAN_MANDATE_TTL_MS);
+  return Number.isFinite(raw) && raw > 0 ? Math.min(60 * 60 * 1000, Math.max(2000, Math.floor(raw))) : 60 * 60 * 1000;
+}
+
 function humanMandateDraft(run: AgentRun): DelegatedMandateClaims {
   const intent = run.intent;
   const supportedSession = intent?.market === 'HK' ? 'hk_regular' : 'regular';
@@ -375,7 +382,7 @@ function humanMandateDraft(run: AgentRun): DelegatedMandateClaims {
     subject: 'synthetic-user:candidate-demo',
     tenant: 'synthetic-tenant:demo',
     createdAt: now,
-    expiresAt: now + 60 * 60 * 1000,
+    expiresAt: now + humanMandateTtlMs(),
     market: intent.market,
     symbol: intent.symbol,
     allowedSymbols: [intent.symbol],

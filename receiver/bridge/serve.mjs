@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // OrderGuard receiver bridge (CONTRACT 5.1).
 //   node receiver/bridge/serve.mjs [--port P] --mandate mandate.json [--step-up-usd N]
+//                                [--anchor-ttl-sec S] [--anchor-renew-frac F|off]
 //
 // Boots the r5 receiver on a free loopback port with an isolated temp ledger, registers a synthetic
 // owner passkey, authorises ONE human mandate through the same synthetic WebAuthn flow as the
@@ -48,10 +49,19 @@ async function jsonFetch(base, path, body) {
 
 async function main() {
   const mandatePath = arg("--mandate");
-  if (!mandatePath) throw new Error("usage: serve.mjs --mandate mandate.json [--port P] [--step-up-usd N]");
+  if (!mandatePath) throw new Error("usage: serve.mjs --mandate mandate.json [--port P] [--step-up-usd N] [--anchor-ttl-sec S] [--anchor-renew-frac F|off]");
   const mandate = JSON.parse(await readFile(resolve(mandatePath), "utf8"));
   const stepUp = arg("--step-up-usd");
   if (stepUp !== undefined) mandate.stepUpThresholdUsd = Number(stepUp);
+  // Anchor lifetime and renewal point. r5 caps a mandate at 1 h and floors it at 2 s (see receiver/r5/PATCHES.md).
+  const ttlRaw = arg("--anchor-ttl-sec") ?? process.env.ORDERGUARD_ANCHOR_TTL_SEC;
+  const ttlSec = ttlRaw === undefined || ttlRaw === "" ? 3600 : Number(ttlRaw);
+  if (!Number.isFinite(ttlSec) || ttlSec < 2 || ttlSec > 3600) throw new Error("--anchor-ttl-sec must be between 2 and 3600");
+  const anchorTtlMs = Math.round(ttlSec * 1000);
+  const fracRaw = arg("--anchor-renew-frac") ?? process.env.ORDERGUARD_ANCHOR_RENEW_FRAC ?? "0.8";
+  const renewFrac = fracRaw === "off" ? null : Number(fracRaw);
+  if (renewFrac !== null && !(renewFrac >= 0.1 && renewFrac <= 0.95)) throw new Error("--anchor-renew-frac must be 0.1..0.95 or off");
+  const mandateExpiresMs = Date.parse(mandate.expiresAt);
   const wanted = arg("--port");
   const port = wanted && wanted !== "0" ? Number(wanted) : await freePort();
 
@@ -86,6 +96,7 @@ async function main() {
       ORDERGUARD_DISABLE_LOCAL_ENV: "1", ORDERGUARD_HOST: "127.0.0.1", ORDERGUARD_PORT: String(r5Port),
       ORDERGUARD_LEDGER_DB: join(scratch, "r5-paper-ledger.sqlite"),
       ORDERGUARD_FUTU_SIMULATE_ENABLED: "0", ORDERGUARD_SECOND_LOCK_ENABLED: "0",
+      ORDERGUARD_HUMAN_MANDATE_TTL_MS: String(anchorTtlMs),
     };
     r5 = spawn(process.execPath, ["--import", join(root, "node_modules/tsx/dist/loader.mjs"), join(root, "receiver/r5/server.ts")], { cwd: scratch, env, stdio: ["ignore", "pipe", "ignore"] });
     const lines = createInterface({ input: r5.stdout })[Symbol.asyncIterator]();
@@ -107,18 +118,64 @@ async function main() {
     const setup = await jsonFetch(r5Base, "/api/owner-passkey/setup/options", { bootstrapCode: pairing });
     await jsonFetch(r5Base, "/api/owner-passkey/setup/verify", { bootstrapCode: pairing, challengeId: setup.challengeId, response: registrationResponse(passkey, setup.options.challenge, r5Origin) });
 
-    // ---- authorise ONE human mandate in r5 (anchor symbol AAPL, 1 share: r5 mandates are single-symbol) ----
-    const preview = await jsonFetch(r5Base, "/api/chat", { prompt: "Buy 1 AAPL share as a market order during regular hours for day.", provider: "local", verifier: "none" });
-    if (preview.run?.outcome !== "ready") throw new Error("r5 did not prepare the mandate preview");
-    const opts = await jsonFetch(r5Base, "/api/human-mandate/authorize/options", { runId: preview.run.id });
-    const authorized = await jsonFetch(r5Base, "/api/human-mandate/authorize/verify", { challengeId: opts.challengeId, response: authenticationResponse(passkey, opts.options.challenge, r5Origin) });
-    const mandateId = authorized.mandate?.mandateId;
-    if (typeof mandateId !== "string") throw new Error("r5 produced no mandate");
-
-    const r5MandateActive = async () => {
-      const status = await jsonFetch(r5Base, "/api/human-mandate/status");
-      return status.mandates?.some((m) => m.mandateId === mandateId && m.active === true && m.revocationPending !== true) === true;
+    // ---- authorise a human mandate in r5 (anchor symbol AAPL, 1 share: r5 mandates are single-symbol) ----
+    // The same ceremony runs at boot and for every renewal.
+    const authorizeAnchor = async () => {
+      const preview = await jsonFetch(r5Base, "/api/chat", { prompt: "Buy 1 AAPL share as a market order during regular hours for day.", provider: "local", verifier: "none" });
+      if (preview.run?.outcome !== "ready") throw new Error("r5 did not prepare the mandate preview");
+      const opts = await jsonFetch(r5Base, "/api/human-mandate/authorize/options", { runId: preview.run.id });
+      const authorized = await jsonFetch(r5Base, "/api/human-mandate/authorize/verify", { challengeId: opts.challengeId, response: authenticationResponse(passkey, opts.options.challenge, r5Origin) });
+      const id = authorized.mandate?.mandateId;
+      if (typeof id !== "string") throw new Error("r5 produced no mandate");
+      return { id, expiresAt: Number(authorized.mandate.expiresAt), createdAt: Number(authorized.mandate.createdAt) };
     };
+    const first = await authorizeAnchor();
+    const mandateId = first.id;
+    const anchors = [first]; // every anchor ever authorised; /revoke revokes them all
+    let current = first;
+    let renewals = 0;
+    let renewalError = null;
+    let renewing = null;
+    let timer = null;
+
+    const anchorActiveAt = async (id) => {
+      const status = await jsonFetch(r5Base, "/api/human-mandate/status");
+      return status.mandates?.some((m) => m.mandateId === id && m.active === true && m.revocationPending !== true) === true;
+    };
+    const r5MandateActive = () => anchorActiveAt(current.id);
+
+    const schedule = () => {
+      clearTimeout(timer);
+      if (renewFrac === null || closing || core?.revoked) return;
+      const at = current.createdAt + Math.round((current.expiresAt - current.createdAt) * renewFrac);
+      timer = setTimeout(() => { renew().catch(() => { schedule(); }); }, Math.max(250, at - Date.now()));
+      timer.unref?.();
+    };
+    // Single-flight renewal. Never starts after revocation; never starts once the core mandate itself has expired.
+    const renew = () => {
+      if (core.revoked) return Promise.reject(new Error("revoked"));
+      if (Date.now() >= mandateExpiresMs) return Promise.reject(new Error("core mandate expired"));
+      renewing ??= (async () => {
+        try {
+          const next = await authorizeAnchor();
+          anchors.push(next);
+          current = next; renewals += 1; renewalError = null;
+        } catch (e) {
+          renewalError = String(e?.message || e).slice(0, 120);
+          throw e;
+        } finally { renewing = null; schedule(); }
+      })();
+      return renewing;
+    };
+    // Gate for /propose and /approve: renew on demand if the anchor lapsed. Returns null when fine or a denial reason.
+    const ensureAnchor = async () => {
+      if (core.revoked || Date.now() >= mandateExpiresMs) return null; // the core denies these with its own reason
+      if (await r5MandateActive().catch(() => false)) return null;
+      try { await renew(); } catch { /* fall through to the check below */ }
+      if (core.revoked) return null;
+      return (await r5MandateActive().catch(() => false)) ? null : `anchor renewal failed${renewalError ? ": " + renewalError : ""}`;
+    };
+    const denyAnchor = (detail) => ({ decision: "denied", reason: "anchor_unavailable", reasons: ["anchor_unavailable"], detail, ledgerEffect: false });
 
     // ---- the receiver core, with the same owner passkey registered for step-up approval ----
     const coreOrigin = `http://127.0.0.1:${port}`;
@@ -127,6 +184,8 @@ async function main() {
       authority: { isActive: r5MandateActive }, webauthn: { origin: coreOrigin, rpId: "127.0.0.1" },
     });
     await core.registerOwnerPasskey(registrationResponse(passkey, core.passkeyRegistrationChallenge(), coreOrigin));
+
+    schedule();
 
     // ---- HTTP API (loopback only) ----
     const send = (res, code, body) => { const text = JSON.stringify(body); res.writeHead(code, { "content-type": "application/json", "content-length": Buffer.byteLength(text) }); res.end(text); };
@@ -142,26 +201,37 @@ async function main() {
       if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return send(res, 403, { error: "loopback only" });
       const path = new URL(req.url || "/", "http://x").pathname;
       try {
-        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, issuerMandateActive: await r5MandateActive().catch(() => false) });
+        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, issuerMandateActive: await r5MandateActive().catch(() => false), anchorId: current.id, anchorExpiresAt: new Date(current.expiresAt).toISOString(), anchorRenewals: renewals, anchorRenewalError: renewalError });
         if (req.method === "GET" && path === "/snapshot") { const s = core.snapshot(); return send(res, 200, { orders: s.orders, ledgerIntegrity: s.ledgerIntegrity, revoked: s.revoked, usedNotionalUsd: s.usedNotionalUsd }); }
         if (req.method === "POST" && path === "/propose") {
           const b = await readBody(req);
+          const lapsed = await ensureAnchor();
+          if (lapsed) return send(res, 200, denyAnchor(lapsed));
           const d = await core.propose({ symbol: b.symbol, side: b.side, quantity: b.quantity, limitPrice: b.limitPrice, clientOrderId: b.clientOrderId });
           return send(res, 200, d);
         }
         if (req.method === "POST" && path === "/revoke") {
           // Local, durable and synchronous first: nothing can commit after this line. Then the owner-passkey revocation at r5.
           core.revoke();
+          clearTimeout(timer);
           revokeInFlight ??= (async () => {
-            const o = await jsonFetch(r5Base, "/api/human-mandate/revoke/options", { mandateId });
-            await jsonFetch(r5Base, "/api/human-mandate/revoke/verify", { mandateId, challengeId: o.challengeId, response: authenticationResponse(passkey, o.options.challenge, r5Origin) });
-          })().catch(() => {});
+            // Revocation is final: let any renewal already in flight land, then revoke every anchor ever issued.
+            await renewing?.catch(() => {});
+            for (const a of anchors) {
+              try {
+                const o = await jsonFetch(r5Base, "/api/human-mandate/revoke/options", { mandateId: a.id });
+                await jsonFetch(r5Base, "/api/human-mandate/revoke/verify", { mandateId: a.id, challengeId: o.challengeId, response: authenticationResponse(passkey, o.options.challenge, r5Origin) });
+              } catch { /* an anchor that already expired cannot be revoked; it is inactive anyway */ }
+            }
+          })();
           await revokeInFlight;
           return send(res, 200, { revoked: true });
         }
         if (req.method === "POST" && path === "/approve") {
           const b = await readBody(req);
           if (typeof b.orderId !== "string") return send(res, 400, { error: "orderId required" });
+          const lapsed = await ensureAnchor();
+          if (lapsed) return send(res, 200, denyAnchor(lapsed));
           let ch;
           try { ch = core.beginApproval(b.orderId); } catch (e) { return send(res, 200, { decision: "denied", reason: e.code || "not_held", reasons: [e.code || "not_held"], ledgerEffect: false }); }
           return send(res, 200, await core.approve(b.orderId, authenticationResponse(passkey, ch.challenge, coreOrigin)));

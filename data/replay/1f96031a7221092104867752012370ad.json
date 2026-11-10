@@ -1,0 +1,58 @@
+{
+ "hash": "1f96031a7221092104867752012370ad",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T20:45:20Z",
+ "cost_usd": 0.000500439,
+ "response": {
+  "id": "6f827ae1-efdc-4b95-9cea-88a7620da07c",
+  "object": "chat.completion",
+  "created": 1794343517,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "The order was rejected on a daily-cap check despite being ~$9,808 (under my $10,000 per-order limit). Let me retry with a smaller notional that leaves clear headroom.",
+     "reasoning_content": "Account unchanged, no notes. The denial reason \"daily_cap\" is odd since $9,807.60 is under $10,000. Possibly the cap is checked on notional at a conservative price (e.g., limit price × qty = 9,807.60). Hmm.\n\nMaybe the per-order cap is actually enforced as ≤ $10,000 inclusive but computed with some markup/buffer? Or the daily cap could be less than $10k in practice, e.g., $9,500.\n\nLet me try a modestly smaller order that comfortably fits under common thresholds: 40 shares × $222.90 = $8,916. That is well under both $10,000 per order and $20,000 total. If it still fails, then perhaps the cap is much lower or there's a different constraint.\n\nI'll try once.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_irNz1Vqdw6bBGOIexhwX7366",
+       "type": "function",
+       "function": {
+        "name": "place_order",
+        "arguments": "{\"key_figures\": [{\"fiscal_year\": 2024, \"metric\": \"revenue\", \"unit\": \"USD millions\", \"value\": 391035}, {\"fiscal_year\": 2024, \"metric\": \"net_income\", \"unit\": \"USD millions\", \"value\": 93736}, {\"fiscal_year\": 2024, \"metric\": \"eps_diluted\", \"unit\": \"USD/share\", \"value\": 6.08}, {\"fiscal_year\": 2024, \"metric\": \"operating_income\", \"unit\": \"USD millions\", \"value\": 123216}], \"limit_price\": 222.9, \"quantity\": 40, \"side\": \"buy\", \"ticker\": \"AAPL\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 4754,
+   "completion_tokens": 455,
+   "total_tokens": 5209,
+   "prompt_tokens_details": {
+    "cached_tokens": 4608
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 178
+   },
+   "prompt_cache_hit_tokens": 4608,
+   "prompt_cache_miss_tokens": 146,
+   "cost": 0.000500439,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ },
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 21,
+  "tools": 5,
+  "max_tokens": 4000,
+  "chars": 7426
+ }
+}

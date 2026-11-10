@@ -1,6 +1,6 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -98,6 +98,75 @@ test("bridge: orders above the step-up threshold are held until the owner passke
   assert.equal(late.decision, "denied");
   snap = await b.get("/snapshot");
   assert.equal(snap.orders.filter((x) => x.status === "filled").length, 2);
+  assert.equal(snap.ledgerIntegrity, true);
+  await b.stop();
+});
+
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+test("bridge: the anchor is renewed before it expires, so an honest order still fills after the first anchor would have lapsed", async () => {
+  const b = await boot("m3", base, ["--anchor-ttl-sec", "3"]); running.push(b);
+  const h0 = await b.get("/health");
+  assert.equal(h0.anchorRenewals, 0);
+  const firstAnchor = h0.anchorId;
+  assert.equal((await b.post("/propose", o("r-early", { quantity: 1 }))).decision, "filled");
+
+  await sleep(4500); // past the first anchor's 3 s lifetime
+  const h1 = await b.get("/health");
+  assert.ok(h1.anchorRenewals >= 1, "proactive renewal should have happened");
+  assert.notEqual(h1.anchorId, firstAnchor);
+  assert.equal(h1.issuerMandateActive, true);
+  assert.equal(h1.mandateId, h0.mandateId, "the core mandate identity does not change");
+
+  const late = await b.post("/propose", o("r-late", { quantity: 2 }));
+  assert.equal(late.decision, "filled"); assert.equal(late.ledgerEffect, true);
+  const snap = await b.get("/snapshot");
+  assert.equal(snap.orders.length, 2);
+  assert.equal(snap.ledgerIntegrity, true);
+  await b.stop();
+});
+
+test("bridge: with proactive renewal off, a lapsed anchor is renewed on demand; after /revoke nothing renews and proposals are denied", async () => {
+  const b = await boot("m4", base, ["--anchor-ttl-sec", "2", "--anchor-renew-frac", "off"]); running.push(b);
+  const firstAnchor = (await b.get("/health")).anchorId;
+  await sleep(2800);
+  const lapsed = await b.get("/health");
+  assert.equal(lapsed.issuerMandateActive, false, "first anchor has expired and /health does not renew");
+  assert.equal(lapsed.anchorRenewals, 0);
+
+  const filled = await b.post("/propose", o("d-1", { quantity: 3 }));
+  assert.equal(filled.decision, "filled");
+  const renewed = await b.get("/health");
+  assert.equal(renewed.anchorRenewals, 1);
+  assert.notEqual(renewed.anchorId, firstAnchor);
+
+  assert.deepEqual(await b.post("/revoke"), { revoked: true });
+  await sleep(3000); // would be past the renewed anchor's lifetime too
+  const dead = await b.get("/health");
+  assert.equal(dead.anchorRenewals, 1, "revocation is final: no renewal after /revoke");
+  assert.equal(dead.issuerMandateActive, false);
+  const denied = await b.post("/propose", o("d-2", { quantity: 1 }));
+  assert.equal(denied.decision, "denied"); assert.equal(denied.reason, "mandate_revoked"); assert.equal(denied.ledgerEffect, false);
+  assert.equal((await b.get("/health")).anchorRenewals, 1);
+  const snap = await b.get("/snapshot");
+  assert.equal(snap.orders.length, 1);
+  assert.equal(snap.ledgerIntegrity, true);
+  await b.stop();
+});
+
+test("bridge: a failed renewal keeps failing closed with anchor_unavailable", async () => {
+  const b = await boot("m5", base, ["--anchor-ttl-sec", "2", "--anchor-renew-frac", "off"]); running.push(b);
+  assert.equal((await b.post("/propose", o("f-1", { quantity: 1 }))).decision, "filled");
+  // Take r5 away so the ceremony cannot succeed.
+  const kids = execFileSync("pgrep", ["-P", String(b.child.pid)]).toString().trim().split(/\s+/).filter(Boolean);
+  assert.ok(kids.length >= 1, "r5 child process found");
+  for (const k of kids) process.kill(Number(k), "SIGKILL");
+  await sleep(2800);
+  const d = await b.post("/propose", o("f-2", { quantity: 1 }));
+  assert.equal(d.decision, "denied"); assert.equal(d.reason, "anchor_unavailable"); assert.equal(d.ledgerEffect, false);
+  assert.match(d.detail, /anchor renewal failed/);
+  const snap = await b.get("/snapshot");
+  assert.equal(snap.orders.length, 1);
   assert.equal(snap.ledgerIntegrity, true);
   await b.stop();
 });

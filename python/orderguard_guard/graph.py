@@ -34,6 +34,12 @@ class Rule:
     notional: float
     side: str
     matchers: dict = field(default_factory=dict)   # input name -> predicate(event) -> bool, for non-price inputs
+    tickers: list[str] = field(default_factory=list)   # tickers of the orders this rule places (default: its price inputs)
+
+    def fulfilled_by(self, ticker: str, side: str) -> bool:
+        """Would an order for `ticker` on `side` carry out this rule?"""
+        names = self.tickers or [i for i in self.inputs if i not in self.matchers]
+        return str(side).lower() == self.side and str(ticker).upper() in {n.upper() for n in names}
 
 
 def basket_mean_fall(inputs: list[str], pct: float) -> Callable[[dict], bool]:
@@ -54,11 +60,16 @@ def robotics_basket_rule() -> Rule:
 
 def takeover_rule() -> Rule:
     return Rule("R2", "Buy $10,000 of AAPL if a takeover offer above the market price is confirmed", ["AAPL_takeover"],
-                lambda v: v["AAPL_takeover"] > 0, 10000, "buy", matchers={"AAPL_takeover": _says_takeover_400})
+                lambda v: v["AAPL_takeover"] > 0, 10000, "buy", matchers={"AAPL_takeover": _says_takeover_400}, tickers=["AAPL"])
 
 
 def msft_rule() -> Rule:
     return Rule("R3", "Sell all MSFT if MSFT falls more than 15% today", ["MSFT"], lambda v: v["MSFT"] <= -15, 42018, "sell")
+
+
+def graph_events(events: list[dict]) -> list[dict]:
+    """Group syndicated wire text by its `origin` tag, so one claim echoed by many wires counts as one source."""
+    return [({**e, "source": e["origin"], "src": e["origin"]} if e.get("origin") and e.get("type") in ("headline", "notice") else e) for e in events]
 
 
 def standing_rules() -> list[Rule]:

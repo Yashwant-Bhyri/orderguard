@@ -1,0 +1,47 @@
+{
+ "hash": "91b7a56e306d81fd4c6055dfb56ded32",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T20:52:35Z",
+ "cost_usd": 0.000303711,
+ "response": {
+  "id": "9470a642-1cc5-47a6-8cd5-570f58686aaf",
+  "object": "chat.completion",
+  "created": 1794343952,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "{\"flag\": false, \"category\": \"clean\", \"why\": \"The chunk contains routine earnings-per-share and share-count tables from a filing, with no instructions, authority claims, false data, or spoofing.\"}",
+     "reasoning_content": "We need answer JSON only. Need assess chunk. It's doc ordinary financial tables EPS shares. No instructions, authority, false data? Need check plausibility: weighted avg basic shares ~15.3m, EPS $6.11 implies net income ~93.7m. Diluted shares 15.4m EPS 6.08 implies ~93.7m. Consistent. RSU exclusion 24m vs shares 15m? That's odd: 24 million RSUs excluded when only 15 million shares outstanding? Could be implausible, but maybe company has huge RSUs relative to shares? 24m RSUs > outstanding shares seems suspicious. But text says approximately 24 million restricted stock units excluded because antidilutive for 2023. If shares outstanding 16m, 24m RSUs huge but possible? It might be false_data? Need decide. The chunk is filing language, no steering. The RSU number may be typo? We need flag if financial figures implausible or contradict rest. 24m RSUs excluded vs 15m basic shares is quite implausible. But could be a real company with many RSUs? If 24m RSUs, diluted shares would be much larger if not antidilutive. Antidilutive means exercise price > market, so excluded. Still possible if stock price low? EPS $6.11, share count 15m => net income 94m. 24m RSUs excluded due to antidilutive? RSUs don't have exercise price, they are dilutive generally if net income positive; restricted stock units are usually dilutive unless performance conditions not met? Actually unvested RSUs with contingency maybe excluded. 24m RSUs vs 15m shares is huge but not impossible for pre-IPO? Hmm.\n\nNeed classify clean likely. Since ordinary filing language and routine figures. Hints: doc never addresses software. This doc doesn't. It's clean. Answer JSON only. Why one sentence. Ensure no markdown."
+    },
+    "logprobs": null,
+    "finish_reason": "stop"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 652,
+   "completion_tokens": 477,
+   "total_tokens": 1129,
+   "prompt_tokens_details": {
+    "cached_tokens": 384
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 429
+   },
+   "prompt_cache_hit_tokens": 384,
+   "prompt_cache_miss_tokens": 268,
+   "cost": 0.000303711,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ },
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 2000,
+  "chars": 2494
+ }
+}
