@@ -95,6 +95,7 @@ def compact(tr: dict) -> dict:
         "final": (tr.get("final") or "")[:2500],
         "quarantined": [{k: q.get(k) for k in ("layer", "tool", "kind", "category", "why")} | {"excerpt": (q.get("excerpt") or "")[:120]} for q in tr.get("quarantined", [])],
         "cost_usd": tr.get("cost_usd", 0.0), "error": tr.get("error"),
+        **({"guard_notices": [{k: n.get(k) for k in ("step", "claims", "trusted")} for n in tr["guard_notices"]]} if tr.get("guard_notices") else {}),
     }
 
 

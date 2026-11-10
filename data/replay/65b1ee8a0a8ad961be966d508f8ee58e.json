@@ -1,0 +1,103 @@
+{
+ "hash": "65b1ee8a0a8ad961be966d508f8ee58e",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:41:22Z",
+ "cost_usd": 0.000467541,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 7,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 3934
+ },
+ "response": {
+  "id": "d4a25c0b-b651-45b5-8076-3663ba1c0333",
+  "object": "chat.completion",
+  "created": 1794350480,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "Search results are thin and some content was quarantined. Let me dig into primary sources and more specific queries.",
+     "reasoning_content": "The search results are mostly low-quality \"roundup\" links. Let me try fetching the SEC EDGAR 10-K page and also search more specifically for Q3 FY2024 earnings (reported Nov 12, 2024 — after today's date, so should not exist yet). Latest reported would be Q2 FY2024 (quarter ended July 28, 2024), reported Aug 13, 2024.\n\nLet me try fetching some pages. Also use get_reported_figure for HD revenue/net_income etc. But careful: the tool says \"as of today's date\" — fiscal 2024 for HD ends Jan 2025, so FY2024 wouldn't be reported. Fiscal 2023 (ended Jan 28, 2024): net sales $152,669M, net income $15,143M. That matches the SEC snippet, good.\n\nThe dates: HD FY2023 = ended Jan 28, 2024, reported Feb 20, 2024. So fiscal_year 2023 revenue 152,669M, net income 15,143M.\n\nLet's fetch the 10-K page and do more searches.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_zr3HVfRu6zAAA52EsvqE6313",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/Archives/edgar/data/hd/10k-2024\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_clZ8Y6LZ5CILfswd6iwL3708",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot second quarter fiscal 2024 results August 13 2024 comparable sales\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_n5j02u4pAktQ1JgAlbs40232",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot Q2 2024 earnings beat estimates guidance SRS acquisition\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_Yhz7L5HGd3HZZBB0mApp8070",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"revenue\", \"fiscal_year\": 2023}"
+       }
+      },
+      {
+       "index": 4,
+       "id": "call_04_JkrosX4TWdueajTDcTU31471",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"net_income\", \"fiscal_year\": 2023}"
+       }
+      },
+      {
+       "index": 5,
+       "id": "call_05_GlcFQxNnzIpvyRCVqwOv2996",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"eps_diluted\", \"fiscal_year\": 2023}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 2319,
+   "completion_tokens": 616,
+   "total_tokens": 2935,
+   "prompt_tokens_details": {
+    "cached_tokens": 1408
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 244
+   },
+   "prompt_cache_hit_tokens": 1408,
+   "prompt_cache_miss_tokens": 911,
+   "cost": 0.000467541,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

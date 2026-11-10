@@ -5,6 +5,7 @@
   orderguard graph-demo                      the trigger-graph scenarios (L7)
   orderguard sign-mandate MANDATE.json       Ed25519-sign a mandate
   orderguard verify-mandate SIGNED.json      check signature, expiry, revocation
+  orderguard serve [--host H] [--port P]     the web app: API + dashboard (binds 127.0.0.1 by default)
 """
 from __future__ import annotations
 
@@ -259,6 +260,12 @@ def cmd_demo(a) -> int:
     return 0
 
 
+def cmd_serve(a) -> int:
+    from orderguard_app.app import serve
+    serve(a.host, a.port)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="orderguard", description="Pre-trade guard for AI trading agents.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -288,8 +295,24 @@ def main(argv=None) -> int:
     p.add_argument("--now")
     p.add_argument("--revoked", nargs="*", help="revoked mandate ids")
     p.set_defaults(fn=cmd_verify_mandate)
+    p = sub.add_parser("serve", help="web app: API + dashboard")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8600)
+    p.set_defaults(fn=cmd_serve)
+    sub.add_parser("init", help="create config dir, signing key, signed mandate, .env template (see init --help)")
+    sub.add_parser("doctor", help="check config, key, mandate signature and receiver (see doctor --help)")
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "init":
+        return _init_cmd().main(args[1:])
+    if args and args[0] == "doctor":
+        return _init_cmd().main(["--check", *args[1:]])
     a = ap.parse_args(argv)
     return a.fn(a)
+
+
+def _init_cmd():
+    from . import init_cmd
+    return init_cmd
 
 
 if __name__ == "__main__":

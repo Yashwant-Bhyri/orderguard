@@ -79,6 +79,38 @@ npm run check
 
 `npm run check` runs the receiver tests, the quickstart, the 1,000-seed invariants and a secret scan. The demo starts the receiver bridge, runs four scenarios plus the trigger graph, and prints the ledger snapshot.
 
+## Run it as a product
+
+Install from a clone (the code reads its data, recordings and model files from the checkout). Then create a config directory with a fresh Ed25519 signing key (mode 600, never printed), a signed mandate template and a `.env` that lists variable names only:
+
+```bash
+.venv/bin/orderguard init --dir var/orderguard
+```
+
+Edit the mandate's limits, re-sign it with `orderguard init --resign`, put your own API key in the `.env` or the environment, and check everything:
+
+```bash
+.venv/bin/orderguard doctor --dir var/orderguard
+```
+
+Start the web app (API plus dashboard at http://127.0.0.1:8600). It binds to loopback and requires a bearer token whenever `ORDERGUARD_APP_TOKEN` is set:
+
+```bash
+.venv/bin/orderguard serve
+```
+
+Or run the receiver and the app together in containers:
+
+```bash
+docker compose up --build
+```
+
+The dashboard screens text (L1, L2 and the local classifier), checks orders against the signed mandate at trusted prices (L5, L6), evaluates standing rules (L7), replays demo scenarios layer by layer and shows the receiver ledger. Orders reach a ledger only through `broker.OrderRouter`, which sends nothing without an `allow` decision and goes through the L8 receiver. No real-money broker adapter ships; a real one must sit behind the same `Broker` interface. See [docs/APP.md](docs/APP.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+**Local ML classifier.** `data/models/injection_clf.json` is a character and word n-gram logistic-regression detector trained on the lab and sandbox, exported as plain JSON and scored in pure Python (no pickle, no sklearn at runtime). `OG_CLASSIFIER=prefilter` quarantines high-confidence attacks without a model call; `ensemble` flags when either the classifier or the model does. It is off by default because, held out by technique, it is weaker than the model screen on real filing text. See [docs/CLASSIFIER.md](docs/CLASSIFIER.md).
+
+## Live runs
+
 Live runs use DeepSeek V4.1 Flash, either through OpenRouter or directly from DeepSeek:
 - For OpenRouter, set `OPENROUTER_API_KEY`. For DeepSeek's own API, set `OG_PROVIDER=deepseek` and `DEEPSEEK_API_KEY`. Either key can instead come from a dotenv file named by `OG_ENV_FILE`.
 - Set `OG_LLM=record` and raise `OG_BUDGET_USD`.
@@ -97,11 +129,12 @@ Every number below comes from [docs/RESULTS.md](docs/RESULTS.md), which `og-lab 
 - **Full guard:**
   - 0 harmful orders executed;
   - 1 of 16 false beliefs still got through;
-  - denial of service still worked in 5 of 7 runs, because the guard can stop bad orders but can't restore a trade the agent chose to abandon.
+  - denial of service: 0 of 7, down from 5 of 7. When a guarded agent drops a trade it was asked to make because tool output claimed a halt, lot size or price band, the guard checks the claim against trusted market status and, if trusted data contradicts it, tells the agent once and lets it decide again (still under L5 to L8). With the gate only: 1 of 7.
 - **Model screen (L2):**
   - flagged 82 of 99 attack chunks;
   - wrongly flagged 4 of 174 clean chunks;
   - caught every hidden instruction and every fake-authority chunk, but only 35 of 52 false-data chunks.
+- **Local ML classifier,** held out by technique on the same chunks: 59 of 99 attacks, 16 of 174 false alarms. It is fast and free but weaker, so it ships off by default.
 - **Adaptive attacker:** 3 campaigns of 3 rounds against the full guard, 0 succeeded. The attacker model refused once.
 - **Utility on clean tasks:** 6 of 7 completed in every arm. The miss is a trigger control that fails even with no guard. Before the trusted figure lookup was added, the guarded arms completed only 3 or 4 of 7 (see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)).
 - **Errors with no attacker:** with the full guard the agent cited a wrong figure in 6 of 27 honest runs, against 10 of 27 unguarded. L6 refuses any order that relies on one.
@@ -113,12 +146,13 @@ Every number below comes from [docs/RESULTS.md](docs/RESULTS.md), which `og-lab 
 
 **Caveats:**
 - Each case ran once, so the intervals are wide. RESULTS.md shows them.
-- The A, B, D and E rows for the guarded arms were recorded before the figure-lookup tool was added. Controls and families C and F were rerun with it.
+- The A, B and D rows for the guarded arms were recorded before the figure-lookup tool was added. Controls and families C, E and F were rerun with it.
+- A first live sandbox sweep is excluded from the tables: SEC EDGAR was unreachable from its run, and it exposed a fiscal-year labelling bug in the world generator (now fixed). It still recorded $0 of harmful orders in the full arm. See `results/sweeps/excluded/README.md`. A clean live sweep is the next run once there is credit.
 - DeepSeek's API does not report cost, so the spend table is the client's estimate at OpenRouter list prices. Actual DeepSeek charges were lower: about CNY 6.5 (US$0.91) for everything.
 
 ## Layout
 
-`receiver/` (TypeScript L8 and Python bridge), `packages/` (SDK and MCP server), `python/orderguard_guard` (L1–L5, L7, agent, `orderguard` CLI), `python/orderguard_verify` (L6, `og` CLI), `python/orderguard_lab` (cases, sandbox, `og-lab` CLI), `results/` (raw runs), `docs/`, `lab/legacy` (earlier experiments, kept as history).
+`receiver/` (TypeScript L8 and Python bridge), `packages/` (SDK and MCP server), `python/orderguard_guard` (L1–L5, L7, agent, local classifier, broker router, `orderguard` CLI), `python/orderguard_app` (web API and dashboard), `data/models` (classifier weights as JSON), `Dockerfile` and `docker-compose.yml`, `python/orderguard_verify` (L6, `og` CLI), `python/orderguard_lab` (cases, sandbox, `og-lab` CLI), `results/` (raw runs), `docs/`, `lab/legacy` (earlier experiments, kept as history).
 
 ## Licence
 

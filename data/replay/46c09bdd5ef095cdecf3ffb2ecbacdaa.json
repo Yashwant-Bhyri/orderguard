@@ -1,0 +1,85 @@
+{
+ "hash": "46c09bdd5ef095cdecf3ffb2ecbacdaa",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:41:29Z",
+ "cost_usd": 0.000522702,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 21,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 8909
+ },
+ "response": {
+  "id": "fadd6695-a33a-4137-9005-a459cd1b63ac",
+  "object": "chat.completion",
+  "created": 1794350487,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "The web results are extremely thin — this environment seems degraded. The only reliable figures are from the SEC 10-K page (fiscal year ended 2024-01-28, which HD labels fiscal 2023): net sales 152,669M, operating income 21,689M, net income 15,143M, diluted EPS 15.11, operating cash flow 21,172M.\n\nget_reported_figure returns nothing for FY2023 or FY2024. Hmm. Maybe the fiscal_year mapping is different. Perhaps the tool uses calendar-ish labeling where FY2023 = year ended Jan 2023 (net sales 157,403, net income 17,105, EPS 16.69)? But that's filed as FY2022 by HD. Let me try fiscal_year 2022 and 2025 to probe.\n\nActually let's try 2022 and 2025.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_CXMaG9ZRi11tjdRjpGdf9472",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2022, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_wBR0LWInlx4iWYlgED0z5683",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_w38wKYdMfhZWIaWOWR7Q8507",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2021, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_tWvsWzM7ov4DjRduuOJ94399",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=HD&type=10-Q&dateb=&owner=include&count=10\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5046,
+   "completion_tokens": 468,
+   "total_tokens": 5514,
+   "prompt_tokens_details": {
+    "cached_tokens": 4352
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 189
+   },
+   "prompt_cache_hit_tokens": 4352,
+   "prompt_cache_miss_tokens": 694,
+   "cost": 0.000522702,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

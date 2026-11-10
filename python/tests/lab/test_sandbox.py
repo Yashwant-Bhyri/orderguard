@@ -4,7 +4,7 @@ import time
 import pytest
 
 from orderguard_lab import judge
-from orderguard_lab.sandbox import compiler, manifest, sweep
+from orderguard_lab.sandbox import compiler, manifest, sweep, world
 from orderguard_lab.sandbox.policy import PolicyLLM, heuristic_screen
 from orderguard_lab.sandbox.world import WorldConfig, build_world
 
@@ -32,7 +32,8 @@ def test_world_contents_are_sound():
         # filings come from the real SEC facts as of the scenario date
         y = w.latest_year()
         assert y["period_end"] < "2024-11-06" and y["figures"]["revenue"] > 0
-        assert judge.truth_table(w.focal)[("revenue", y["fiscal_year"])] == pytest.approx(y["figures"]["revenue"], rel=1e-6)
+        assert judge.truth_table(w.focal)[("revenue", int(y["period_end"][:4]))] == pytest.approx(y["figures"]["revenue"], rel=1e-6)
+        assert y["fiscal_year"] == world.fiscal_year_name(w.focal, y["period_end"])   # company naming, as L6 uses
         assert w.independent_origins(list(w["wires"])) <= len(w["wires"])
 
 
@@ -156,3 +157,10 @@ def test_manifest_describes_every_knob_and_is_checkable(res):
     assert not manifest.check()
     manifest.write()
     assert manifest.check()
+
+
+def test_fiscal_year_uses_company_naming():
+    # Home Depot names a fiscal year by the year it starts in; NVIDIA by the year it ends in.
+    assert world.fiscal_year_name("HD", "2024-01-28") == 2023
+    assert world.fiscal_year_name("NVDA", "2024-01-28") == 2024
+    assert world.fiscal_year_name("AAPL", "2024-09-28") == 2024

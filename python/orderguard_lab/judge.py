@@ -352,6 +352,8 @@ def evaluate(spec: dict, transcript: Any, arm: str = "naive", *, goal: str | Non
         ev["stopped_by"] = ("L2" if q and arm == "full" else "model") if not ev["success"] else None
     ev["n_calls"] = len(calls_of(t))
     ev["quarantined_n"] = len(t.get("quarantined") or [])
+    if t.get("guard_notices"):
+        ev["guard_notices_n"] = len(t["guard_notices"])
     ev.pop("_matching")
     return ev
 

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderGuard</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="wrap bar">
+    <h1>OrderGuard <span class="sub">pre-trade guard for AI trading agents</span></h1>
+    <nav aria-label="Sections">
+      <a href="#status">Status</a><a href="#screen">Screen</a><a href="#order">Order</a><a href="#graph">Triggers</a>
+      <a href="#scenario">Scenario</a><a href="#ledger">Ledger</a><a href="#results">Results</a>
+    </nav>
+  </div>
+</header>
+<main id="main" class="wrap">
+  <p class="banner">Research prototype. Simulated markets only: no real orders, no broker connection.</p>
+
+  <section id="status" aria-labelledby="h-status" class="card">
+    <h2 id="h-status">Status</h2>
+    <dl id="status-body" class="kv" aria-live="polite"><dt>Loading</dt><dd>...</dd></dl>
+    <form id="auth-form" class="row" hidden>
+      <label for="token">Access token</label>
+      <input id="token" type="password" autocomplete="off" required>
+      <button type="submit">Use token</button>
+    </form>
+  </section>
+
+  <section id="screen" aria-labelledby="h-screen" class="card">
+    <h2 id="h-screen">Screen a text chunk <span class="tag">L1 + L2</span></h2>
+    <p class="hint">L1 strips hidden characters in code. L2 asks a model whether the chunk is safe to show an agent.</p>
+    <form id="screen-form">
+      <div class="row"><label for="screen-kind">Kind</label>
+        <select id="screen-kind"><option>tool</option><option>web</option><option>feed</option><option>doc</option></select></div>
+      <label for="screen-text">Text</label>
+      <textarea id="screen-text" rows="5" required maxlength="100000" placeholder="Paste a web page, feed window or tool result"></textarea>
+      <button type="submit">Screen</button>
+    </form>
+    <div id="screen-out" class="out" aria-live="polite"></div>
+  </section>
+
+  <section id="order" aria-labelledby="h-order" class="card">
+    <h2 id="h-order">Check an order <span class="tag">L5 + L6</span></h2>
+    <p class="hint">The order is sized at the trusted price, never at its own limit. Cited figures are checked against SEC filings.</p>
+    <form id="order-form" class="grid">
+      <div><label for="o-ticker">Ticker</label><input id="o-ticker" value="AAPL" required maxlength="16"></div>
+      <div><label for="o-side">Side</label><select id="o-side"><option>buy</option><option>sell</option></select></div>
+      <div><label for="o-qty">Quantity</label><input id="o-qty" type="number" min="1" step="1" value="40" required></div>
+      <div><label for="o-limit">Limit price</label><input id="o-limit" type="number" min="0.01" step="0.01" value="222.9" required></div>
+      <div><label for="o-asof">Decision date</label><input id="o-asof" type="date" value="2024-11-06" required></div>
+      <div><label for="o-daily">Already placed today (USD)</label><input id="o-daily" type="number" min="0" step="1" value="0"></div>
+      <div class="wide"><label for="o-figs">Cited figures (JSON array, optional)</label>
+        <textarea id="o-figs" rows="3" spellcheck="false" placeholder='[{"metric":"revenue","fiscal_year":2024,"value":391035,"unit":"USD millions"}]'></textarea></div>
+      <div class="wide"><label class="check"><input id="o-req" type="checkbox"> Require every order to cite figures</label></div>
+      <div class="wide row">
+        <button type="submit">Check order</button>
+        <button type="button" id="o-preset-split" class="ghost">Load fake-split order</button>
+        <button type="button" id="o-preset-fig" class="ghost">Load fake-figure order</button>
+      </div>
+    </form>
+    <div id="order-out" class="out" aria-live="polite"></div>
+    <details id="mandate-box">
+      <summary>Mandate in use</summary>
+      <div id="mandate-view"></div>
+      <h3>Use your own signed mandate</h3>
+      <label for="m-json">Signed mandate (JSON)</label>
+      <textarea id="m-json" rows="6" spellcheck="false"></textarea>
+      <label for="m-key">Public key (base64, recommended)</label>
+      <input id="m-key" autocomplete="off">
+      <div class="row"><button type="button" id="m-clear" class="ghost">Back to the demo mandate</button></div>
+    </details>
+  </section>
+
+  <section id="graph" aria-labelledby="h-graph" class="card">
+    <h2 id="h-graph">Trigger graph <span class="tag">L7</span></h2>
+    <p class="hint">A standing rule fires only when at least two independent, unquarantined sources agree.</p>
+    <form id="graph-form">
+      <div class="row"><label for="g-preset">Events</label>
+        <select id="g-preset">
+          <option value="single_venue_crash">One venue prints a -48% crash</option>
+          <option value="real_crash">A real -45% crash on all venues</option>
+          <option value="takeover_echo">A fake takeover echoed by three wires</option>
+          <option value="honest">A quiet morning</option>
+        </select>
+        <button type="submit">Evaluate</button></div>
+    </form>
+    <div id="graph-out" class="out" aria-live="polite"></div>
+  </section>
+
+  <section id="scenario" aria-labelledby="h-scn" class="card">
+    <h2 id="h-scn">Run a demo scenario</h2>
+    <p class="hint">Scripted demos run with no model. Lab cases replay recorded model runs offline.</p>
+    <form id="scn-form" class="row">
+      <label for="scn-id">Scenario</label><select id="scn-id"></select>
+      <label for="scn-arm">Arm</label>
+      <select id="scn-arm"><option value="">(scenario default)</option><option>naive</option><option>gate_only</option><option>full</option></select>
+      <button type="submit">Run</button>
+    </form>
+    <div id="scn-out" class="out" aria-live="polite"></div>
+  </section>
+
+  <section id="ledger" aria-labelledby="h-ledger" class="card">
+    <h2 id="h-ledger">Ledger <span class="tag">L8</span></h2>
+    <div class="row"><button type="button" id="ledger-load">Refresh</button></div>
+    <div id="ledger-out" class="out" aria-live="polite"></div>
+  </section>
+
+  <section id="results" aria-labelledby="h-results" class="card">
+    <h2 id="h-results">Results</h2>
+    <div class="row"><label for="res-sec">Section</label><select id="res-sec"></select></div>
+    <div id="res-out" class="out" aria-live="polite"></div>
+  </section>
+</main>
+<footer class="wrap foot">OrderGuard dashboard. Everything on this page is served locally; nothing is loaded from the network.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

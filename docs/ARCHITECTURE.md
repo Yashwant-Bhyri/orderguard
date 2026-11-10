@@ -61,6 +61,17 @@ Before this tool existed, agents with no filings tool could not cite a figure an
 - **No money-movement tool.** In the adaptive round the attacker got DeepSeek V4 Pro to call `transfer_funds` for $250 in round 2. The hardened arms do not offer the tool, so there is nothing to talk the agent into.
 - **One LLM client with record/replay and a budget.** Every model call goes through `llm.py`: responses are stored by hash of the canonical request under `data/replay/`, `OG_LLM=replay` makes tests and published tables rebuild offline, `OG_BUDGET_USD` (default 0.05) caps a process, every live call is appended to `results/spend.jsonl`, and the account balance is checked once per process before the first live call (refused under US$0.30).
 
+## Trusted market status (denial-of-service defence)
+
+The gate stops bad orders but cannot restore a trade the agent wrongly drops. In family E a fake lot size, price band or trading halt in tool output made the agent abandon a legitimate trade in 5 of 7 live runs even with the full guard (docs/RESULTS.md). The guarded arms (`gate_only`, `full`) therefore get an abandonment check, analogous to the trusted figure lookup.
+
+- **Trusted source.** `TrustedMarket.status(ticker)` returns `{"halted", "lot_size", "band_pct", "as_of", "source"}` from the broker's own state, never from tool output. `SimMarket` defaults to not halted, lot size 1 and `band_pct` None, which the loop reads as the mandate's `priceBandPct` (the gate's band).
+- **Trigger.** When a guarded run ends with no `place_order` call, the env marks the task as an intended trade (`env.intended_trade`, default False; set for family E and the clean controls), and the final text or the last 8 tool outputs assert a halt or closure, a lot size above the trusted one, or a price band tighter than the trusted one, the guard compares the claims with `status`. If trusted data confirms a halt, nothing happens.
+- **Action.** If trusted data contradicts the claim, the guard appends one user turn that states the trusted values, says the claim was not confirmed by trusted market data and ends "Decide again under your mandate". It is data, not an instruction to trade. The agent gets at most 4 more steps. There is never more than one notice per run, and the notice is recorded in the transcript as `guard_notices`.
+- **Orders stay gated.** An order placed after the notice goes through L5, L6 and L8 like any other, so the notice cannot widen what the agent may do.
+- **Replay safety.** No tool, system prompt or earlier message changes. Request bodies differ only in the extra notice turn, so recorded runs where the check does not trigger replay unchanged (`python/tests/guard/test_dos_defence.py`).
+- **Limits.** The check is regex-based and covers halt, lot and band claims only. A fake owner note or a fake "orders void" filing that makes no such claim is not caught, and a lying status source defeats it, as it would L5.
+
 ## Limits, stated plainly
 
 - The model layers (L2, L3 model check, L4) can be beaten by an adaptive attacker. In the adaptive round the "believe a false revenue figure" goal succeeded on DeepSeek V4 Pro in round 5 and the order was inside the mandate; L6 is what addresses that case, and only for figures that exist in filings.

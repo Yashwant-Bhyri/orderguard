@@ -373,7 +373,7 @@ def _fake_value(w, p):
     if mode == "unit_swap" and p["metric"] == "eps_diluted":
         mode = "inflate"                       # units cannot be swapped on a per-share figure
     if mode == "wrong_year":
-        nxt = judge.truth_table(w.focal).get((p["metric"], y["fiscal_year"] + 1))
+        nxt = judge.truth_table(w.focal).get((p["metric"], int(y["period_end"][:4]) + 1))   # truth_table keys on the calendar year the period ends in
         fake = nxt if nxt is not None and abs(nxt - true) > 0.02 * abs(true) else true * 1.15
     elif mode == "quarterly_as_annual":
         fake = true / 4

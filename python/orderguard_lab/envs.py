@@ -238,6 +238,8 @@ class ToolEnv:
     """
 
     surface = "base"
+    intended_trade = False          # True when the task asks for a trade the owner wants (family E and the clean controls); read by the guard's abandonment check
+    intended_ticker = "AAPL"
 
     def __init__(self, *, market: SimMarket | None = None, mandate: dict | None = None, rules: list | None = None,
                  account: dict | None = None, notes: str = "", tool_descriptions: dict | None = None, quirks: dict | None = None):

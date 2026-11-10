@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Iterable
 
 from .llm import as_llm, parse_json
 
+CLASSIFIER_MODES = ("off", "prefilter", "ensemble")
 KINDS = ("doc", "web", "feed", "tool")
 CATEGORIES = ("instruction", "authority", "false_data", "spoof", "clean")
 
@@ -47,7 +49,7 @@ def content_hash(model: str, kind: str, chunk: str) -> str:
 class Screen:
     """`Screen(model).check(chunk, kind)`; model is a name or any object with `.ask_json`/`.chat`."""
 
-    def __init__(self, model=None, *, cache_path: Path | str | None = None, max_chars: int = 20000):
+    def __init__(self, model=None, *, cache_path: Path | str | None = None, max_chars: int = 20000, classifier: str | None = None):
         self.llm = as_llm(model) if model is not None else as_llm(None)
         self.model_name = getattr(self.llm, "model", str(model))
         self.cache_path = Path(cache_path) if cache_path else None
@@ -57,6 +59,18 @@ class Screen:
         self.cost_usd = 0.0
         self.max_chars = max_chars
         self._lock = threading.Lock()
+        # Local ML classifier (orderguard_guard.classifier), off by default so request bodies and recordings are unchanged:
+        #   prefilter: a high-confidence classifier attack is quarantined without a model call
+        #   ensemble:  flag if the classifier OR the model flags (the model is still asked, with the same request as always)
+        mode = (classifier if classifier is not None else os.environ.get("OG_CLASSIFIER", "off")).strip().lower() or "off"
+        if mode not in CLASSIFIER_MODES:
+            raise ValueError(f"OG_CLASSIFIER must be one of {CLASSIFIER_MODES}, got {mode!r}")
+        self.classifier_mode = mode
+        self.classifier_hits = 0
+        self._clf = None
+        if mode != "off":
+            from . import classifier as _c
+            self._clf = _c.get()
         if self.cache_path and self.cache_path.exists():
             try:
                 self.cache = json.loads(self.cache_path.read_text())
@@ -66,16 +80,34 @@ class Screen:
     def check(self, chunk: str, kind: str = "tool") -> dict:
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}")
+        local = self._clf.score(chunk) if self._clf is not None else None
+        if local is not None and self.classifier_mode == "prefilter" and local["p_attack"] >= self._clf.prefilter_threshold:
+            self.classifier_hits += 1
+            return self._local_verdict(local)
         h = content_hash(self.model_name, kind, chunk)
         with self._lock:
             if h in self.cache:
-                return dict(self.cache[h], cached=True)
+                return self._merge(dict(self.cache[h], cached=True), local)
         verdict = self._ask(chunk, kind)
         if verdict["category"] != "error":
             with self._lock:
                 self.cache[h] = verdict
                 self._save()
-        return dict(verdict, cached=False)
+        return self._merge(dict(verdict, cached=False), local)
+
+    def _local_verdict(self, local: dict) -> dict:
+        top = ", ".join(f["feature"] for f in local["top_features"][:3])
+        return {"flag": True, "category": "instruction", "why": f"local classifier p_attack {local['p_attack']:.3f}" + (f" ({top})" if top else ""),
+                "cached": False, "source": "classifier", "p_attack": local["p_attack"]}
+
+    def _merge(self, verdict: dict, local: dict | None) -> dict:
+        """Ensemble: the classifier can only add a flag; the cached model verdict itself is never altered."""
+        if local is None or self.classifier_mode != "ensemble":
+            return verdict
+        if local["label"] == "attack" and not verdict["flag"]:
+            self.classifier_hits += 1
+            return dict(self._local_verdict(local), cached=verdict.get("cached", False))
+        return verdict
 
     def check_many(self, chunks: Iterable[str], kind: str) -> list[dict]:
         return [self.check(c, kind) for c in chunks]

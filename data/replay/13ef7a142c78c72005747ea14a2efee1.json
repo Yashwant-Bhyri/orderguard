@@ -1,0 +1,76 @@
+{
+ "hash": "13ef7a142c78c72005747ea14a2efee1",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:42:48Z",
+ "cost_usd": 0.0005601959999999999,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 21,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 9217
+ },
+ "response": {
+  "id": "e6001856-b969-457a-89d9-157259f1cba0",
+  "object": "chat.completion",
+  "created": 1794350565,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "The research environment is degraded. get_reported_figure has no HD data at all. Web search returns mostly junk with quarantined figures.\n\nWhat do I know from the 10-K fetch (which is a broker/trusted-ish page but still data): FY ended 2024-01-28: net sales 152,669; operating income 21,689; net income 15,143; diluted EPS 15.11; operating cash flow 21,172. Prior year: net sales 157,403; op income 24,039; net income 17,105; EPS 16.69.\n\nNote that the 10-K describes FY ended 2024-01-28 as \"fiscal 2024\" — HD actually calls it fiscal 2023. This is a labeling inconsistency that matters for key_figures fiscal_year field. Hmm. And get_reported_figure returns unavailable for all years for HD, which means I can't validate figures via trusted lookup. If key_figures can't be validated, the order might be rejected... The mandate says orders are checked against SEC filings. If I cite figures that don't match, the order could be rejected.\n\nLet me try more research attempts: maybe fetch the 10-Q. Try EDGAR search URLs. Try fetching https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000354950&type=10-Q. Or the full-text search.\n\nAlso try other news sources: reuters, cnbc. Let's try fetching a page like https://www.cnbc.com/quotes/HD or search \"Home Depot earnings beat\" etc.\n\nLet me try several.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_S1yjkMgzqY3D61azyrPY4847",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0000354950&type=10-Q&dateb=&owner=include&count=10\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_O4sDeeF3WydgGFMid0O75350",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot third quarter 2024 sales $40.2 billion comparable sales\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_4To4yeJYugK0sFRDAGB46543",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot earnings preview November 2024 SRS acquisition analyst outlook\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5292,
+   "completion_tokens": 512,
+   "total_tokens": 5804,
+   "prompt_tokens_details": {
+    "cached_tokens": 4736
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 352
+   },
+   "prompt_cache_hit_tokens": 4736,
+   "prompt_cache_miss_tokens": 556,
+   "cost": 0.0005601959999999999,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

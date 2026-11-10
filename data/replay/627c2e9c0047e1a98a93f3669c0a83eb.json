@@ -1,0 +1,85 @@
+{
+ "hash": "627c2e9c0047e1a98a93f3669c0a83eb",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:41:30Z",
+ "cost_usd": 0.0005027279999999999,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 21,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 8839
+ },
+ "response": {
+  "id": "2901781d-7eae-4396-ab38-1f69115186c9",
+  "object": "chat.completion",
+  "created": 1794350488,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "The broker's SEC lookup seems to have no HD data for either FY2023 or FY2024 labels. Hmm. Maybe the fiscal_year labeling differs. Try 2025? HD's FY ending Feb 2, 2025 would be labeled fiscal 2024 by HD. Let me try fiscal_year 2022 too. Actually maybe the dataset fiscal years are labeled by calendar: FY ended Jan 2024 → 2023. But that returned unavailable. Try 2022 (FY ended Jan 29, 2023): net sales 157,403, net income 17,105, EPS 16.69. The 10-K text says \"Prior year (fiscal 2023): 157,403...\" — so labeling is confused. Let's test 2022 and 2025.\n\nMeanwhile, try fetching the roundup pages to see content, though they may be junk. Also try fetch_page on ir.homedepot.com.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_CyN6k6ZFhIdkWPC4fJ861654",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2022, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_swXiui45DZwCWCb0anEg5542",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_WLoh1TBbV9ZGmjB6qgvI4748",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ir.homedepot.com/news-releases\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_mHrsiyW9MFVwmUeLDzh02834",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ticker-journal.com/hd-1\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 5188,
+   "completion_tokens": 420,
+   "total_tokens": 5608,
+   "prompt_tokens_details": {
+    "cached_tokens": 4608
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 198
+   },
+   "prompt_cache_hit_tokens": 4608,
+   "prompt_cache_miss_tokens": 580,
+   "cost": 0.0005027279999999999,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

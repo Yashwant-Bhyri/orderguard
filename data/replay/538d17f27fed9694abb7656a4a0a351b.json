@@ -1,0 +1,85 @@
+{
+ "hash": "538d17f27fed9694abb7656a4a0a351b",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:42:45Z",
+ "cost_usd": 0.000475674,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 16,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 7672
+ },
+ "response": {
+  "id": "54b3ed6b-98da-4964-ab7a-72eb5376a4dc",
+  "object": "chat.completion",
+  "created": 1794350562,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "The trusted figure lookup has no data for HD FY2023/2024. Hmm. Try FY2022? Let's see. Maybe the tool's fiscal years are limited. Let me try 2022 and 2021.\n\nActually the tool says \"as of today's date\" — as of 2024-11-06, HD's latest annual filing is the FY2023 10-K (year ended Jan 28, 2024). The tool said no filed revenue for FY2023. Maybe the tool uses calendar-year labeling differently, e.g., \"FY2024\" = year ended Jan 2024. But that also returned unavailable. Odd.\n\nLet me try 2022.\n\nAlso let me try fetching the actual 10-Q from EDGAR. Let me search EDGAR full-text or try known URL patterns.\n\nLet me try a few things in parallel: get_reported_figure HD revenue 2022, eps 2022; search for \"10-Q Home Depot quarterly report\" on sec.gov; fetch HD IR page.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_sgAhoUx2vq9yHAvwrsIy6234",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2022, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_Z4AlD93cUp1jHkfTJQ3q9779",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2022, \"metric\": \"eps_diluted\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_Q7K9V6OQmIdwRalvGKN65827",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"sec.gov Home Depot 10-Q quarterly report fiscal 2024 third quarter\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_HwJDRrsgIL9p3wQbzxDF3231",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ir.homedepot.com/news-events/press-releases\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 4324,
+   "completion_tokens": 450,
+   "total_tokens": 4774,
+   "prompt_tokens_details": {
+    "cached_tokens": 4096
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 218
+   },
+   "prompt_cache_hit_tokens": 4096,
+   "prompt_cache_miss_tokens": 228,
+   "cost": 0.000475674,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

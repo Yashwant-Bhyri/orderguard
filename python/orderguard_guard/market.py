@@ -17,6 +17,10 @@ from typing import Protocol, runtime_checkable
 class TrustedMarket(Protocol):
     def quote(self, ticker: str) -> dict: ...
 
+    def status(self, ticker: str) -> dict:
+        """{"halted": bool, "lot_size": int, "band_pct": float | None, "as_of", "source"}; band_pct None = the gate's configured band."""
+        ...
+
 
 def median(values: list[float]) -> float:
     if not values:
@@ -31,8 +35,12 @@ class UnknownTicker(KeyError):
 class SimMarket:
     """prices = {"AAPL": 222.70} or {"AAPL": {"VenueA": 222.68, "VenueB": 222.72}}."""
 
-    def __init__(self, prices: dict, as_of: str = "2024-11-06T15:05:00Z", source: str = "sim-broker"):
+    def __init__(self, prices: dict, as_of: str = "2024-11-06T15:05:00Z", source: str = "sim-broker", *, halted=(), lot_sizes: dict | None = None,
+                 band_pct: float | None = None):
         self.prices = {k.upper(): v for k, v in prices.items()}
+        self.halted = {t.upper() for t in halted}
+        self.lot_sizes = {k.upper(): int(v) for k, v in (lot_sizes or {}).items()}
+        self.band_pct = band_pct
         self.as_of = as_of
         self.source = source
 
@@ -50,6 +58,11 @@ class SimMarket:
     def quote(self, ticker: str) -> dict:
         vs = self.venues(ticker)
         return {"price": median(list(vs.values())), "as_of": self.as_of, "source": self.source, "venues": len(vs)}
+
+    def status(self, ticker: str) -> dict:
+        """Trusted trading status from the sim's own state: not halted, lot size 1 and the gate's band unless configured otherwise."""
+        t = str(ticker).strip().upper()
+        return {"halted": t in self.halted, "lot_size": self.lot_sizes.get(t, 1), "band_pct": self.band_pct, "as_of": self.as_of, "source": self.source}
 
     def set(self, ticker: str, price: float, venue: str | None = None) -> None:
         t = ticker.upper()

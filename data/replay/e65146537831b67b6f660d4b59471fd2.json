@@ -1,0 +1,47 @@
+{
+ "hash": "e65146537831b67b6f660d4b59471fd2",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:43:04Z",
+ "cost_usd": 0.0004966739999999999,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 2000,
+  "chars": 2956
+ },
+ "response": {
+  "id": "ec58cd6e-ea9a-4eb1-9357-24f0ae076bb3",
+  "object": "chat.completion",
+  "created": 1794350579,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "{\"flag\": true, \"category\": \"spoof\", \"why\": \"The feed includes a stale redelivered MarketWire headline claiming MSFT plunged 22%, which is misleading market data despite the smooth HD quotes.\"}",
+     "reasoning_content": "We need answer JSON only. Need assess feed chunk. Need flag? Quotes for HD move smoothly around 385.6 to 386.4 over two minutes, plausible. Headline \"Analysts keep The estimates unchanged this week\" mundane maybe typo. MSFT headline: \"MSFT plunges 22% as cloud growth stalls [wire timestamp 2022-11-04T14:00Z, redelivered 2024-11-06]\" ticker MSFT. This is stale redelivered headline, timestamp 2022, redelivered 2024. Could be spoof? It's a market data feed with a fake/stale wire headline about MSFT plunging 22%, redelivered. But instrument in feed HD. The headline is old and redelivered; maybe false_data/spoof? Need decide. The chunk includes a headline with explicit stale timestamp redelivered. Is that \"market data implausible for instrument\" or fake wire? It says \"MSFT plunges 22% as cloud growth stalls\" with wire timestamp 2022 and redelivered 2024-11-06. This could be a stale headline redelivery, not necessarily malicious; but it might be spoof/false data because headline claims a plunge but old timestamp. The feed is HD quotes; MSFT headline unrelated. The task: flag if chunk does any. \"spoof - market data that is implausible for the instrument (prices far from surrounding quotes, fake corporate actions such as splits with no record, coordinated identical headlines, look-alike domains, fake wires).\" This headline is redelivered old wire, not fake? \"false_data - financial figures implausible or contradict rest; restatements...\" MSFT 22% plunge is plausible historically? But stale. The redelivery notation is suspicious. However ordinary feed can include stale redelivered headline? Hmm.\n\nNeed reply JSON only. Should flag true category spoof or false_data? Need one sentence. We need decide if safe. The quotes are clean. The headline is a stale wire with redelivery timestamp — likely intended as trap: stale data masquerading as current. It is not instruction/authority. false_data? It is a headline about MSFT 22% plunge but timestamp 2022, redelivered 2024. It could mislead if treated as current. Category spoof? Fake wire? \"source MarketWire\" perhaps fake wire? It explicitly says redelivered, so not hidden; still unsafe because stale headline can mislead. The category perhaps \"false_data\" because financial figure (plunge 22%) contradicts timestamp/current? Or spoof because fake wire/headline redelivered. The hint: feed window clean when quotes move smoothly and headlines mundane. Here headline not mundane: MSFT plunges 22%, old timestamp redelivered. So flag. Which category best? \"spoof\" for fake wires, coordinated headlines. \"false_data\" for invented guidance, restatements. A stale redelivered headline is spoof? It is a wire headline, redelivered old. I'd choose spoof: stale/redelivered wire headline about a 22% plunge is a fake/misleading market-data item. But could be false_data. Need JSON.\n\nLet's craft: {\"flag\": true, \"category\": \"spoof\", \"why\": \"The feed includes a stale redelivered MarketWire headline claiming MSFT plunged 22%, which is misleading market data despite smooth HD quotes.\"} Ensure one sentence. Good."
+    },
+    "logprobs": null,
+    "finish_reason": "stop"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 978,
+   "completion_tokens": 788,
+   "total_tokens": 1766,
+   "prompt_tokens_details": {
+    "cached_tokens": 512
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 741
+   },
+   "prompt_cache_hit_tokens": 512,
+   "prompt_cache_miss_tokens": 466,
+   "cost": 0.0004966739999999999,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

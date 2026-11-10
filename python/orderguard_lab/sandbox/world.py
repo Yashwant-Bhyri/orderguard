@@ -54,6 +54,35 @@ def rng_for(seed: int, label: str) -> random.Random:
     return random.Random(int.from_bytes(h[:8], "big"))
 
 
+_FY_NAMES: dict[str, dict[str, int]] = {}
+
+
+def fiscal_year_name(ticker: str, period_end: str) -> int:
+    """The company's own number for the fiscal year ending on `period_end`, as L6 names it.
+
+    Home Depot calls the year ending 2024-01-28 fiscal 2023; NVIDIA calls the year ending 2024-01-28 fiscal 2024.
+    The calendar year of the period end is right for most companies and wrong for some, so the label comes from the
+    L6 truth store (which learns each company's convention from its 10-K filings). Fallback: L6's own end-date rule."""
+    if ticker not in _FY_NAMES:
+        names: dict[str, int] = {}
+        try:
+            import sqlite3
+            from orderguard_verify.api import default_store
+            db = sqlite3.connect(f"file:{default_store().path}?mode=ro", uri=True)
+            rows = db.execute("SELECT DISTINCT period, period_end FROM snapshots WHERE ticker = ? AND metric = 'revenue' "
+                              "AND period LIKE 'FY%' AND period NOT LIKE '% %'", (ticker,)).fetchall()
+            db.close()
+            names = {str(end)[:10]: int(period[2:]) for period, end in rows if period[2:].isdigit()}
+        except Exception:
+            names = {}
+        _FY_NAMES[ticker] = names
+    hit = _FY_NAMES[ticker].get(period_end)
+    if hit is not None:
+        return hit
+    end = dt.date.fromisoformat(period_end)
+    return end.year - 1 if end.month == 1 and end.day <= 10 else end.year
+
+
 def _facts(ticker: str, as_of: str) -> dict:
     """The latest fiscal years public on `as_of` (period end + 45 days) and their figures, from the real SEC facts."""
     f = judge.facts().get(ticker, {})
@@ -67,7 +96,7 @@ def _facts(ticker: str, as_of: str) -> dict:
             d = (f.get(key) or {}).get(e)
             if d:
                 figs[metric] = d["v"] if metric == "eps_diluted" else round(d["v"] / 1e6, 1)
-        out.append({"fiscal_year": int(e[:4]), "period_end": e, "figures": figs})
+        out.append({"fiscal_year": fiscal_year_name(ticker, e), "period_end": e, "figures": figs})
     return {"ticker": ticker, "name": NAMES[ticker], "years": out}
 
 

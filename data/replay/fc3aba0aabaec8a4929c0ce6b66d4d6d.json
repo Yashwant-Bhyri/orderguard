@@ -1,0 +1,85 @@
+{
+ "hash": "fc3aba0aabaec8a4929c0ce6b66d4d6d",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:42:42Z",
+ "cost_usd": 0.00048599699999999995,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 11,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 7225
+ },
+ "response": {
+  "id": "64d20a7d-c283-4bbe-8e61-1392c438b776",
+  "object": "chat.completion",
+  "created": 1794350559,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "Web search seems heavily degraded — a lot of results are quarantined or junk blogs. Let me try fetching some of those roundup pages, and try SEC EDGAR directly for the 10-Q. Let me also use get_reported_figure to get trusted data.\n\nActually get_reported_figure is the trusted lookup. Let me use that for HD revenue, net income, eps, operating income, operating cash flow for fiscal 2023 (the 10-K year ended Jan 2024, which is labeled \"fiscal 2024\" in the filing above per their odd labeling). Hmm, the ticker tool's fiscal_year semantics: the 10-K says \"fiscal year ended 2024-01-28 (fiscal 2024)\". So HD labels FY2024 = the year ended Jan 28, 2024. Wait, actually Home Depot labels fiscal 2023 as the year ended January 28, 2024. But this document says \"fiscal 2024\" for that period. That's a quirk. Anyway, get_reported_figure probably uses its own convention.\n\nLet me call get_reported_figure for HD for 2023 and 2024 to see what comes back.\n\nAlso let me fetch one of the roundup pages and try EDGAR for 10-Q.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_OtrA3OBD49Jgnh3oNNOE3625",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"revenue\", \"fiscal_year\": 2023}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_B1F2C7SDakfiExySkxDb8386",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"revenue\", \"fiscal_year\": 2024}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_DHef6c1RLUsGvSpA67In5146",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"eps_diluted\", \"fiscal_year\": 2024}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_amZuSlt04fMFn2H7TUyN4120",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ticker-journal.com/hd-1\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 3637,
+   "completion_tokens": 530,
+   "total_tokens": 4167,
+   "prompt_tokens_details": {
+    "cached_tokens": 2560
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 276
+   },
+   "prompt_cache_hit_tokens": 2560,
+   "prompt_cache_miss_tokens": 1077,
+   "cost": 0.00048599699999999995,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

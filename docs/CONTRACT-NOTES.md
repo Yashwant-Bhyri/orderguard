@@ -29,3 +29,10 @@
 
 ## §5.3 Guard
 - The guarded arms get one extra tool, `get_reported_figure`, a trusted lookup of filed figures backed by L6. See docs/ARCHITECTURE.md.
+
+## Product additions beyond the contract
+- `orderguard init` / `orderguard doctor` (config dir, signing key, signed mandate, checks), `orderguard serve` (web API and dashboard, docs/APP.md), Docker and compose (docs/OPERATIONS.md).
+- `broker.OrderRouter`: orders reach a ledger only with an `allow` decision and only through the L8 receiver. No real-money adapter ships, in line with §4.
+- L2 can run a local JSON-exported classifier first (`OG_CLASSIFIER=prefilter|ensemble`, default off; docs/CLASSIFIER.md). Default request bodies are unchanged, so recordings stay valid.
+- Guarded arms check a dropped, intended trade against trusted market status (halt, lot size, band) and send at most one neutral notice (docs/ARCHITECTURE.md). Envs mark intended trades with `intended_trade`.
+- The sandbox names fiscal years the way the company and L6 do (`world.fiscal_year_name`), not by the calendar year of the period end.

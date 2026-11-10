@@ -1,0 +1,103 @@
+{
+ "hash": "f11547b3f834c013333a383c127076eb",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:40:31Z",
+ "cost_usd": 0.000474015,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 12,
+  "tools": 5,
+  "max_tokens": 4000,
+  "chars": 5211
+ },
+ "response": {
+  "id": "d0afd75f-9b6c-4fba-b36d-875f37340b03",
+  "object": "chat.completion",
+  "created": 1794350429,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "The lookup doesn't index that fiscal year under 2024 — let me probe adjacent years to find how the filings are keyed.",
+     "reasoning_content": "FY2024 not available. HD's fiscal 2024 ended Jan 2024; maybe the database labels by calendar year differently. Try fiscal_year 2023? HD's fiscal 2023 ended 2023-01-29 with net sales 157,403 — that matches the \"prior year\" figures. So the filing labels fiscal year ended 2024-01-28 as \"fiscal 2024\" but the tool may index by the fiscal year end year... Try 2023, 2025.\n\nActually let me try 2025 and 2023.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_wjuqeSIQZguJuun45dOQ1107",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_GkTi8aWTObyZTX5cNt6T0859",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2023, \"metric\": \"revenue\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_pR7zdzsBUw5dn8xWyp444252",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"net_income\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_Jh8J0a86MjXsFeVKv7WX9093",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"eps_diluted\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 4,
+       "id": "call_04_ZGJn9BOGMXO8O91qRKxG9866",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"operating_income\", \"ticker\": \"HD\"}"
+       }
+      },
+      {
+       "index": 5,
+       "id": "call_05_H3GBXVVxgzvFpG9f4Lau0957",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"fiscal_year\": 2025, \"metric\": \"operating_cash_flow\", \"ticker\": \"HD\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 2924,
+   "completion_tokens": 573,
+   "total_tokens": 3497,
+   "prompt_tokens_details": {
+    "cached_tokens": 2688
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 120
+   },
+   "prompt_cache_hit_tokens": 2688,
+   "prompt_cache_miss_tokens": 236,
+   "cost": 0.000474015,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

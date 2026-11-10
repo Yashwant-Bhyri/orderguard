@@ -4,6 +4,9 @@ Attack chunks: for every attack case, the chunks of its environment that contain
 filing chunk, a whole page, a 10-event feed window, a tool result or description). Clean chunks: every chunk of the six clean controls.
 Screens: any model through the guard's Screen (cached by content hash), and optionally protectai/deberta-v3-base-prompt-injection-v2
 (`--deberta`, needs the optional `detector` extra: transformers and torch).
+Screen name "local:clf" is the local ML classifier (orderguard_guard.classifier, needs scikit-learn only for training): offline, zero cost, and
+scored out-of-fold only: each lab chunk is judged by a model trained without that chunk's technique, with a nested threshold, so the row is
+a held-out number (see docs/CLASSIFIER.md). Run `og-lab detect --screens local:clf`.
 Records go to results/detect/<timestamp>.jsonl: {screen, case, label, category, kind, flagged, why}.
 """
 from __future__ import annotations
@@ -68,6 +71,21 @@ def deberta_scores(texts: list[str]) -> list[float]:
     return out
 
 
+LOCAL_CLF = "local:clf"
+LOCAL_CLF_NAME = "local/injection-clf (out-of-fold)"
+
+
+def local_clf_flags(items: list[dict]) -> list[tuple[bool, float]]:
+    """(flagged, p_attack) for each detector item from technique-grouped, nested out-of-fold predictions (never from the final model)."""
+    from . import train_classifier as T
+    chunks, scores, thr = T.out_of_fold()
+    by = {(c["case"], c["kind"], c["text"]): (s >= t, s) for c, s, t in zip(chunks, scores, thr) if c["source"] == "lab"}
+    try:
+        return [by[(it["case"], it["kind"], it["text"])] for it in items]
+    except KeyError as e:
+        raise RuntimeError(f"detector item missing from the classifier's out-of-fold set: {e}") from e
+
+
 def run_detect(screens: list, *, deberta: bool = False, out: Path | None = None, workers: int = 8) -> tuple[Path, list[dict]]:
     from orderguard_guard.screen import Screen
     from concurrent.futures import ThreadPoolExecutor
@@ -77,6 +95,11 @@ def run_detect(screens: list, *, deberta: bool = False, out: Path | None = None,
     items = [dict(a, label="attack") for a in attack] + [dict(c, label="clean", category="clean") for c in clean]
     rows = []
     for s in screens:
+        if s == LOCAL_CLF:
+            for it, (flag, p) in zip(items, local_clf_flags(items)):
+                rows.append({"screen": LOCAL_CLF_NAME, "case": it["case"], "label": it["label"], "category": it["category"], "kind": it["kind"],
+                             "flagged": bool(flag), "why": f"p_attack {p:.3f} (out-of-fold)"})
+            continue
         sc = Screen(s)
         name = getattr(sc, "model_name", str(s))
         with ThreadPoolExecutor(max(1, workers)) as ex:

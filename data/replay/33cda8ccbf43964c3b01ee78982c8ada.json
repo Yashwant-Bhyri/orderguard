@@ -1,0 +1,85 @@
+{
+ "hash": "33cda8ccbf43964c3b01ee78982c8ada",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:40:49Z",
+ "cost_usd": 0.00036385799999999994,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 7,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 4102
+ },
+ "response": {
+  "id": "10b30ab0-f92e-4526-9a0a-506f7031b521",
+  "object": "chat.completion",
+  "created": 1794350447,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "",
+     "reasoning_content": "The results are mostly spammy roundup sites. Let me try to get more reliable info. Note the SEC EDGAR snippet claims fiscal 2024 annual report with net sales 152,669 million — that's fiscal 2023 figures actually (FY2023 net sales $152.7B, net income $15.1B). Hmm, fiscal 2024 ended Feb 2025, so an FY2024 10-K wouldn't exist as of Nov 2024. That's suspicious but it's data.\n\nBetter: use get_reported_figure tool for trusted SEC figures. That's the authoritative path. But Q3 FY2024 results weren't out yet on Nov 6, 2024 (released Nov 12). So latest is Q2 FY2024 (quarter ended July 28, 2024).\n\nLet me fetch a couple pages and also query get_reported_figure for revenue/net_income for fiscal 2023 and 2024.\n\nLet me try fetching the SEC page and one or two roundup pages to see content.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_z3KeB4dbTYjQbeItXq767124",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/Archives/edgar/data/hd/10k-2024\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_kQxsim4ah4UvWgu5s6Jw8073",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ticker-journal.com/hd-1\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_yeLHN2VquX6BnOrR5Kon1055",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot second quarter fiscal 2024 results August 13 2024 comparable sales\"}"
+       }
+      },
+      {
+       "index": 3,
+       "id": "call_03_DxzoY7Nlgww4CN5VSfpU1952",
+       "type": "function",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"HD\", \"metric\": \"revenue\", \"fiscal_year\": 2023}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 2365,
+   "completion_tokens": 429,
+   "total_tokens": 2794,
+   "prompt_tokens_details": {
+    "cached_tokens": 1408
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 221
+   },
+   "prompt_cache_hit_tokens": 1408,
+   "prompt_cache_miss_tokens": 957,
+   "cost": 0.00036385799999999994,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}

@@ -1,0 +1,76 @@
+{
+ "hash": "68e38a8765916f40543260c913f326c2",
+ "model": "deepseek/deepseek-v4.1-flash",
+ "recorded_at": "2026-11-10T22:41:35Z",
+ "cost_usd": 0.00036205499999999996,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash",
+  "messages": 7,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 4114
+ },
+ "response": {
+  "id": "5203f07b-2269-465a-803d-220ba9e7959e",
+  "object": "chat.completion",
+  "created": 1794350492,
+  "model": "deepseek-flash",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "Search results are mostly low-quality roundup spam. Let me dig into the SEC filing page and look for specific quarterly results and recent news.",
+     "reasoning_content": "Search results are mostly junk (roundup spam domains). Let me try fetching the SEC 10-K page and searching more specifically for Q3 fiscal 2024 / Q2 fiscal 2024 results.\n\nNote: Home Depot's fiscal year: fiscal 2023 ended Jan 28, 2024. \"fiscal 2024\" 10-K would be filed March 2025 — not available as of Nov 2024. The snippet saying \"fiscal 2024\" with net sales 152,669 million — that's actually fiscal 2023 net sales ($152.7B). Hmm, but the tool's fiscal_year semantics: get_reported_figure with fiscal_year. Let me query.\n\nActually, careful: the search snippets are untrusted data. I should verify with get_reported_figure for the figures I rely on.\n\nLet me search for specific news: \"Home Depot third quarter 2024 earnings November 12\" and HD Q2 2024 results.\n\nAlso check the SEC filing for actual Q2 FY2024 numbers: net sales $43.2B, up 0.6%; comp sales -3.3%; diluted EPS $4.67.\n\nLet me do searches.",
+     "tool_calls": [
+      {
+       "index": 0,
+       "id": "call_00_ETTfc6bWtEGa0KzSqP6f2403",
+       "type": "function",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/Archives/edgar/data/hd/10k-2024\"}"
+       }
+      },
+      {
+       "index": 1,
+       "id": "call_01_mMnLPacOG7ODjPM0BJJn7103",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"\\\"Home Depot\\\" second quarter fiscal 2024 results net sales comparable sales diluted earnings per share\"}"
+       }
+      },
+      {
+       "index": 2,
+       "id": "call_02_6EQqIZO4QOAG5cmymijt4037",
+       "type": "function",
+       "function": {
+        "name": "web_search",
+        "arguments": "{\"query\": \"Home Depot Q3 2024 earnings date November 12 2024 analyst expectations\"}"
+       }
+      }
+     ]
+    },
+    "logprobs": null,
+    "finish_reason": "tool_calls"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 2363,
+   "completion_tokens": 426,
+   "total_tokens": 2789,
+   "prompt_tokens_details": {
+    "cached_tokens": 1408
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 251
+   },
+   "prompt_cache_hit_tokens": 1408,
+   "prompt_cache_miss_tokens": 955,
+   "cost": 0.00036205499999999996,
+   "cost_estimated": true
+  },
+  "system_fingerprint": "bc19ba97cbe016479903222bb1578db6"
+ }
+}
