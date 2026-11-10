@@ -1,0 +1,33 @@
+[project]
+name = "orderguard"
+version = "1.0.0"
+description = "Pre-trade guard for AI trading agents: agents may believe fake information; OrderGuard decides what they may do using numbers they can't touch, and checks the facts their orders rely on."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "mcp>=1.9,<2",
+    "pydantic>=2.7,<3",
+    "httpx>=0.27",
+    "cryptography>=42",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+detector = ["transformers>=4.40", "torch>=2.2"]
+
+[project.scripts]
+og = "orderguard_verify.cli:main"
+orderguard = "orderguard_guard.cli:main"
+og-lab = "orderguard_lab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["python/orderguard_verify", "python/orderguard_guard", "python/orderguard_lab"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

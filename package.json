@@ -1,0 +1,32 @@
+{
+  "name": "orderguard",
+  "version": "0.1.0",
+  "description": "Signed, mandate-bounded action receiver for financial agents",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "workspaces": [
+    "packages/sdk",
+    "packages/mcp-server"
+  ],
+  "bin": {
+    "orderguard-mcp": "./bin/orderguard-mcp.js"
+  },
+  "scripts": {
+    "test": "npm run test --workspace @orderguard/sdk && npm run test --workspace @orderguard/mcp-server && node --test examples/quickstart/cleanup.test.mjs && node --no-warnings --import tsx --test receiver/test/core.test.ts receiver/test/bridge.test.mjs",
+    "quickstart": "node examples/quickstart/run.mjs",
+    "invariants": "node --no-warnings --import tsx receiver/invariants/run.ts",
+    "bridge": "node receiver/bridge/serve.mjs",
+    "scan": "sh scripts/scan_committable.sh",
+    "check": "npm test && npm run quickstart && npm run invariants && npm run scan"
+  },
+  "dependencies": {
+    "@simplewebauthn/server": "^14.0.3"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "tsx": "^4.20.6"
+  }
+}
