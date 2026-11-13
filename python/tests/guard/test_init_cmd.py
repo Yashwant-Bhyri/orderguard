@@ -28,6 +28,7 @@ def test_init_creates_files_with_permissions(tmp_path):
 def test_signed_mandate_verifies_and_key_not_printed(tmp_path, capsys):
     d = tmp_path / "cfg"
     init_cmd.main(["--dir", str(d)])
+    assert "OG_PROVIDER=deepseek" in (d / ".env").read_text()
     out = capsys.readouterr().out
     secret = (d / "signing.key").read_text().strip()
     assert secret not in out
@@ -56,16 +57,16 @@ def test_doctor_reports_missing_key_without_leaking(tmp_path, monkeypatch):
     init_cmd.init(d)
     monkeypatch.setenv("ORDERGUARD_APP_TOKEN", "tok-secret-value")
     probs = init_cmd.doctor(d)
-    assert any("OPENROUTER_API_KEY is not set" in p for p in probs)
+    assert any("DEEPSEEK_API_KEY is not set" in p for p in probs)
     assert not any("tok-secret-value" in p for p in probs)
     secret = (d / "signing.key").read_text().strip()
     assert not any(secret in p for p in init_cmd.doctor(d))
-    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
     assert init_cmd.doctor(d) == []
 
 
 def test_doctor_detects_tamper_expiry_loose_perms_and_missing_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
     monkeypatch.setenv("ORDERGUARD_APP_TOKEN", "t")
     assert "does not exist" in init_cmd.doctor(tmp_path / "nope")[0]
     d = tmp_path / "cfg"
@@ -82,7 +83,7 @@ def test_doctor_detects_tamper_expiry_loose_perms_and_missing_dir(tmp_path, monk
 
 
 def test_doctor_unreachable_receiver(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "x")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
     monkeypatch.setenv("ORDERGUARD_APP_TOKEN", "t")
     d = tmp_path / "cfg"
     init_cmd.init(d)

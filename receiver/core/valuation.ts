@@ -17,6 +17,7 @@ export type DenyCode =
   | 'daily_cap'
   | 'mandate_revoked'
   | 'mandate_expired'
+  | 'mandate_changed'
   | 'idempotency_conflict'
   | 'approval_invalid'
   | 'not_held';

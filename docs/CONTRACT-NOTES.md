@@ -8,7 +8,8 @@
   - The bridge renews the anchor (same synthetic passkey ceremony) at 80% of its lifetime and on demand if a proposal finds it inactive. It never renews after `/revoke` or once the JSON mandate has expired. If renewal fails, proposals are denied as `anchor_unavailable`.
   - Details are in `docs/receiver/bridge.md`.
 - `/propose` returns extra fields: `reasons`, `replay`, `trustedPrice` and `notionalUsd`.
-- There is an extra endpoint, `POST /approve {orderId}`, for human step-up above `stepUpThresholdUsd`.
+- There is an extra endpoint, `POST /approve`, for step-up above `stepUpThresholdUsd`. Signed paper mode additionally requires a signature from the configured owner.
+- `orderguard paper-receiver` adds the signed paper mode. The owner can activate a contained draft on the running ledger, keeping prior fills, daily spending and idempotency. See [the bridge contract](receiver/bridge.md#signed-paper-mode).
 - The bridge's effects don't use r5's own paper ledger.
 
 ## §5.2 Figure check
@@ -16,19 +17,23 @@
 - `check_figures` writes on-demand SEC fetches to `data/verify/truth.db` unless `OG_TRUTH_DB` points elsewhere. The review gateway uses a working copy under `var/verify`.
 
 ## §4 Model calls
-- L6 (`orderguard_verify`) keeps its own `core/llm.py` client. Its recorded answers are keyed to that client's request format, so moving it would invalidate the committed replay cache. It reads the same `OPENROUTER_API_KEY` / `OG_ENV_FILE`.
-- Every other model call goes through `orderguard_guard.llm`.
+- All live L1–L6 calls use the shared `orderguard_guard.llm` client, spend cap, provider-floor check and spend log.
+- L6 reads its historical `data/verify/llm_cache` answers first in replay/record mode, preserving the older logical request cache. New recordings use the shared `data/replay` cache.
 
 ## Running locally
 - The bridge test and quickstart bind loopback ports. In a restricted sandbox that fails with `listen EPERM`, which is not a code failure.
 
 ## §4 Default model and provider
-- Live runs can go straight to DeepSeek's API (`OG_PROVIDER=deepseek`, key `DEEPSEEK_API_KEY`, model `deepseek-flash` = DeepSeek V4.1 Flash) as well as through OpenRouter. Both model clients support it.
+- The default is DeepSeek direct with `deepseek/deepseek-v4.1-flash-1017` mapped to API model `deepseek-flash`. OpenRouter remains an explicit override.
 - Replay keys hash the logical (OpenRouter-shaped) request, so recordings work with either provider.
-- DeepSeek's API does not report cost, so spend is estimated from token counts at OpenRouter list prices (`OG_PRICE_IN` / `OG_PRICE_OUT`). The estimate runs higher than DeepSeek's actual charges. The credit floor is checked against DeepSeek's `/user/balance`.
+- Live calls reserve against peak token prices and the requested output-token ceiling before POST, then settle against reported or estimated usage. On an ambiguous response timeout, the reserved exposure remains charged against the process cap and is logged as unconfirmed. The credit floor is checked against the configured provider's current balance.
 
 ## §5.3 Guard
 - The guarded arms get one extra tool, `get_reported_figure`, a trusted lookup of filed figures backed by L6. See docs/ARCHITECTURE.md.
+
+## §7 DeepSeek demo
+
+The replay demo uses the bundled lab cases `C0-web`, `B-revsplit`, `C-D8` and `A-htmlc-web`. The exact model replay uses lab tool receipts. Each case then checks its allowed proposals on a fresh signed loopback paper receiver. The L6 demonstration also re-evaluates the contradicted order captured in C-D8 repetition 1. The scripted demo uses the receiver inline and retains the original forward-split example. [Replay walkthrough](OPERATIONS.md#record-and-replay)
 
 ## Product additions beyond the contract
 - `orderguard init` / `orderguard doctor` (config dir, signing key, signed mandate, checks), `orderguard serve` (web API and dashboard, docs/APP.md), Docker and compose (docs/OPERATIONS.md).

@@ -109,7 +109,7 @@ Languages for hidden instructions: en, zh-Hans, zh-Hant, yue. Encodings: plain, 
 
 `og-lab sweep --seeds N --families B,C,D --arms naive,gate_only,full --concurrency K` runs seeds x techniques x arms jobs, each with its twin.
 - Offline (default, no `--model`): a scripted policy agent (`--policy cautious|credulous|mixed`) replaces the model, so 1,000+ worlds run in seconds for zero spend. Offline rows are labelled `offline` and tabulated apart from live ones.
-- Live (`--model deepseek/deepseek-v4.1-flash`): the sweep estimates first and refuses to start if the estimate exceeds `OG_BUDGET_USD`; all calls go through the guard LLM client (budget, replay cache, credit floor).
+- Live (`--model deepseek/deepseek-v4.1-flash-1017`): the sweep estimates first and refuses to start if the estimate exceeds `OG_BUDGET_USD`; all calls go through the guard LLM client (budget, replay cache, credit floor).
 - Resumable: output goes to `results/sweeps/<timestamp>.jsonl`; `--resume FILE` skips every (seed, case, arm, agent, rep) already in it.
 - `og-lab tables` summarises sweeps: success and dollars at risk per family and arm with 95% Wilson intervals, utility and false refusals on benign twins, per-layer attribution.
 

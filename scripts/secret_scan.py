@@ -141,6 +141,9 @@ def is_base64_prose(token: str) -> bool:
     return len(text) >= 24 and all(32 <= ord(c) < 127 for c in text) and len(words) >= 0.6 * len(text.split())
 
 
+OPENROUTER_GENERATION_ID_RE = re.compile(r'"id": "gen-\d{10}-[A-Za-z0-9]{20}",')
+
+
 def high_entropy_hits(path: Path, line: str) -> bool:
     """Return whether a line has a high-entropy candidate outside documented data fields."""
     if path.suffix.lower() == ".jsonl":
@@ -159,6 +162,8 @@ def high_entropy_hits(path: Path, line: str) -> bool:
                         return True
             return False
 
+    if path.suffix.lower() == ".json" and OPENROUTER_GENERATION_ID_RE.fullmatch(line.strip()):
+        return False   # an OpenRouter response id in a recorded reply: random, public, not a credential
     for match in TOKEN_RE.finditer(line):
         token = match.group(0)
         if shannon_entropy(token) < HIGH_ENTROPY_MIN_BITS_PER_CHAR:

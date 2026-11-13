@@ -75,7 +75,7 @@ def _write_private(path: Path, text: str) -> None:
         os.chmod(path, 0o600)           # also fixes the mode when the file already existed
 
 
-def init(directory: Path, provider: str = "openrouter", force: bool = False, now: dt.datetime | None = None) -> list[str]:
+def init(directory: Path, provider: str = "deepseek", force: bool = False, now: dt.datetime | None = None) -> list[str]:
     """Create the config directory. Returns the files written. Raises FileExistsError (no changes made) without `force`."""
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider {provider!r}")
@@ -146,7 +146,7 @@ def doctor(directory: Path | None = None, *, check_receiver: bool = True, now=No
             problems.append(f"{MANDATE_FILE} is not a valid mandate file")
 
     env = _read_env(d / ENV_FILE)
-    provider = os.getenv("OG_PROVIDER") or env.get("OG_PROVIDER") or "openrouter"
+    provider = os.getenv("OG_PROVIDER") or env.get("OG_PROVIDER") or "deepseek"
     key_name = PROVIDERS.get(provider)
     live = (os.getenv("OG_LLM") or env.get("OG_LLM") or "live").split()[0] != "replay"
     if key_name is None:
@@ -186,7 +186,7 @@ def _read_env(path: Path) -> dict[str, str]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="orderguard init", description="Create or check the OrderGuard configuration directory.")
     ap.add_argument("--dir", default=None, help="config directory (default $ORDERGUARD_HOME or ./var/orderguard)")
-    ap.add_argument("--provider", choices=sorted(PROVIDERS), default="openrouter")
+    ap.add_argument("--provider", choices=sorted(PROVIDERS), default="deepseek")
     ap.add_argument("--force", action="store_true", help="overwrite existing files (generates a new signing key)")
     ap.add_argument("--resign", action="store_true", help="re-sign an edited mandate.json with the existing key")
     ap.add_argument("--check", action="store_true", help="validate an existing directory instead of creating one")
@@ -205,8 +205,10 @@ def main(argv: list[str] | None = None) -> int:
         if not problems:
             print(f"ok: configuration in {d} is healthy")
             return 0
+        print(f"{len(problems)} problem{'s' if len(problems) != 1 else ''} found in {d}:")
         for p in problems:
             print("problem:", p)
+        print("fix them, then run `orderguard doctor` again. See docs/GUIDE.md (Troubleshooting) for each message.")
         return 1
     try:
         init(d, a.provider, a.force)
@@ -219,4 +221,5 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  2. put {PROVIDERS[a.provider]} and ORDERGUARD_APP_TOKEN in {d / ENV_FILE} (or export them)")
     print("  3. verify with `orderguard doctor`")
     print(f"  4. start the receiver: node receiver/bridge/serve.mjs --mandate {d / MANDATE_FILE}")
+    print("  5. open the dashboard: `orderguard serve` then http://127.0.0.1:8600")
     return 0

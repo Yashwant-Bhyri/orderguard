@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+from orderguard_guard.llm import SPEND
 import os
 import sys
 
@@ -60,7 +61,9 @@ def cmd_run(a):
             raise SystemExit(f"estimate US${e['total']['usd']:.3f} exceeds OG_BUDGET_USD US${budget:.3f}; refusing (raise OG_BUDGET_USD or reduce --cases/--reps)")
     prog = lambda i, n, r: print(f"[{i}/{n}] {r['case']} {r['arm']} success={r['success']} stopped_by={r['stopped_by']} err={r['error']}", file=sys.stderr) if a.verbose else None   # noqa: E731
     out, res = runner.run_many(cs, model, arms, a.reps, concurrency=a.concurrency, mode=mode, progress=prog)
-    print(f"wrote {out.name}: {len(res)} runs, errors {sum(1 for r in res if r.get('error'))}, spend US${sum(r['cost_usd'] for r in res):.4f}")
+    print(f"wrote {out.name}: {len(res)} runs, errors {sum(1 for r in res if r.get('error'))}, "
+          f"billed this process US${SPEND.spent_usd:.4f} over {SPEND.calls} live calls "
+          f"(transcript cost incl. replayed replies US${sum(r['cost_usd'] for r in res):.4f})")
 
 
 def cmd_adaptive(a):
@@ -71,7 +74,8 @@ def cmd_adaptive(a):
     out, res = adaptive.run_campaigns(a.attacker, a.target, goals, a.rounds, a.target_arm, concurrency=a.concurrency)
     for r in res:
         print(f"{r['goal']:16} -> " + (f"SUCCESS round {r['success_round']}" if r["success_round"] else ("attacker refused/broke" if r["incomplete"] else f"held {len(r['rounds'])} rounds")) + f"  refusals={r['refusals']}")
-    print(f"wrote {out.name}, spend US${sum(r['cost_usd'] for r in res):.4f}")
+    print(f"wrote {out.name}, billed this process US${SPEND.spent_usd:.4f} over {SPEND.calls} live calls "
+          f"(transcript cost incl. replayed replies US${sum(r['cost_usd'] for r in res):.4f})")
 
 
 def cmd_detect(a):
@@ -160,12 +164,12 @@ def main(argv=None) -> int:
     p = add("cases", cmd_cases, "list cases")
     p.add_argument("--cases", default="all")
     p = add("estimate", cmd_estimate, "expected calls and US$")
-    p.add_argument("--model", default="deepseek/deepseek-v4.1-flash")
+    p.add_argument("--model", default="deepseek/deepseek-v4.1-flash-1017")
     p.add_argument("--arms", default="naive,gate_only,full")
     p.add_argument("--reps", type=int, default=1)
     p.add_argument("--cases", default="all")
     p = add("run", cmd_run, "run cases through the arms")
-    p.add_argument("--model", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash"))
+    p.add_argument("--model", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash-1017"))
     p.add_argument("--arms", default="naive,gate_only,full")
     p.add_argument("--reps", type=int, default=1)
     p.add_argument("--cases", default="all")
@@ -175,15 +179,15 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p = add("adaptive", cmd_adaptive, "adaptive attacker campaigns")
-    p.add_argument("--attacker", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash"))
-    p.add_argument("--target", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash"))
+    p.add_argument("--attacker", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash-1017"))
+    p.add_argument("--target", default=os.environ.get("OG_MODEL", "deepseek/deepseek-v4.1-flash-1017"))
     p.add_argument("--target-arm", default="full", choices=["naive", "gate_only", "full"])
     p.add_argument("--goals", default="transfer,unlisted_ticker,oversize,sell,false_belief")
     p.add_argument("--rounds", type=int, default=5)
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument("--offline", action="store_true")
     p = add("detect", cmd_detect, "detector test")
-    p.add_argument("--screens", default="deepseek/deepseek-v4.1-flash")
+    p.add_argument("--screens", default="deepseek/deepseek-v4.1-flash-1017")
     p.add_argument("--deberta", action="store_true")
     p = add("tables", cmd_tables, "rebuild docs/RESULTS.md")
     p.add_argument("--check", action="store_true")

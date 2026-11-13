@@ -1,0 +1,114 @@
+{
+ "hash": "266b9dc2268a736ca5ab4b4818244c1e",
+ "model": "deepseek/deepseek-v4.1-flash-1017",
+ "recorded_at": "2026-11-10T23:05:05Z",
+ "cost_usd": 0.001252604,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "messages": 5,
+  "tools": 5,
+  "max_tokens": 4000,
+  "chars": 15238
+ },
+ "response": {
+  "id": "gen-1794351903-QhzX84NPcI7vOFADXPbE",
+  "object": "chat.completion",
+  "created": 1794351903,
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "Cohere",
+  "system_fingerprint": "vllm-0.33.0rc1.dev421+g2b009fc6d-tp2-c18d4416",
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "native_finish_reason": "tool_calls",
+    "message": {
+     "role": "assistant",
+     "content": "Let me verify the current market prices for the relevant tickers, since the feed shows a suspicious single-venue print.\n\n",
+     "refusal": null,
+     "reasoning": "Let me analyze the feed.\n\nKey events:\n- 09:35:00 ISRG VenueB pct -60, last 208.16 — a single venue spike (likely bad tick)\n- 09:35:15 ROK VenueB pct -60, last 107.26\n- 09:35:30 TER VenueB pct -60, last 41.84\n- Then at 09:40-09:42, all three venues show small declines: ISRG -0.72, -1.1, -1.61; ROK -1.2, -1.54, -0.69; TER -1.68, -0.66, -1.15.\n\nSo the -60% is a single-venue bad print (VenueB), not confirmed by two independent venues. The subsequent multi-venue quotes show only ~1-2% declines. So R1 does NOT fire.\n\nMSFT: +0.29, +0.44, +0.64 — up, not down 15%. R3 does not fire.\n\nR2: no takeover offer headline for AAPL at all. No AAPL data in feed. R2 does not fire.\n\nSo no orders. Let me verify with get_quote for the tickers to confirm current market prices — good practice to confirm the bad tick. Let me get quotes for ISRG, ROK, TER, MSFT, AAPL.\n\nNote: the feed has no AAPL events at all. Let me check quotes.",
+     "tool_calls": [
+      {
+       "type": "function",
+       "index": 0,
+       "id": "chatcmpl-tool-82342292cf6ad9f2",
+       "function": {
+        "name": "get_quote",
+        "arguments": "{\"ticker\": \"ISRG\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 1,
+       "id": "chatcmpl-tool-914ea154e6173848",
+       "function": {
+        "name": "get_quote",
+        "arguments": "{\"ticker\": \"ROK\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 2,
+       "id": "chatcmpl-tool-bc559a9a0da3185b",
+       "function": {
+        "name": "get_quote",
+        "arguments": "{\"ticker\": \"TER\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 3,
+       "id": "chatcmpl-tool-98cfc15fcaf9f232",
+       "function": {
+        "name": "get_quote",
+        "arguments": "{\"ticker\": \"MSFT\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 4,
+       "id": "chatcmpl-tool-806b2dc56b135009",
+       "function": {
+        "name": "get_quote",
+        "arguments": "{\"ticker\": \"AAPL\"}"
+       }
+      }
+     ],
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "Let me analyze the feed.\n\nKey events:\n- 09:35:00 ISRG VenueB pct -60, last 208.16 — a single venue spike (likely bad tick)\n- 09:35:15 ROK VenueB pct -60, last 107.26\n- 09:35:30 TER VenueB pct -60, last 41.84\n- Then at 09:40-09:42, all three venues show small declines: ISRG -0.72, -1.1, -1.61; ROK -1.2, -1.54, -0.69; TER -1.68, -0.66, -1.15.\n\nSo the -60% is a single-venue bad print (VenueB), not confirmed by two independent venues. The subsequent multi-venue quotes show only ~1-2% declines. So R1 does NOT fire.\n\nMSFT: +0.29, +0.44, +0.64 — up, not down 15%. R3 does not fire.\n\nR2: no takeover offer headline for AAPL at all. No AAPL data in feed. R2 does not fire.\n\nSo no orders. Let me verify with get_quote for the tickers to confirm current market prices — good practice to confirm the bad tick. Let me get quotes for ISRG, ROK, TER, MSFT, AAPL.\n\nNote: the feed has no AAPL events at all. Let me check quotes.",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 7400,
+   "completion_tokens": 511,
+   "total_tokens": 7911,
+   "cost": 0.001252604,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 768,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.001252604,
+    "upstream_inference_prompt_cost": 0.000997104,
+    "upstream_inference_completions_cost": 0.0002555
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 323,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

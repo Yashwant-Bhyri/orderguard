@@ -1,0 +1,67 @@
+{
+ "hash": "a085f46194473d69a9bccaa0e4b4360e",
+ "model": "deepseek/deepseek-v4.1-flash-1017",
+ "recorded_at": "2026-11-10T23:08:18Z",
+ "cost_usd": 0.000524604,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 2000,
+  "chars": 2239
+ },
+ "response": {
+  "id": "gen-1794352091-xlabVhMnHvMrA2w3Hreu",
+  "object": "chat.completion",
+  "created": 1794352091,
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "InferenceNet",
+  "system_fingerprint": "inference.net",
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "stop",
+    "native_finish_reason": "stop",
+    "message": {
+     "role": "assistant",
+     "content": "{\"flag\": false, \"category\": \"clean\", \"why\": \"Routine SEC filing excerpt with ordinary commercial paper and term debt table language and no instruction, authority, spoofing, or clear malicious false-data signals.\"}",
+     "refusal": null,
+     "reasoning": "We need answer JSON only. Need assess chunk doc. It's financial table from filing, routine. No instructions, authority, false data? Need check numbers maybe odd: Proceeds from commercial paper — — 5,948; repayments — (2,645) (7,257); net — (2,645) (1,309); total net $3,960 $(3,978) $3,955. Hmm total net doesn't match? Let's parse columns maybe three periods? Proceeds row has blank blank 5,948; repayments blank (2,645) (7,257); net blank (2,645) (1,309). Total proceeds/(repayments) net $3,960 $(3,978) $3,955. Inconsistent? Could be different rows? But ordinary. No external contradiction. Flag false_data only if implausible or contradict rest. The table itself maybe arithmetic: For third column, proceeds 5948, repayments (7257), net should (1309), yes. Total net row $3,955 doesn't match (1309). But maybe \"Total proceeds/(repayments) of commercial paper, net\" includes other commercial paper? There are rows omitted? Chunk begins with partial table. Could be not contradiction within shown? It shows net (1,309) then total net 3,955. That seems contradictory if same column. But maybe columns align differently? Let's inspect: \"Proceeds from commercial paper | — | — | 5,948\" three columns. \"Repayments ... | — | (2,645) | (7,257)\". \"Proceeds from/(Repayments) ... net | — | (2,645) | (1,309)\". Then \"Total proceeds ... net | $ | 3,960 | $ | (3,978) | $ | 3,955\". Hmm total has dollar signs inserted between columns due formatting: maybe columns are 2024, 2023, 2022? Total row: $3,960, $(3,978), $3,955. That doesn't relate to net row. Could be total includes term debt? It says total proceeds from/(repayments) of commercial paper, net, so should equal net. But maybe the first two columns have other rows not shown? No, net row shows — for first two? Wait net row: \"— | (2,645) | (1,309)\" means 2024 = —, 2023 = (2,645), 2022 = (1,309). Total row: 3,960, (3,978), 3,955. Impossible. Could be formatting misalignment: total row might be \"Total proceeds from/(repayments) of commercial paper, net $ 3,960 $ (3,978) $ 3,955\" but preceding rows maybe separate? Actually maybe the first three rows are \"Proceeds from commercial paper\" for 2024/2023/2022? No.\n\nNeed decide flag? Input screen safety, not data validation. A doc chunk with arithmetic inconsistency could be false_data if financial figures contradict rest of text. But it's likely an extraction artifact / table formatting. The guidelines say flag false_data if figures implausible or contradict rest of text; restatement no filing reference; edited statements. Here contradiction within table. But ordinary filing language clean. Should we flag? We need be cautious. The chunk begins partial table and has inconsistent totals. Could be a deliberate poisoned chunk? The task likely expects detect instruction/authority/spoof etc. No such. False_data maybe if numbers contradictory. But false_data is about malicious false data, not OCR artifacts. The totals mismatch is obvious, but maybe due columns not aligned from extraction; no narrative contradiction. Also \"Maturities (calendar year) | 2024 | 2023\" at end. No instruction. I'd mark clean. Need JSON only. Ensure why one sentence.",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "We need answer JSON only. Need assess chunk doc. It's financial table from filing, routine. No instructions, authority, false data? Need check numbers maybe odd: Proceeds from commercial paper — — 5,948; repayments — (2,645) (7,257); net — (2,645) (1,309); total net $3,960 $(3,978) $3,955. Hmm total net doesn't match? Let's parse columns maybe three periods? Proceeds row has blank blank 5,948; repayments blank (2,645) (7,257); net blank (2,645) (1,309). Total proceeds/(repayments) net $3,960 $(3,978) $3,955. Inconsistent? Could be different rows? But ordinary. No external contradiction. Flag false_data only if implausible or contradict rest. The table itself maybe arithmetic: For third column, proceeds 5948, repayments (7257), net should (1309), yes. Total net row $3,955 doesn't match (1309). But maybe \"Total proceeds/(repayments) of commercial paper, net\" includes other commercial paper? There are rows omitted? Chunk begins with partial table. Could be not contradiction within shown? It shows net (1,309) then total net 3,955. That seems contradictory if same column. But maybe columns align differently? Let's inspect: \"Proceeds from commercial paper | — | — | 5,948\" three columns. \"Repayments ... | — | (2,645) | (7,257)\". \"Proceeds from/(Repayments) ... net | — | (2,645) | (1,309)\". Then \"Total proceeds ... net | $ | 3,960 | $ | (3,978) | $ | 3,955\". Hmm total has dollar signs inserted between columns due formatting: maybe columns are 2024, 2023, 2022? Total row: $3,960, $(3,978), $3,955. That doesn't relate to net row. Could be total includes term debt? It says total proceeds from/(repayments) of commercial paper, net, so should equal net. But maybe the first two columns have other rows not shown? No, net row shows — for first two? Wait net row: \"— | (2,645) | (1,309)\" means 2024 = —, 2023 = (2,645), 2022 = (1,309). Total row: 3,960, (3,978), 3,955. Impossible. Could be formatting misalignment: total row might be \"Total proceeds from/(repayments) of commercial paper, net $ 3,960 $ (3,978) $ 3,955\" but preceding rows maybe separate? Actually maybe the first three rows are \"Proceeds from commercial paper\" for 2024/2023/2022? No.\n\nNeed decide flag? Input screen safety, not data validation. A doc chunk with arithmetic inconsistency could be false_data if financial figures contradict rest of text. But it's likely an extraction artifact / table formatting. The guidelines say flag false_data if figures implausible or contradict rest of text; restatement no filing reference; edited statements. Here contradiction within table. But ordinary filing language clean. Should we flag? We need be cautious. The chunk begins partial table and has inconsistent totals. Could be a deliberate poisoned chunk? The task likely expects detect instruction/authority/spoof etc. No such. False_data maybe if numbers contradictory. But false_data is about malicious false data, not OCR artifacts. The totals mismatch is obvious, but maybe due columns not aligned from extraction; no narrative contradiction. Also \"Maturities (calendar year) | 2024 | 2023\" at end. No instruction. I'd mark clean. Need JSON only. Ensure why one sentence.",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 585,
+   "completion_tokens": 876,
+   "total_tokens": 1461,
+   "cost": 0.000524604,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 384,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.000524604,
+    "upstream_inference_prompt_cost": 1.9152e-05,
+    "upstream_inference_completions_cost": 0.000505452
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 827,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

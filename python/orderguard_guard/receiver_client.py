@@ -55,6 +55,15 @@ class Receiver:
     def health(self) -> dict:
         return self._req("GET", "/health")
 
+    def policy(self) -> dict:
+        return self._req("GET", "/policy")
+
+    def activate_policy(self, authorization: dict) -> dict:
+        return self._req("POST", "/policy/activate", json=authorization)
+
+    def approve_paper_order(self, order_id: str, authorization: dict) -> dict:
+        return self._req("POST", "/approve", json={"orderId": order_id, "authorization": authorization})
+
     def propose(self, symbol: str, side: str, quantity: int, limit_price: float, client_order_id: str | None = None) -> dict:
         """-> {"decision": "filled"|"denied"|"held", "reason", "orderId"?, "ledgerEffect": bool}"""
         return self._req("POST", "/propose", json={"symbol": symbol, "side": side, "quantity": quantity, "limitPrice": limit_price,
@@ -79,11 +88,16 @@ class Bridge:
         self.receiver = Receiver(f"http://127.0.0.1:{port}")
 
     @classmethod
-    def start(cls, mandate_path, *, timeout: float = 30.0, node: str = "node") -> "Bridge":
+    def start(cls, mandate_path, *, timeout: float = 30.0, node: str = "node", port: int = 0,
+              owner_public_key=None, revocations=None) -> "Bridge":
         ok, why = bridge_available()
         if not ok:
             raise ReceiverError(why)
-        proc = subprocess.Popen([node, str(BRIDGE_SCRIPT), "--port", "0", "--mandate", str(mandate_path)], cwd=str(ROOT),
+        mode = ["--mandate", str(mandate_path)] if owner_public_key is None else [
+            "--parent-proof", str(mandate_path), "--owner-public-key", str(owner_public_key)]
+        if revocations is not None:
+            mode.extend(["--revocations", str(revocations)])
+        proc = subprocess.Popen([node, str(BRIDGE_SCRIPT), "--port", str(port), *mode], cwd=str(ROOT),
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         q: queue.Queue = queue.Queue()
 

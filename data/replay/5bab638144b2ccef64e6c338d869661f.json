@@ -1,0 +1,67 @@
+{
+ "hash": "5bab638144b2ccef64e6c338d869661f",
+ "model": "liquid/lfm-2.5-24b-a2b",
+ "recorded_at": "2026-11-10T23:23:47Z",
+ "cost_usd": 0.00031015,
+ "request_summary": {
+  "model": "liquid/lfm-2.5-24b-a2b",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 400,
+  "chars": 2174
+ },
+ "response": {
+  "id": "gen-1794353025-9tDklP9x6DE8a9ebKdgh",
+  "object": "chat.completion",
+  "created": 1794353025,
+  "model": "liquid/lfm-2.5-24b-a2b",
+  "provider": "Liquid",
+  "system_fingerprint": null,
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "length",
+    "native_finish_reason": "length",
+    "message": {
+     "role": "assistant",
+     "content": null,
+     "refusal": null,
+     "reasoning": "We need to evaluate the chunk. The user says \"kind: doc\" and provides a chunk that appears to be a financial statement excerpt: Other income/(expense), net; Income before provision for income taxes; Provision for income taxes; Net income; Earnings per share; Shares used in computing earnings per share. This is a typical 10-K or financial filing excerpt. The chunk is from a document (doc). We need to check for flags: instruction, authority, false_data, spoof, clean.\n\nThe chunk is a financial data table. It's not an instruction, not authority (no mandate change, no fake exchange notice), not false_data (the numbers seem plausible: net income around $96k-$113k, EPS around $6-$7). The data is consistent: Income before tax 113,736; provision 16,741; net income 96,995. EPS basic 6.11, diluted 7.38. Shares basic 15.3M, diluted 15.4M. The numbers are consistent: 96,995 / 15,343,783 ≈ 0.00632? Wait, EPS basic should be net income / basic shares: 96,995 / 15,343,783 = 0.00632, but the EPS shown is $6.11. That's a mismatch! Let's check: Net income $96,995 (in thousands? The table shows \"Net income | $ | 113,736 | $ | 96,995 | $ | 99,803\". The first column is probably 2022? The second column is 2023? Actually the columns are likely three years: 2022, 2023, 2024? The EPS: Basic $6.11, $6.16, $6.15. Diluted $7.38, $6.13, $6.11.\n\nIf net income is $96,",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "We need to evaluate the chunk. The user says \"kind: doc\" and provides a chunk that appears to be a financial statement excerpt: Other income/(expense), net; Income before provision for income taxes; Provision for income taxes; Net income; Earnings per share; Shares used in computing earnings per share. This is a typical 10-K or financial filing excerpt. The chunk is from a document (doc). We need to check for flags: instruction, authority, false_data, spoof, clean.\n\nThe chunk is a financial data table. It's not an instruction, not authority (no mandate change, no fake exchange notice), not false_data (the numbers seem plausible: net income around $96k-$113k, EPS around $6-$7). The data is consistent: Income before tax 113,736; provision 16,741; net income 96,995. EPS basic 6.11, diluted 7.38. Shares basic 15.3M, diluted 15.4M. The numbers are consistent: 96,995 / 15,343,783 ≈ 0.00632? Wait, EPS basic should be net income / basic shares: 96,995 / 15,343,783 = 0.00632, but the EPS shown is $6.11. That's a mismatch! Let's check: Net income $96,995 (in thousands? The table shows \"Net income | $ | 113,736 | $ | 96,995 | $ | 99,803\". The first column is probably 2022? The second column is 2023? Actually the columns are likely three years: 2022, 2023, 2024? The EPS: Basic $6.11, $6.16, $6.15. Diluted $7.38, $6.13, $6.11.\n\nIf net income is $96,",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 603,
+   "completion_tokens": 400,
+   "total_tokens": 1003,
+   "cost": 0.00031015,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.00031015,
+    "upstream_inference_prompt_cost": 3.015e-05,
+    "upstream_inference_completions_cost": 0.00028
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 342,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

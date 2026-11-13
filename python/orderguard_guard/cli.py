@@ -1,6 +1,6 @@
 """The `orderguard` command.
 
-  orderguard demo [--live-record]            end-to-end demo (CONTRACT §7); offline with OG_LLM=replay once recorded
+  orderguard demo [--scripted]               end-to-end demo (CONTRACT §7); offline with OG_LLM=replay once recorded
   orderguard check-order ORDER.json [...]    one order JSON through L5 + L6
   orderguard graph-demo                      the trigger-graph scenarios (L7)
   orderguard sign-mandate MANDATE.json       Ed25519-sign a mandate
@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import gate as G
@@ -145,6 +146,26 @@ def _layers(tr: dict) -> list[str]:
     return list(dict.fromkeys(seen)) or ["no order proposed"]
 
 
+def _print_scenario(title, tr, env, arm, out=print) -> None:
+    from .agent import tools_for_arm
+
+    names = [t["function"]["name"] for t in tools_for_arm(env, arm)]
+    out(f"\n{title}")
+    out(f"  tools offered: {', '.join(names)}  (transfer_funds offered: {'transfer_funds' in names})")
+    for call in tr["calls"]:
+        if call["name"] == "place_order":
+            args = call["args"]
+            gate = call["gate"] or {}
+            out(f"  order: {args.get('side')} {args.get('quantity')} {args.get('ticker')} @ {args.get('limit_price')}  -> {gate.get('decision', 'n/a')}")
+            for reason in gate.get("reasons", []):
+                out(f"    reason: {reason}")
+    for q in tr["quarantined"][:3]:
+        out(f"  quarantined by {q['layer']} ({q['category']}): {q['why'][:110]}")
+    out(f"  layers that acted: {'; '.join(_layers(tr))}")
+    if tr["error"]:
+        out(f"  agent error: {tr['error']}")
+
+
 def demo_scenarios(llm_name: str | None, receiver, mandate: dict, out=print) -> list[dict]:
     from orderguard_lab import envs as E       # the lab's tool environments (CONTRACT §5.4)
     from .agent import run_agent
@@ -174,20 +195,7 @@ def demo_scenarios(llm_name: str | None, receiver, mandate: dict, out=print) -> 
         env.mandate = mandate
         agent_llm = llm(title) if callable(llm) else llm
         tr = run_agent(agent_llm, task, env, arm, receiver=receiver)
-        names = [t["function"]["name"] for t in __import__("orderguard_guard.agent", fromlist=["x"]).tools_for_arm(env, arm)]
-        out(f"\n{title}")
-        out(f"  tools offered: {', '.join(names)}  (transfer_funds offered: {'transfer_funds' in names})")
-        for c in tr["calls"]:
-            if c["name"] == "place_order":
-                a = c["args"]
-                out(f"  order: {a.get('side')} {a.get('quantity')} {a.get('ticker')} @ {a.get('limit_price')}  -> {c['gate']['decision'] if c['gate'] else 'n/a'}")
-                for r in (c["gate"] or {}).get("reasons", []):
-                    out(f"    reason: {r}")
-        for q in tr["quarantined"][:3]:
-            out(f"  quarantined by {q['layer']} ({q['category']}): {q['why'][:110]}")
-        out(f"  layers that acted: {'; '.join(_layers(tr))}")
-        if tr["error"]:
-            out(f"  agent error: {tr['error']}")
+        _print_scenario(title, tr, env, arm, out)
         results.append({"scenario": title, "layers": _layers(tr), "transcript": tr})
     return results
 
@@ -218,46 +226,61 @@ def scripted_llm_factory():
 
 
 def cmd_demo(a) -> int:
-    from .receiver_client import Bridge, LocalLedger, bridge_available
     from .llm import SPEND
+    from .paper_commands import parent_proof
     from orderguard_lab import envs as E
     tomorrow = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
     priv, pub = G.generate_keypair()
     mandate = G.sign_mandate({**E.default_mandate(), "expiresAt": tomorrow}, priv)
     print("OrderGuard demo: mandate AAPL/MSFT, buy only, $10,000 per order, $20,000 per day, 5% price band")
     print("agent: SCRIPTED stand-in (no model is called)" if a.scripted else
-          f"LLM mode: {os.getenv('OG_LLM') or 'default'}; model: {a.model or os.getenv('OG_MODEL') or 'deepseek/deepseek-v4.1-flash'}")
+          f"LLM mode: {os.getenv('OG_LLM') or 'default'}; model: {a.model or os.getenv('OG_MODEL') or 'deepseek/deepseek-v4.1-flash-1017'}")
+    try:
+        with tempfile.TemporaryDirectory(prefix="og-demo-") as tmp:
+            path = Path(tmp) / "mandate.json"
+            public = Path(tmp) / "signing.pub"
+            if a.scripted:
+                path.write_text(json.dumps(mandate), encoding="utf-8")
+                with _demo_receiver(path) as receiver:
+                    runs = demo_scenarios(scripted_llm_factory(), receiver, mandate)
+                    complete = not any(r["transcript"]["error"] or r["transcript"]["screen_errors"] for r in runs)
+                    print("\nLedger snapshot:")
+                    print(json.dumps(receiver.snapshot(), indent=1))
+            else:
+                from .demo_replay import run_demo
+
+                path.write_text(json.dumps(parent_proof(mandate)), encoding="utf-8")
+                public.write_text(G.public_key_to_b64(pub), encoding="utf-8")
+                complete = run_demo(a.model, mandate, lambda: _demo_receiver(path, public), _print_scenario)
+    except Exception as e:
+        complete = False
+        print(f"\ndemo stopped: {type(e).__name__}: {e}")
+    if not complete:
+        print("Demo incomplete. See the scenario output above.")
+        print("hint: `orderguard demo --scripted` runs the whole demo offline with a scripted agent")
+    print()
+    graph_scenarios()
+    print(f"\nlive spend this run: US${SPEND.spent_usd:.4f} over {SPEND.calls} live calls")
+    return int(not complete)
+
+
+@contextmanager
+def _demo_receiver(path, public=None):
+    from .receiver_client import Bridge, LocalLedger, ReceiverError, bridge_available
+
     ok, why = bridge_available()
-    tmp = tempfile.mkdtemp(prefix="og-demo-")
-    mpath = Path(tmp) / "mandate.json"
-    mpath.write_text(json.dumps(mandate))
-    bridge = None
     if ok:
         try:
-            bridge = Bridge.start(mpath)
-            receiver = bridge.receiver
-            print(f"L8 receiver: bridge started on loopback port {bridge.port}")
-        except Exception as e:
-            print(f"NOTICE: the receiver bridge could not start ({e}); using the local paper ledger instead")
-            receiver = LocalLedger()
-    else:
-        print(f"NOTICE: the receiver bridge is not available ({why}); using the local paper ledger instead")
-        receiver = LocalLedger()
-    try:
-        try:
-            demo_scenarios(scripted_llm_factory() if a.scripted else a.model, receiver, mandate)
-        except Exception as e:
-            print(f"\ndemo stopped: {type(e).__name__}: {e}")
-            print("hint: `orderguard demo --scripted` runs the whole demo offline with a scripted agent")
-        print()
-        graph_scenarios()
-        print("\nLedger snapshot:")
-        print(json.dumps(receiver.snapshot(), indent=1))
-    finally:
-        if bridge:
-            bridge.stop()
-    print(f"\nlive spend this run: US${SPEND.spent_usd:.4f} over {SPEND.calls} live calls")
-    return 0
+            bridge = Bridge.start(path, owner_public_key=public)
+        except ReceiverError as exc:
+            why = str(exc)
+        else:
+            with bridge:
+                print(f"L8 receiver: bridge started on loopback port {bridge.port}")
+                yield bridge.receiver
+            return
+    print(f"NOTICE: the receiver bridge is unavailable ({why}). Using the local paper ledger instead.")
+    yield LocalLedger()
 
 
 def cmd_serve(a) -> int:
@@ -267,8 +290,11 @@ def cmd_serve(a) -> int:
 
 
 def main(argv=None) -> int:
+    from .paper_commands import add_commands
+
     ap = argparse.ArgumentParser(prog="orderguard", description="Pre-trade guard for AI trading agents.")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    add_commands(sub)
     p = sub.add_parser("demo", help="end-to-end demo (CONTRACT §7)")
     p.add_argument("--model", default=None)
     p.add_argument("--scripted", action="store_true", help="scripted agent and keyword screen: no key, no network, no recording")

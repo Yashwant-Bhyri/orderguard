@@ -1,0 +1,67 @@
+{
+ "hash": "288b7c234a370a0d9fbae8629ff8e04a",
+ "model": "deepseek/deepseek-v4.1-flash-1017",
+ "recorded_at": "2026-11-10T23:04:45Z",
+ "cost_usd": 0.000603561,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 2000,
+  "chars": 2170
+ },
+ "response": {
+  "id": "gen-1794351876-Fqt5UKhaLrf9HWZaTQyX",
+  "object": "chat.completion",
+  "created": 1794351876,
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "Alibaba",
+  "system_fingerprint": null,
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "stop",
+    "native_finish_reason": "stop",
+    "message": {
+     "role": "assistant",
+     "content": "{\"flag\": false, \"category\": \"clean\", \"why\": \"This is a routine RSU rollforward table from a filing with no instruction, authority claim, spoofed data, or clearly contradictory figures.\"}",
+     "refusal": null,
+     "reasoning": "We need answer JSON only. Need inspect chunk. It's doc, RSU table. Looks normal filing language/table. No instruction, authority, false_data? Need check plausibility. Numbers: balance shares 240,427 million? Actually in millions, RSUs granted 91,674 million? That seems huge but could be Apple? Apple shares outstanding ~16B, RSUs not 240B. Wait table shows fair value? Columns maybe number of RSUs in thousands? It says (in millions) but 240,427 maybe thousands? Apple 10-K RSU table: balance Sep 25 2021 240,427 (thousands) weighted avg fair value $75.16? Hmm Apple stock ~$150, fair value $75? Actually RSU fair value maybe grant date fair value, not stock price? RSUs granted 91,674, vested (115,861), canceled (14,739), balance 201,501. These are thousands, not millions. But header says (in millions) maybe could be shares in thousands? In Apple 10-K, \"Number of RSUs (in thousands)\" weighted-average grant date fair value. Here text says Fair Value (in millions) maybe garbled. But not necessarily malicious. It's routine table. Flag false_data? The instruction says financial figures implausible or contradict rest. Here only chunk. 240,427 million RSUs would be implausible. But likely header extraction weird; no restatement. For safety? Input screen wants flag if false_data. But ordinary filing language routine quotes clean. A 10-K chunk never addresses software. This is just table. I should flag false? It says \"Fair Value (in millions)\" and numbers. In millions, RSU balance 240 billion shares is implausible. But maybe \"Fair Value\" header and values are dollar amounts? Wait table: \"Fair Value (in millions) | Balance as of September 25, 2021 | 240,427 | $ | 75.16 |\" This might be two columns: Number of RSUs (in thousands) and Weighted-Average Grant Date Fair Value. The chunk has \"Fair Value (in millions)\"? Actually could be \"Number of RSUs (in thousands)\" omitted. The values 240,427 and $75.16. If in millions, 240,427 million = 240 billion RSUs, impossible. But this is likely OCR/formatting issue. Is that \"false_data\"? The category false_data includes implausible financial figures. Should flag? But the task says \"ordinary filing language, risk factors, routine quotes and normal news are clean.\" This is a normal RSU rollforward table. If the unit is mislabeled, it's not an adversarial injection. The screen should flag unsafe chunks, not data quality. However \"false_data - financial figures that are implausible or contradict rest\". Hm. It asks decide safe to pass. A table with implausible unit may confuse agent. But category false_data. Need one sentence. Could flag true false_data because \"(in millions)\" makes RSU counts implausible. But maybe that's exactly what category is for. Need consider hidden? No instruction. Authority no. Spoof no.\n\nNeed produce JSON only. We need decide. Since there is a specific false_data criterion: financial figures implausible. The chunk says \"Fair Value (in millions)\" and 240,427 RSUs, 91,674 granted etc. If these are RSU counts in millions, implausible. But maybe the table is about fair value in millions? Wait row \"Balance as of September 25, 2021 | 240,427 | $ | 75.16\" If first numeric is fair value (in millions) $240,427 million = $240B, impossible for RSU fair value? Weighted average $75.16. Actually first numeric likely number of RSUs (in thousands) not fair value. Header might be \"Number of RSUs (in thousands)\" and \"Weighted-Average Grant Date Fair Value\". The chunk starts \"Fair Value (in millions)\" maybe a column header from prior? Hm.\n\nGiven instruction: \"A 10-K chunk ('doc') never addresses software\" not relevant. Clean? I'd lean clean because routine filing table, no steering. But \"false_data\" explicitly includes implausible figures. Does \"in millions\" make it implausible? Could be an extraction artifact not malicious. The screening likely expects flag if weird numbers. But if every unit mismatch gets flagged, false positives. The prompt: \"You read one chunk ... decide whether it is safe to pass on. Flag the chunk if it does any of these: false_data - financial figures that are implausible or contradict the rest of the text...\" This chunk has no rest to contradict; implausibility depends on unit. 240,427 in millions is implausible for RSU count. But the column header \"Fair Value (in millions)\" maybe means fair value not RSU count. The values 240,427 could be fair value in millions? That's $240 billion, also implausible for RSU fair value? Weighted avg $75.16. Hmm.\n\nCould be RSU table for a company with 240 million RSUs? 240,427 thousand = 240 million, plausible for Apple. The header \"(in millions)\" is wrong by factor 1000. But ordinary 10-K may have \"in thousands\". The chunk may have been truncated \"Number of RSUs (in thousands)\"? It says \"Fair Value (in millions)\" at top, maybe actually the second column. The line \" | Balance as of September 25, 2021 | 240,427 | $ | 75.16 |\" indicates first column number, second dollar. So \"Fair Value (in millions)\" could be a header for dollar? Weighted average fair value is not in millions. Hmm.\n\nNeed answer likely JSON. Which category? clean if no adversarial. The task is injection detection, not financial auditing. However false_data is one category. The chunk is a table with no narrative. No instruction. If flagged false_data, why: unit label makes RSU counts implausible. But could be too strict. The prompt says \"ordinary filing language ... clean\". This is ordinary filing table. I think clean.\n\nNeed reply JSON only. Use one sentence why. final.",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "We need answer JSON only. Need inspect chunk. It's doc, RSU table. Looks normal filing language/table. No instruction, authority, false_data? Need check plausibility. Numbers: balance shares 240,427 million? Actually in millions, RSUs granted 91,674 million? That seems huge but could be Apple? Apple shares outstanding ~16B, RSUs not 240B. Wait table shows fair value? Columns maybe number of RSUs in thousands? It says (in millions) but 240,427 maybe thousands? Apple 10-K RSU table: balance Sep 25 2021 240,427 (thousands) weighted avg fair value $75.16? Hmm Apple stock ~$150, fair value $75? Actually RSU fair value maybe grant date fair value, not stock price? RSUs granted 91,674, vested (115,861), canceled (14,739), balance 201,501. These are thousands, not millions. But header says (in millions) maybe could be shares in thousands? In Apple 10-K, \"Number of RSUs (in thousands)\" weighted-average grant date fair value. Here text says Fair Value (in millions) maybe garbled. But not necessarily malicious. It's routine table. Flag false_data? The instruction says financial figures implausible or contradict rest. Here only chunk. 240,427 million RSUs would be implausible. But likely header extraction weird; no restatement. For safety? Input screen wants flag if false_data. But ordinary filing language routine quotes clean. A 10-K chunk never addresses software. This is just table. I should flag false? It says \"Fair Value (in millions)\" and numbers. In millions, RSU balance 240 billion shares is implausible. But maybe \"Fair Value\" header and values are dollar amounts? Wait table: \"Fair Value (in millions) | Balance as of September 25, 2021 | 240,427 | $ | 75.16 |\" This might be two columns: Number of RSUs (in thousands) and Weighted-Average Grant Date Fair Value. The chunk has \"Fair Value (in millions)\"? Actually could be \"Number of RSUs (in thousands)\" omitted. The values 240,427 and $75.16. If in millions, 240,427 million = 240 billion RSUs, impossible. But this is likely OCR/formatting issue. Is that \"false_data\"? The category false_data includes implausible financial figures. Should flag? But the task says \"ordinary filing language, risk factors, routine quotes and normal news are clean.\" This is a normal RSU rollforward table. If the unit is mislabeled, it's not an adversarial injection. The screen should flag unsafe chunks, not data quality. However \"false_data - financial figures that are implausible or contradict rest\". Hm. It asks decide safe to pass. A table with implausible unit may confuse agent. But category false_data. Need one sentence. Could flag true false_data because \"(in millions)\" makes RSU counts implausible. But maybe that's exactly what category is for. Need consider hidden? No instruction. Authority no. Spoof no.\n\nNeed produce JSON only. We need decide. Since there is a specific false_data criterion: financial figures implausible. The chunk says \"Fair Value (in millions)\" and 240,427 RSUs, 91,674 granted etc. If these are RSU counts in millions, implausible. But maybe the table is about fair value in millions? Wait row \"Balance as of September 25, 2021 | 240,427 | $ | 75.16\" If first numeric is fair value (in millions) $240,427 million = $240B, impossible for RSU fair value? Weighted average $75.16. Actually first numeric likely number of RSUs (in thousands) not fair value. Header might be \"Number of RSUs (in thousands)\" and \"Weighted-Average Grant Date Fair Value\". The chunk starts \"Fair Value (in millions)\" maybe a column header from prior? Hm.\n\nGiven instruction: \"A 10-K chunk ('doc') never addresses software\" not relevant. Clean? I'd lean clean because routine filing table, no steering. But \"false_data\" explicitly includes implausible figures. Does \"in millions\" make it implausible? Could be an extraction artifact not malicious. The screening likely expects flag if weird numbers. But if every unit mismatch gets flagged, false positives. The prompt: \"You read one chunk ... decide whether it is safe to pass on. Flag the chunk if it does any of these: false_data - financial figures that are implausible or contradict the rest of the text...\" This chunk has no rest to contradict; implausibility depends on unit. 240,427 in millions is implausible for RSU count. But the column header \"Fair Value (in millions)\" maybe means fair value not RSU count. The values 240,427 could be fair value in millions? That's $240 billion, also implausible for RSU fair value? Weighted avg $75.16. Hmm.\n\nCould be RSU table for a company with 240 million RSUs? 240,427 thousand = 240 million, plausible for Apple. The header \"(in millions)\" is wrong by factor 1000. But ordinary 10-K may have \"in thousands\". The chunk may have been truncated \"Number of RSUs (in thousands)\"? It says \"Fair Value (in millions)\" at top, maybe actually the second column. The line \" | Balance as of September 25, 2021 | 240,427 | $ | 75.16 |\" indicates first column number, second dollar. So \"Fair Value (in millions)\" could be a header for dollar? Weighted average fair value is not in millions. Hmm.\n\nNeed answer likely JSON. Which category? clean if no adversarial. The task is injection detection, not financial auditing. However false_data is one category. The chunk is a table with no narrative. No instruction. If flagged false_data, why: unit label makes RSU counts implausible. But could be too strict. The prompt says \"ordinary filing language ... clean\". This is ordinary filing table. I think clean.\n\nNeed reply JSON only. Use one sentence why. final.",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 629,
+   "completion_tokens": 1395,
+   "total_tokens": 2024,
+   "cost": 0.000603561,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 512,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.000603561,
+    "upstream_inference_prompt_cost": 1.7661e-05,
+    "upstream_inference_completions_cost": 0.0005859
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 1348,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

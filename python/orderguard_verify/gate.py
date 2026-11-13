@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import date
+from functools import partial
 
 from .core import evalrun
 from .core.llm import ask_json
@@ -20,11 +21,17 @@ from .native import arms, run
 from .paths import RESULTS
 
 BASELINE = RESULTS / "gate_baseline.json"
+# This regression set has recordings only for its original model. Keep its historical
+# answer source fixed so changes to the product's runtime default cannot turn replay
+# misses into apparent verifier regressions. New live model runs use the configured
+# DeepSeek default; this pin applies only to the frozen offline canary.
+SYNTHETIC_REPLAY_MODEL = "nvidia/nemotron-3.5-super-vl:free"
 
 
 def measure() -> dict:
     os.environ["OG_LLM"] = "replay"
-    s = evalrun.summarise(evalrun.run_all(evalrun.load_cases(CASES), make_gateway, ask_json, workers=8))
+    replay_ask = partial(ask_json, model=SYNTHETIC_REPLAY_MODEL)
+    s = evalrun.summarise(evalrun.run_all(evalrun.load_cases(CASES), make_gateway, replay_ask, workers=8))
     memos = json.loads((run.DATA / "native" / "memos.json").read_text())
     labels = run.load_labels("dev")
     ids = sorted({lab["memo_id"] for lab in labels})

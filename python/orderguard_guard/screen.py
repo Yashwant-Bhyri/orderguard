@@ -14,12 +14,15 @@ import hashlib
 import json
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Iterable
 
 from .llm import as_llm, parse_json
 
 CLASSIFIER_MODES = ("off", "prefilter", "ensemble")
+CASCADE_MODES = ("off", "local+main", "local+fast", "local+fast+main")
+DEFAULT_FAST_MODEL = "z-ai/glm-5.3-flash"
 KINDS = ("doc", "web", "feed", "tool")
 CATEGORIES = ("instruction", "authority", "false_data", "spoof", "clean")
 
@@ -42,6 +45,14 @@ SYSTEM = (
 )
 
 
+
+# ---- fast-model profiles ---------------------------------------------------------------------------------------------------
+# A profile applies only to the model it names (looked up by model id). The default DeepSeek screen and the fast screens have none (the table is empty
+# today, kept as the hook): they send the SYSTEM prompt above unchanged with the same `reasoning` field. Liquid's LFM-2.5 turned out to be a reasoning
+# model too: with max_tokens 400 it ran out of tokens before answering, so it uses the default body.
+PROFILES: dict[str, dict] = {}
+
+
 def content_hash(model: str, kind: str, chunk: str) -> str:
     return hashlib.sha256(f"{model}\x1f{kind}\x1f{chunk}".encode("utf-8")).hexdigest()[:32]
 
@@ -49,7 +60,8 @@ def content_hash(model: str, kind: str, chunk: str) -> str:
 class Screen:
     """`Screen(model).check(chunk, kind)`; model is a name or any object with `.ask_json`/`.chat`."""
 
-    def __init__(self, model=None, *, cache_path: Path | str | None = None, max_chars: int = 20000, classifier: str | None = None):
+    def __init__(self, model=None, *, cache_path: Path | str | None = None, max_chars: int = 20000, classifier: str | None = None,
+                 cascade: str | None = None, fast_model=None, profile: dict | None = None):
         self.llm = as_llm(model) if model is not None else as_llm(None)
         self.model_name = getattr(self.llm, "model", str(model))
         self.cache_path = Path(cache_path) if cache_path else None
@@ -68,6 +80,22 @@ class Screen:
         self.classifier_mode = mode
         self.classifier_hits = 0
         self._clf = None
+        # Optional per-model request profile (fast models); None for the default screen, whose request bodies never change.
+        self.profile = profile if profile is not None else PROFILES.get(self.model_name)
+        self.latency_ms: dict[str, float] = {}      # content hash -> wall time of the live-or-replayed call (0 for replay hits is not meaningful)
+        self.call_cost: dict[str, float] = {}
+        # Cascade (OG_SCREEN_CASCADE, default off): local classifier + decision model, then a fast model, then this (main) model.
+        cmode = (cascade if cascade is not None else os.environ.get("OG_SCREEN_CASCADE", "off")).strip().lower() or "off"
+        if cmode not in CASCADE_MODES:
+            raise ValueError(f"OG_SCREEN_CASCADE must be one of {CASCADE_MODES}, got {cmode!r}")
+        self.cascade_mode = cmode
+        self.cascade_stats = {"local_pass": 0, "local_quarantine": 0, "fast": 0, "main": 0}
+        self._fast = None
+        if cmode != "off":
+            mode = mode if mode != "off" else "ensemble"        # the cascade needs the local scorer
+            if "fast" in cmode:
+                fm = fast_model if fast_model is not None else (os.environ.get("OG_SCREEN_FAST_MODEL") or DEFAULT_FAST_MODEL)
+                self._fast = fm if isinstance(fm, Screen) else Screen(fm, classifier="off", cascade="off")
         if mode != "off":
             from . import classifier as _c
             self._clf = _c.get()
@@ -81,6 +109,8 @@ class Screen:
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}")
         local = self._clf.score(chunk) if self._clf is not None else None
+        if self.cascade_mode != "off":
+            return self._cascade_check(chunk, kind, local)
         if local is not None and self.classifier_mode == "prefilter" and local["p_attack"] >= self._clf.prefilter_threshold:
             self.classifier_hits += 1
             return self._local_verdict(local)
@@ -94,6 +124,39 @@ class Screen:
                 self.cache[h] = verdict
                 self._save()
         return self._merge(dict(verdict, cached=False), local)
+
+    def _main_check(self, chunk: str, kind: str) -> dict:
+        h = content_hash(self.model_name, kind, chunk)
+        with self._lock:
+            if h in self.cache:
+                return dict(self.cache[h], cached=True)
+        verdict = self._ask(chunk, kind)
+        if verdict["category"] != "error":
+            with self._lock:
+                self.cache[h] = verdict
+                self._save()
+        return dict(verdict, cached=False)
+
+    def _cascade_check(self, chunk: str, kind: str, local: dict) -> dict:
+        """Stage 1 local (free, ms): p_attack under `clean_below` passes, at or above `attack_above` is quarantined. The uncertain band goes to
+        stage 2 (fast model, if configured): a clean answer passes, a flag goes to stage 3 (this model, if configured) which decides, else the fast flag stands.
+        Without a fast model the uncertain band goes straight to this model. Errors fail closed, as everywhere."""
+        p = local["p_attack"]
+        if p < self._clf.clean_below:
+            self.cascade_stats["local_pass"] += 1
+            return {"flag": False, "category": "clean", "why": f"local stage: p_attack {p:.3f} under the pass threshold", "cached": False, "source": "cascade:local", "p_attack": p}
+        if p >= self._clf.attack_above:
+            self.cascade_stats["local_quarantine"] += 1
+            return dict(self._local_verdict(local), source="cascade:local")
+        if self._fast is None:
+            self.cascade_stats["main"] += 1
+            return dict(self._main_check(chunk, kind), source="cascade:main", p_attack=p)
+        self.cascade_stats["fast"] += 1
+        f = self._fast.check(chunk, kind)
+        if not f["flag"] or "main" not in self.cascade_mode:
+            return dict(f, source="cascade:fast", p_attack=p)
+        self.cascade_stats["main"] += 1
+        return dict(self._main_check(chunk, kind), source="cascade:main", p_attack=p)
 
     def _local_verdict(self, local: dict) -> dict:
         top = ", ".join(f["feature"] for f in local["top_features"][:3])
@@ -114,12 +177,24 @@ class Screen:
 
     def _ask(self, chunk: str, kind: str) -> dict:
         user = f"kind: {kind}\n<chunk>\n{chunk[:self.max_chars]}\n</chunk>"
+        h = content_hash(self.model_name, kind, chunk)
         try:
             self.calls += 1
-            resp = self.llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], max_tokens=2000,
-                                 extra={"reasoning": {"effort": "low"}})
-            self.cost_usd += float((resp.get("_meta") or {}).get("cost_usd") or 0.0)
-            d = parse_json(resp["choices"][0]["message"].get("content") or "")
+            t0 = time.perf_counter()
+            if self.profile is None:      # the default screen: exactly the request it has always sent
+                resp = self.llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], max_tokens=2000,
+                                     extra={"reasoning": {"effort": "low"}})
+            else:
+                pr = self.profile
+                msgs = ([{"role": "system", "content": pr["system"]}] if pr.get("system") else []) + [{"role": "user", "content": user}]
+                resp = self.llm.chat(msgs, max_tokens=pr.get("max_tokens", 2000), extra=pr.get("extra"))
+            if not (resp.get("_meta") or {}).get("cached"):      # a replayed recording has no meaningful latency
+                self.latency_ms[h] = (time.perf_counter() - t0) * 1000.0
+            c = float((resp.get("_meta") or {}).get("cost_usd") or 0.0)
+            self.call_cost[h] = c
+            self.cost_usd += c
+            text = resp["choices"][0]["message"].get("content") or ""
+            d = parse_json(text)
             cat = str(d.get("category", "")).strip().lower()
             flag = bool(d.get("flag"))
             if cat not in CATEGORIES:

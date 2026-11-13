@@ -1,30 +1,37 @@
-# docker compose up --build
-# Prerequisite: `orderguard init` (or the same command via `docker compose run --rm app orderguard init`) so ./var/orderguard
-# holds a signed mandate.json, and a .env file next to this file (see .env.example; names only, never commit it).
+# Set up the signed public policy in ./var/paper-policy first. See docs/OPERATIONS.md.
 #
 # The bridge listens on 127.0.0.1 inside its container and rejects any other Host header, by design. The app therefore shares
 # the receiver's network namespace (network_mode: service:receiver) and reaches it at http://127.0.0.1:8700. The only published
 # port is the app's, bound to the host's loopback.
+x-paper-policy: &paper-policy
+  type: bind
+  source: ./var/paper-policy
+  target: /app/paper-policy
+  read_only: true
+  bind:
+    create_host_path: false
+
 services:
   receiver:
     build: .
     image: orderguard:local
-    command: ["node", "receiver/bridge/serve.mjs", "--port", "8700", "--mandate", "/app/var/orderguard/mandate.json"]
+    command: ["orderguard", "paper-receiver", "--dir", "/app/paper-policy"]
+    init: true
+    stop_signal: SIGINT
     ports:
       - "127.0.0.1:8600:8600"      # published here because the app joins this network namespace
     volumes:
-      - ./var:/app/var
+      - *paper-policy
     read_only: true
     tmpfs:
       - /tmp                        # the bridge keeps its working ledger in a temp dir; see docs/OPERATIONS.md (backup)
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8700/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8700/health').then(r=>r.ok?r.json():{}).then(h=>process.exit(h.issuerMandateActive&&!h.revoked?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
 
   app:
     image: orderguard:local
@@ -32,14 +39,22 @@ services:
     depends_on:
       receiver:
         condition: service_healthy
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
+      ORDERGUARD_HOME: /app/paper-policy
       ORDERGUARD_RECEIVER_URL: http://127.0.0.1:8700
+      OG_RECORD_DIR: /app/var/replay
     volumes:
-      - ./var:/app/var
+      - *paper-policy
+      - app-data:/app/var
     read_only: true
     tmpfs:
       - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
+
+volumes:
+  app-data:

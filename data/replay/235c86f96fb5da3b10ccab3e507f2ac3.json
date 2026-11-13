@@ -1,0 +1,67 @@
+{
+ "hash": "235c86f96fb5da3b10ccab3e507f2ac3",
+ "model": "deepseek/deepseek-v4.1-flash-1017",
+ "recorded_at": "2026-11-10T23:33:22Z",
+ "cost_usd": 0.000705302,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "messages": 2,
+  "tools": 0,
+  "max_tokens": 2000,
+  "chars": 1780
+ },
+ "response": {
+  "id": "gen-1794353596-F3hywAV4wjmggzCPdHu1",
+  "object": "chat.completion",
+  "created": 1794353596,
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "Cohere",
+  "system_fingerprint": "vllm-0.33.0rc1.dev421+g2b009fc6d-tp2-c18d4416",
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "stop",
+    "native_finish_reason": "stop",
+    "message": {
+     "role": "assistant",
+     "content": "{\"flag\": false, \"category\": \"clean\", \"why\": \"This is an ordinary partial financial table from a filing with no instruction, authority claim, spoofing, or clear false data.\"}",
+     "refusal": null,
+     "reasoning": "We need answer JSON only. Need assess chunk doc financial table. It shows numbers: 64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270 Cost of revenue. Need determine if safe. It's ordinary filing table fragment. No instruction, authority, false_data? Need check plausibility: Total revenue 245,122 vs components? Service and other 180,349 plus maybe 64,699 = 245,048 not 245,122. Hmm numbers: 64,699, 72,732, Service and other 180,349, 147,216, 125,538, Total revenue 245,122, 211,915, 198,270. Could be three years columns. First column: 64,699 + 180,349 = 245,048, not 245,122 (off 74). Maybe there is another line omitted? The chunk starts mid-table. Could be product revenue 64,699 and service 180,349 total 245,048, but total says 245,122. Off by 74. Could be rounding? 74 is not rounding. But chunk may omit a line? It says \"64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270\". Maybe first line is \"Product\" with values 64,699, 64,699? Wait formatting: 64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270. Could be columns: 2023, 2022, 2021? Product revenue 64,699, 64,699? Hmm.\n\nNeed decide flag false_data? The instruction says financial figures implausible or contradict rest of text. Here total revenue doesn't equal sum of visible components. But chunk is partial; maybe missing line. Need be cautious. The task likely expects clean for ordinary filing language. But there is a discrepancy. Let's parse: \"64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270 Cost of revenue:\" It might be a table with columns: 2024, 2023, 2022. First row maybe \"Product\" values 64,699, 64,699? Actually \"64,699 $ 72,732\" maybe two numbers. Then \"Service and other\" 180,349 147,216 125,538. Total revenue 245,122 211,915 198,270. If first row has 64,699 and 72,732? Then first column total = 64,699 + 180,349 = 245,048, not 245,122. Second column = 72,732 + 147,216 = 219,948, not 211,915. So not matching. Maybe first row is \"Product\" with 64,699, 64,699? No.\n\nCould be \"64,699 $ 72,732\" are not product revenue but something else. The table fragment may be from a 10-K where total revenue is 245,122 and service and other 180,349, so product revenue should be 64,773. The visible 64,699 is off by 74. Could be typo in chunk? But false_data category includes financial figures that contradict rest of text. This is a contradiction. However, the chunk is just a fragment; maybe the 64,699 is not product revenue but \"Cost of revenue\" or something. The line \"Cost of revenue:\" appears after total revenue, so 64,699 could be \"Cost of revenue\" for prior? Wait order: \n64,699\n$\n72,732\nService and other\n180,349\n147,216\n125,538\nTotal revenue\n245,122\n211,915\n198,270\nCost of revenue:\n\nMaybe the first line is \"Product\" but missing label. It could be \"Product\" 64,699, 72,732, ? Then Service and other 180,349, 147,216, 125,538. Total revenue 245,122, 211,915, 198,270. For 2022: 72,732 + 125,538 = 198,270 exactly. For 2023: 64,699 + 147,216 = 211,915 exactly. For 2024: 64,699? Wait first column: 64,699 + 180,349 = 245,048, not 245,122. But if first column product is 64,773, then total 245,122. The visible 64,699 might be 2023 product, and 72,732 is 2022 product. Then 2024 product missing? Let's align:\nColumns: 2024, 2023, 2022\nProduct revenue: [missing?] 64,699, 72,732\nService and other: 180,349, 147,216, 125,538\nTotal revenue: 245,122, 211,915, 198,270\nThen 2023: 64,699 + 147,216 = 211,915 yes. 2022: 72,732 + 125,538 = 198,270 yes. 2024: product = 245,122 - 180,349 = 64,773. The chunk starts with \"64,699 $ 72,732\" maybe the 2024 product is omitted? Actually if first line is \"Product\" with values 64,773, 64,699, 72,732, the chunk would show 64,773 64,699 72,732. But it shows 64,699 $ 72,732. The 64,773 is missing. So the chunk may have omitted the first number due to chunk boundary. The \"$\" might be a column separator? Hmm.\n\nThus not necessarily false. It's a partial table. The safe answer likely clean. Need output JSON only. Category clean. Why one sentence. Ensure no extra.",
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "We need answer JSON only. Need assess chunk doc financial table. It shows numbers: 64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270 Cost of revenue. Need determine if safe. It's ordinary filing table fragment. No instruction, authority, false_data? Need check plausibility: Total revenue 245,122 vs components? Service and other 180,349 plus maybe 64,699 = 245,048 not 245,122. Hmm numbers: 64,699, 72,732, Service and other 180,349, 147,216, 125,538, Total revenue 245,122, 211,915, 198,270. Could be three years columns. First column: 64,699 + 180,349 = 245,048, not 245,122 (off 74). Maybe there is another line omitted? The chunk starts mid-table. Could be product revenue 64,699 and service 180,349 total 245,048, but total says 245,122. Off by 74. Could be rounding? 74 is not rounding. But chunk may omit a line? It says \"64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270\". Maybe first line is \"Product\" with values 64,699, 64,699? Wait formatting: 64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270. Could be columns: 2023, 2022, 2021? Product revenue 64,699, 64,699? Hmm.\n\nNeed decide flag false_data? The instruction says financial figures implausible or contradict rest of text. Here total revenue doesn't equal sum of visible components. But chunk is partial; maybe missing line. Need be cautious. The task likely expects clean for ordinary filing language. But there is a discrepancy. Let's parse: \"64,699 $ 72,732 Service and other 180,349 147,216 125,538 Total revenue 245,122 211,915 198,270 Cost of revenue:\" It might be a table with columns: 2024, 2023, 2022. First row maybe \"Product\" values 64,699, 64,699? Actually \"64,699 $ 72,732\" maybe two numbers. Then \"Service and other\" 180,349 147,216 125,538. Total revenue 245,122 211,915 198,270. If first row has 64,699 and 72,732? Then first column total = 64,699 + 180,349 = 245,048, not 245,122. Second column = 72,732 + 147,216 = 219,948, not 211,915. So not matching. Maybe first row is \"Product\" with 64,699, 64,699? No.\n\nCould be \"64,699 $ 72,732\" are not product revenue but something else. The table fragment may be from a 10-K where total revenue is 245,122 and service and other 180,349, so product revenue should be 64,773. The visible 64,699 is off by 74. Could be typo in chunk? But false_data category includes financial figures that contradict rest of text. This is a contradiction. However, the chunk is just a fragment; maybe the 64,699 is not product revenue but \"Cost of revenue\" or something. The line \"Cost of revenue:\" appears after total revenue, so 64,699 could be \"Cost of revenue\" for prior? Wait order: \n64,699\n$\n72,732\nService and other\n180,349\n147,216\n125,538\nTotal revenue\n245,122\n211,915\n198,270\nCost of revenue:\n\nMaybe the first line is \"Product\" but missing label. It could be \"Product\" 64,699, 72,732, ? Then Service and other 180,349, 147,216, 125,538. Total revenue 245,122, 211,915, 198,270. For 2022: 72,732 + 125,538 = 198,270 exactly. For 2023: 64,699 + 147,216 = 211,915 exactly. For 2024: 64,699? Wait first column: 64,699 + 180,349 = 245,048, not 245,122. But if first column product is 64,773, then total 245,122. The visible 64,699 might be 2023 product, and 72,732 is 2022 product. Then 2024 product missing? Let's align:\nColumns: 2024, 2023, 2022\nProduct revenue: [missing?] 64,699, 72,732\nService and other: 180,349, 147,216, 125,538\nTotal revenue: 245,122, 211,915, 198,270\nThen 2023: 64,699 + 147,216 = 211,915 yes. 2022: 72,732 + 125,538 = 198,270 yes. 2024: product = 245,122 - 180,349 = 64,773. The chunk starts with \"64,699 $ 72,732\" maybe the 2024 product is omitted? Actually if first line is \"Product\" with values 64,773, 64,699, 72,732, the chunk would show 64,773 64,699 72,732. But it shows 64,699 $ 72,732. The 64,773 is missing. So the chunk may have omitted the first number due to chunk boundary. The \"$\" might be a column separator? Hmm.\n\nThus not necessarily false. It's a partial table. The safe answer likely clean. Need output JSON only. Category clean. Why one sentence. Ensure no extra.",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 455,
+   "completion_tokens": 1387,
+   "total_tokens": 1842,
+   "cost": 0.000705302,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 384,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.000705302,
+    "upstream_inference_prompt_cost": 1.1802e-05,
+    "upstream_inference_completions_cost": 0.0006935
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 1343,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

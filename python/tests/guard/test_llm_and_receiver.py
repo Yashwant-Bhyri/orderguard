@@ -17,6 +17,7 @@ def make(tmp_path, handler, mode="record", budget=0.05):
 
 @pytest.fixture(autouse=True)
 def key(monkeypatch):
+    monkeypatch.setenv("OG_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-real")
     monkeypatch.setattr(L.LLM, "_backoff", lambda self, a: None)
 
@@ -55,14 +56,37 @@ def test_record_then_replay_is_content_addressed(tmp_path):
     assert "test-key-not-real" not in files[0].read_text()
 
 
+def test_writable_recording_directory_keeps_bundled_replay_available(tmp_path, monkeypatch):
+    bundled, _ = make(tmp_path, handler_factory([]))
+    bundled.chat(MSG)
+    monkeypatch.setattr(L, "REPLAY_DIR", bundled.replay_dir)
+    records = tmp_path / "records"
+    monkeypatch.setenv("OG_RECORD_DIR", str(records))
+    calls = []
+    with httpx.Client(transport=httpx.MockTransport(handler_factory(calls))) as client:
+        llm = L.LLM(bundled.model, mode="record", spend_file=tmp_path / "other-spend.jsonl", client=client, spend=L.Spend())
+        assert llm.chat(MSG)["_meta"]["cached"] is True and not calls
+        new = [{"role": "user", "content": "an uncached request"}]
+        response = llm.chat(new)
+        assert list(records.iterdir()) == [records / f"{response['_meta']['hash']}.json"]
+        assert len(list(bundled.replay_dir.iterdir())) == 1
+        replay = L.LLM(bundled.model, mode="replay")
+        assert replay.chat(MSG)["_meta"]["cached"] and replay.chat(new)["_meta"]["cached"]
+        isolated, _ = make(tmp_path / "isolated", handler_factory([]), mode="replay")
+        with pytest.raises(L.ReplayMiss):
+            isolated.chat(new)
+
+
 def test_budget_guard_and_spend_log(tmp_path):
-    llm, spend = make(tmp_path, handler_factory([]), budget=0.0015)
-    llm.chat(MSG)
-    llm.chat([{"role": "user", "content": "b"}])
+    calls = []
+    llm, spend = make(tmp_path, handler_factory(calls), budget=0.0023)
+    llm.chat(MSG, max_tokens=800)
+    llm.chat([{"role": "user", "content": "b"}], max_tokens=800)
     with pytest.raises(L.BudgetExceeded):
-        llm.chat([{"role": "user", "content": "c"}])
+        llm.chat([{"role": "user", "content": "c"}], max_tokens=800)
     lines = (tmp_path / "spend.jsonl").read_text().splitlines()
     assert len(lines) == 2 and json.loads(lines[0])["cost_usd"] == 0.001
+    assert spend.spent_usd == 0.002 and len([c for c in calls if "chat" in c]) == 2
 
 
 def test_credit_floor_checked_once_before_first_live_call(tmp_path):

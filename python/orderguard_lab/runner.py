@@ -19,8 +19,12 @@ from .paths import RUNS
 
 ARMS = ("naive", "gate_only", "full")
 # US$ per million tokens (input, output). Only models with a price we have been given are listed.
-PRICES = {"deepseek/deepseek-v4.1-flash": (0.045, 0.50)}
-DEFAULT_PRICE = PRICES["deepseek/deepseek-v4.1-flash"]
+# US$ per million tokens (input, output), OpenRouter list prices checked 2026-11-11. The plain V4.1 Flash id now routes
+# at a much higher input price than its dated snapshot "-1017"; live runs from 2026-11-11 use the snapshot.
+PRICES = {"deepseek/deepseek-v4.1-flash": (0.30, 1.20), "deepseek/deepseek-v4.1-flash-1017": (0.30, 1.20),
+          "liquid/lfm-2.5-24b-a2b": (0.05, 0.70), "anthropic/claude-haiku-5.5": (0.10, 0.50), "qwen/qwen3.7-flash": (0.03, 0.13),
+          "z-ai/glm-5.3-flash": (0.04, 0.078)}
+DEFAULT_PRICE = PRICES["deepseek/deepseek-v4.1-flash-1017"]   # unknown models are estimated at peak V4.1 Flash price
 
 
 # ---------------------------------------------------------------------------------------------------- figure checker (L6) for the lab

@@ -11,14 +11,27 @@ pip install -e '.[dev]'     # from a checkout; add .[ml] only to retrain detecto
 npm ci                      # receiver dependencies
 ```
 
-Docker (needs `.env` and a config directory first, see below):
+For a first Docker installation, build the image and create the owner configuration in a one-time container. If you already have `var/orderguard/mandate.json` and its signing keys, use that directory and skip the `docker run` initialization.
 
 ```sh
-docker compose run --rm app orderguard init     # creates ./var/orderguard
+docker compose build receiver
+mkdir -p var/orderguard
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  -v "$PWD/var/orderguard:/owner" orderguard:local orderguard init --dir /owner
+```
+
+Copy the signed parent and public key into the directory the services can read. If the owner directory has an existing revocation list, copy that file too before starting the receiver.
+
+```sh
+install -d -m 0755 var/paper-policy
+install -m 0644 var/orderguard/mandate.json var/orderguard/signing.pub var/paper-policy/
+if test -f var/orderguard/revoked-mandates.json; then
+  install -m 0644 var/orderguard/revoked-mandates.json var/paper-policy/
+fi
 docker compose up --build
 ```
 
-The image installs the package in editable mode because the code finds `receiver/` and `data/` relative to the repository root. The app listens on `127.0.0.1:8600` on the host only.
+Both services read `var/paper-policy` through a read-only mount. The private signing key stays in `var/orderguard`. The app listens on `127.0.0.1:8600` on the host. It defaults to offline replay. Add a local `.env` based on `.env.example` to configure a provider. New recordings and spend logs go in the app data volume, and the bundled recordings remain available from the image. The image uses an editable install to resolve `receiver/` and `data/` from the source tree.
 
 ## Configure
 
@@ -26,7 +39,7 @@ Environment variable names (values are yours; never commit them):
 
 | Name | Purpose |
 |---|---|
-| `OG_PROVIDER` | `openrouter` (default) or `deepseek` |
+| `OG_PROVIDER` | `deepseek` (default, direct) or `openrouter` |
 | `OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY` | key for the chosen provider |
 | `OG_LLM` | `live` or `replay` (replay never calls a model) |
 | `OG_BUDGET_USD` | hard ceiling on model spend; calls stop at the ceiling |
@@ -34,6 +47,7 @@ Environment variable names (values are yours; never commit them):
 | `ORDERGUARD_RECEIVER_URL` | bridge base URL, e.g. `http://127.0.0.1:8700` |
 | `ORDERGUARD_HOME` | config directory (default `./var/orderguard`) |
 | `OG_ENV_FILE` | path to an env file kept outside the repository |
+| `OG_RECORD_DIR` | optional writable model recording directory, checked before the bundled replay directory |
 
 `.env.example` lists them with empty values.
 
@@ -52,19 +66,31 @@ orderguard init --check         # doctor: prints problems, exit code 1 if any
 ## Run
 
 ```sh
-node receiver/bridge/serve.mjs --port 8700 --mandate var/orderguard/mandate.json   # prints READY 8700
-orderguard serve --host 127.0.0.1 --port 8600
+orderguard paper-receiver
+OG_LLM=replay ORDERGUARD_RECEIVER_URL=http://127.0.0.1:8700 orderguard serve
 ```
 
 `docker compose up` runs both. The bridge listens on loopback only and rejects other Host headers, so in compose the app shares the receiver's network namespace rather than reaching it over a bridge network.
 
+For an owner action in Compose, run a one-time command in the receiver's network namespace. This example uses a draft saved as `orderguard-draft.json` in the current directory.
+
+```sh
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" \
+  -v "$PWD/var/orderguard:/owner:ro" -v "$PWD/orderguard-draft.json:/draft.json:ro" \
+  app orderguard activate-draft /draft.json --dir /owner
+```
+
+For `approve-paper-order ORDER_ID --dir /owner`, the owner directory mount is sufficient. The receiver checks for revocations in `var/paper-policy/revoked-mandates.json` during the session. After an owner re-signs the parent, republish the signed public files and deliberately start a new paper session.
+
 ## Budgets and credit floor
 
-`OG_BUDGET_USD` caps model spend per the spend file (`OG_SPEND_FILE`); set it low first. Providers also have their own credit floor: keep the account balance above what one run can spend, because a call that fails on low credit is reported as an error, not retried silently. Live results are recorded so runs can be replayed.
+`OG_BUDGET_USD` is a hard per-process cap; spend is appended to `OG_SPEND_FILE`. Separate live processes have separate local caps, so do not run independent live jobs concurrently when you need one combined budget. Providers also have their own credit floor: keep the account balance above what one run can spend, because a call that fails on low credit is reported as an error, not retried silently. Live results are recorded so runs can be replayed.
 
 ## Record and replay
 
-`OG_LLM=replay` serves recorded responses from `data/replay` (`OG_REPLAY_DIR`) with zero spend; tests and CI always use it. `orderguard demo --live-record` records a live run (spends, within the budget).
+Run `OG_LLM=replay orderguard demo` to replay the four bundled DeepSeek lab cases at zero provider spend. The command uses the original lab tool receipts to match the recorded requests. It sends the exact guarded proposals that filled in the lab to fresh local paper receivers, then checks the receiver effects and prints each ledger. The altered-filing case also checks a contradicted order captured in another recorded DeepSeek repetition. A replay miss or failed effect check produces a nonzero exit status.
+
+Use `orderguard demo --scripted` to exercise the receiver inline with a deterministic stand-in. `OG_LLM=record orderguard demo` records missing lab-case responses from the configured provider within the budget. `OG_REPLAY_DIR` can point to a different cache for those conversations. The captured contradicted proposal comes from the bundled archive. [Demo evidence](PRODUCT-ACCEPTANCE.md#receiver-and-demo-recheck)
 
 ## Upgrade
 
@@ -73,24 +99,31 @@ git pull && pip install -e . && npm ci
 orderguard init --check
 ```
 
-Rebuild the image with `docker compose build`. A new release never changes your signed mandate; re-sign only if you edit it.
+Rebuild the image with `docker compose build`. Keep the current signed mandate when upgrading and re-sign it after an edit.
 
 ## Backup
 
-The bridge keeps its SQLite ledger (hash-chained event log, checked by `ledgerIntegrity`) in a temporary directory that it deletes on shutdown, so it does not persist across restarts today. Before stopping the bridge, save the state:
+The bridge keeps its SQLite ledger (hash-chained event log, checked by `ledgerIntegrity`) in a temporary directory. Each receiver start creates a new paper session with a new ledger and revision. Compose leaves an exited receiver stopped so the app cannot silently resume against a fresh ledger. Before stopping the native bridge, save the state:
 
 ```sh
 curl -s http://127.0.0.1:8700/snapshot > var/ledger-snapshot-$(date +%Y%m%d%H%M%S).json
 ```
 
-Also back up `var/orderguard/` (the signing key is the one irreplaceable file; store the copy encrypted and offline). Persisting the ledger file itself needs a change in `receiver/bridge/serve.mjs` (a configurable ledger path); this is not done.
+In Compose, request the snapshot from the app container so the connection stays in the shared loopback namespace.
+
+```sh
+docker compose exec -T app node -e 'fetch("http://127.0.0.1:8700/snapshot").then(async r => { if (!r.ok) throw Error(r.status); console.log(JSON.stringify(await r.json())); })' \
+  > var/ledger-snapshot-$(date +%Y%m%d%H%M%S).json
+```
+
+Back up `var/orderguard/` with the signing key encrypted and offline.
 
 ## Security notes
 
 - Bind loopback. Compose publishes `127.0.0.1:8600` only; put a TLS reverse proxy with its own auth in front if you must expose it.
 - Set `ORDERGUARD_APP_TOKEN` before any non-local use.
 - Keys live in the environment or a `0600` env file outside version control; the repository scan (`npm run scan`) runs in CI.
-- The receiver is the final authority: the agent, the app and the gate cannot move the ledger except through `/propose`, which checks the signed mandate again.
+- The receiver verifies the signed policy for proposals and requires the owner's signature for draft activation and held-order approval.
 - The signing key authorises limits. Anyone holding it can sign a wider mandate; protect and rotate it (`init --force`, then restart the bridge).
 - Containers run as a non-root user with a read-only root filesystem and all capabilities dropped.
 

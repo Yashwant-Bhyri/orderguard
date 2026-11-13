@@ -1,9 +1,10 @@
-"""The one OpenRouter chat-completions client (CONTRACT §4).
+"""The shared chat-completions client for DeepSeek direct and compatible providers (CONTRACT §4).
 
 Every model call in OrderGuard goes through `LLM.chat`. It:
   - records and replays responses, content-addressed by a hash of the canonical request body (data/replay/);
-  - enforces a per-process budget (OG_BUDGET_USD, default 0.05) and appends every live call's cost to results/spend.jsonl;
-  - checks the OpenRouter credit balance once per process before the first live call and refuses under US$0.30;
+  - reserves worst-case cost within the per-process budget (OG_BUDGET_USD, default 0.05) before each live call;
+  - checks the provider balance once before live calls and limits spend to the headroom above US$0.30;
+  - logs settled costs and unconfirmed exposures to results/spend.jsonl;
   - retries transport errors, incomplete reads and 429/5xx with backoff;
   - never prints the key.
 
@@ -21,8 +22,10 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from tempfile import TemporaryDirectory
+from typing import Any, Callable
 
 import httpx
 
@@ -33,20 +36,25 @@ CREDITS_URL = os.getenv("OG_CREDITS_URL", "https://openrouter.ai/api/v1/credits"
 KEY_VAR = "OPENROUTER_API_KEY"
 CREDIT_FLOOR_USD = 0.30
 
-# Provider: OG_PROVIDER=openrouter (default) or deepseek (DeepSeek's own API, key DEEPSEEK_API_KEY).
+# Provider: OG_PROVIDER=deepseek (default; DeepSeek's own API, key DEEPSEEK_API_KEY) or openrouter.
 # Replay keys hash the logical request (OpenRouter model ids), so recordings are provider-independent.
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance"
-DEEPSEEK_MODELS = {"deepseek/deepseek-v4.1-flash": "deepseek-flash", "deepseek/deepseek-v4-pro": "deepseek-v4-pro"}
+DEEPSEEK_MODELS = {"deepseek/deepseek-v4.1-flash": "deepseek-flash",
+                   "deepseek/deepseek-v4.1-flash-1017": "deepseek-flash",
+                   "deepseek/deepseek-v4-pro": "deepseek-v4-pro"}
 CNY_PER_USD = float(os.getenv("OG_CNY_PER_USD", "7.1"))
-# US$ per million tokens, used when the provider does not report cost (DeepSeek direct). Defaults are the
-# OpenRouter list prices for V4.1 Flash, a conservative stand-in; override with OG_PRICE_IN / OG_PRICE_OUT.
-PRICE_IN = float(os.getenv("OG_PRICE_IN", "0.051"))
-PRICE_OUT = float(os.getenv("OG_PRICE_OUT", "0.567"))
+# US$ per million tokens, used when DeepSeek direct does not report cost. Use peak cache-miss input pricing
+# so preflight reservations remain conservative; override with OG_PRICE_IN / OG_PRICE_OUT only deliberately.
+PRICE_IN = float(os.getenv("OG_PRICE_IN", "0.30"))
+PRICE_OUT = float(os.getenv("OG_PRICE_OUT", "1.20"))
+# DeepSeek direct peak, cache-miss rates per million tokens (USD).
+DEEPSEEK_PEAK_RATES = {"deepseek-flash": (0.30, 1.20), "deepseek-v4-pro": (1.32, 3.96),
+                       "deepseek-v4-flash": (0.30, 1.20), "deepseek-v4-flash-vision-exp": (0.30, 1.20)}
 
 
 def provider() -> str:
-    return os.getenv("OG_PROVIDER", "openrouter").lower()
+    return os.getenv("OG_PROVIDER", "deepseek").lower()
 
 
 def key_var() -> str:
@@ -62,11 +70,11 @@ class ReplayMiss(LLMError):
 
 
 class BudgetExceeded(LLMError):
-    """The per-process budget (OG_BUDGET_USD) is spent."""
+    """The request cannot fit within the remaining live budget."""
 
 
 class CreditFloor(LLMError):
-    """The OpenRouter account is under the hard floor."""
+    """The provider account is under the hard floor."""
 
 
 class NoApiKey(LLMError):
@@ -83,7 +91,7 @@ def default_mode() -> str:
 
 
 def api_key() -> str | None:
-    """OPENROUTER_API_KEY from the environment, else read by name from the dotenv file at OG_ENV_FILE. Never printed."""
+    """Return the selected provider key from the environment or OG_ENV_FILE. Never print it."""
     var = key_var()
     key = os.getenv(var)
     if key:
@@ -107,26 +115,112 @@ def request_hash(body: dict) -> str:
     return hashlib.sha256(canonical(body).encode("utf-8")).hexdigest()[:32]
 
 
+def _nonnegative_decimal(value: Any) -> Decimal:
+    result = Decimal(str(value))
+    if not result.is_finite() or result < 0:
+        raise ValueError("expected a finite, nonnegative amount")
+    return result
+
+
+@dataclass
+class _Reservation:
+    amount: Decimal
+    active: bool = True
+
+
 @dataclass
 class Spend:
     """Per-process ledger of live spend. Shared by every LLM instance in the process."""
     budget_usd: float = field(default_factory=lambda: float(os.getenv("OG_BUDGET_USD", "0.05")))
-    spent_usd: float = 0.0
     calls: int = 0
     credits_checked: bool = False
-    lock: threading.Lock = field(default_factory=threading.Lock)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _credit_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _spent: Decimal = field(default=Decimal(0), init=False, repr=False)
+    _reserved: Decimal = field(default=Decimal(0), init=False, repr=False)
+    _inflight: int = field(default=0, init=False, repr=False)
+    _unconfirmed: Decimal = field(default=Decimal(0), init=False, repr=False)
+    _credit_headroom: Decimal | None = field(default=None, init=False, repr=False)
+    _estimate_failed: bool = field(default=False, init=False, repr=False)
+
+    @property
+    def spent_usd(self) -> float:
+        return float(self._spent)
 
     def reset(self) -> None:
-        with self.lock:
+        with self._credit_lock, self.lock:
+            if self._inflight:
+                raise RuntimeError("cannot reset spend while live requests are in flight")
             self.budget_usd = float(os.getenv("OG_BUDGET_USD", "0.05"))
-            self.spent_usd, self.calls, self.credits_checked = 0.0, 0, False
+            self._spent = self._unconfirmed = Decimal(0)
+            self.calls, self.credits_checked = 0, False
+            self._credit_headroom, self._estimate_failed = None, False
+
+    def _require_room(self, amount: Decimal, *, already_reserved: Decimal = Decimal(0)) -> None:
+        try:
+            limit = _nonnegative_decimal(self.budget_usd)
+        except (ValueError, InvalidOperation):
+            raise BudgetExceeded("OG_BUDGET_USD must be a finite, nonnegative amount") from None
+        if self._credit_headroom is not None:
+            limit = min(limit, self._credit_headroom)
+        available = limit - self._spent - self._reserved - self._unconfirmed + already_reserved
+        if self._estimate_failed:
+            raise BudgetExceeded("a provider charge exceeded its reservation; refusing further live calls")
+        if amount > available or limit == 0:
+            raise BudgetExceeded(f"live call needs US${amount:.6f}; only US${max(Decimal(0), available):.6f} available "
+                                 f"under the US${limit:.6f} live cap")
+
+    def reserve(self, amount: Decimal, check_credits: Callable[[], Decimal]) -> _Reservation:
+        # Serialize the first credit check and publish its result before allowing another reservation.
+        # The ledger lock is never held during HTTP.
+        reservation = _Reservation(amount)
+        with self._credit_lock:
+            with self.lock:
+                self._require_room(amount)
+                self._reserved += amount
+                self._inflight += 1
+                if self.credits_checked:
+                    return reservation
+            try:
+                balance = _nonnegative_decimal(check_credits())
+                with self.lock:
+                    self._credit_headroom = max(Decimal(0), balance - Decimal(str(CREDIT_FLOOR_USD)))
+                    self.credits_checked = True
+                    self._require_room(amount, already_reserved=amount)
+            except BaseException:
+                self.release(reservation)
+                raise
+        return reservation
+
+    def _close(self, reservation: _Reservation) -> None:
+        self._reserved -= reservation.amount
+        self._inflight -= 1
+        reservation.active = False
+
+    def release(self, reservation: _Reservation, *, unconfirmed: bool = False) -> bool:
+        with self.lock:
+            if not reservation.active:
+                return False
+            self._close(reservation)
+            if unconfirmed:
+                self._unconfirmed += reservation.amount
+            return True
+
+    def settle(self, reservation: _Reservation | None, cost: Decimal) -> None:
+        with self.lock:
+            self._spent += cost
+            self.calls += 1
+            if reservation is not None:
+                self._close(reservation)
+                if cost > reservation.amount:
+                    self._estimate_failed = True
 
 
 SPEND = Spend()
 
 
 class LLM:
-    """OpenAI-compatible chat completions over OpenRouter with tools support.
+    """Budgeted chat completions over DeepSeek direct or OpenRouter, with tools support.
 
     `chat(messages, tools=None, ...)` returns the raw response body (choices, usage) plus a `_meta` key
     {"cached": bool, "cost_usd": float, "hash": str}.
@@ -140,6 +234,7 @@ class LLM:
         if self.mode not in ("replay", "record", "live"):
             raise ValueError(f"OG_LLM must be replay, record or live, not {self.mode!r}")
         self.replay_dir = Path(replay_dir or REPLAY_DIR)
+        self.record_dir = Path(os.getenv("OG_RECORD_DIR") or self.replay_dir) if replay_dir is None else self.replay_dir
         self.spend_file = Path(spend_file or os.getenv("OG_SPEND_FILE", RESULTS_DIR / "spend.jsonl"))
         self.timeout = timeout if timeout is not None else float(os.getenv("OG_TIMEOUT", "300"))
         self.retries = retries if retries is not None else int(os.getenv("OG_LLM_RETRIES", "4"))
@@ -157,19 +252,26 @@ class LLM:
         if extra:
             body.update(extra)
         h = request_hash(body)
-        path = self.replay_dir / f"{h}.json"
-        if self.mode in ("replay", "record") and path.exists():
-            rec = json.loads(path.read_text())
-            resp = rec["response"]
-            resp["_meta"] = {"cached": True, "cost_usd": float(rec.get("cost_usd") or 0.0), "hash": h}
-            return resp
+        filename = f"{h}.json"
+        if self.mode in ("replay", "record"):
+            for directory in dict.fromkeys((self.record_dir, self.replay_dir)):
+                path = directory / filename
+                if path.is_file():
+                    rec = json.loads(path.read_text(encoding="utf-8"))
+                    resp = rec["response"]
+                    resp["_meta"] = {"cached": True, "cost_usd": float(rec.get("cost_usd") or 0.0), "hash": h}
+                    return resp
         if self.mode == "replay":
             raise ReplayMiss(f"OG_LLM=replay and no recorded response for request {h} (model {body['model']})")
         resp = self._live(body)
         cost = float((resp.get("usage") or {}).get("cost") or 0.0)
-        self.replay_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"hash": h, "model": body["model"], "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                                    "cost_usd": cost, "request_summary": _summary(body), "response": resp}, indent=1, ensure_ascii=False))
+        self.record_dir.mkdir(parents=True, exist_ok=True)
+        recorded = {"hash": h, "model": body["model"], "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "cost_usd": cost, "request_summary": _summary(body), "response": resp}
+        with TemporaryDirectory(dir=self.record_dir, prefix=".record-") as staging:
+            path = Path(staging) / filename
+            path.write_text(json.dumps(recorded, indent=1, ensure_ascii=False), encoding="utf-8")
+            path.replace(self.record_dir / filename)
         resp["_meta"] = {"cached": False, "cost_usd": cost, "hash": h}
         return resp
 
@@ -191,68 +293,127 @@ class LLM:
         key = api_key()
         if not key:
             raise NoApiKey(f"no {key_var()} in the environment and none in OG_ENV_FILE; use OG_LLM=replay or set the key")
-        return {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                "HTTP-Referer": "https://github.com/orderguard", "X-Title": "OrderGuard"}
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if provider() == "openrouter":
+            headers.update({"HTTP-Referer": "https://github.com/orderguard", "X-Title": "OrderGuard"})
+        return headers
 
-    def check_credits(self) -> float:
-        """GET /credits once per process; refuse under the floor. Returns the remaining balance."""
+    def check_credits(self) -> Decimal:
+        """Fetch the provider's remaining USD balance and refuse under the floor."""
         if provider() == "deepseek":
             r = self._http().get(DEEPSEEK_BALANCE_URL, headers=self._headers())
             r.raise_for_status()
-            remaining = 0.0
+            remaining = Decimal(0)
             for b in r.json().get("balance_infos") or []:
-                v = float(b.get("total_balance") or 0.0)
-                remaining += v / CNY_PER_USD if b.get("currency") == "CNY" else v
+                v = Decimal(str(b.get("total_balance") or 0))
+                remaining += v / Decimal(str(CNY_PER_USD)) if b.get("currency") == "CNY" else v
         else:
             r = self._http().get(CREDITS_URL, headers=self._headers())
             r.raise_for_status()
             d = r.json().get("data") or {}
-            remaining = float(d.get("total_credits") or 0.0) - float(d.get("total_usage") or 0.0)
-        if remaining < CREDIT_FLOOR_USD:
+            remaining = Decimal(str(d.get("total_credits") or 0)) - Decimal(str(d.get("total_usage") or 0))
+        if not remaining.is_finite():
+            raise CreditFloor(f"{provider()} returned an invalid balance; refusing live calls")
+        if remaining < Decimal(str(CREDIT_FLOOR_USD)):
             raise CreditFloor(f"{provider()} balance US${remaining:.2f} is under the US${CREDIT_FLOOR_USD:.2f} floor; refusing live calls")
         return remaining
 
     def _live(self, body: dict) -> dict:
-        with self.spend.lock:
-            if self.spend.spent_usd >= self.spend.budget_usd:
-                raise BudgetExceeded(f"budget US${self.spend.budget_usd:.3f} spent (US${self.spend.spent_usd:.4f} over {self.spend.calls} calls)")
-            need_credits = not self.spend.credits_checked
-        if need_credits:
-            self.check_credits()
-            self.spend.credits_checked = True
+        url, wire = self._wire(body)
+        payload, estimate, rates = self._budgeted_payload(wire)
+        reservation = self.spend.reserve(estimate, self.check_credits)
+        may_have_billed = False
         last = "no attempt"
-        for attempt in range(self.retries + 1):
-            try:
-                url, wire = self._wire(body)
-                r = self._http().post(url, headers=self._headers(), content=canonical(wire).encode("utf-8"))
-            except (httpx.TransportError, http.client.IncompleteRead, ConnectionError) as e:
-                # httpx surfaces a truncated body as RemoteProtocolError / ReadError; retry like a timeout
-                last = f"{type(e).__name__}"
-                self._backoff(attempt)
-                continue
-            if r.status_code in (408, 409, 425, 429, 500, 502, 503, 504):
-                last = f"HTTP {r.status_code}"
-                self._backoff(attempt)
-                continue
-            if r.status_code >= 400:
-                raise LLMError(f"{provider()} HTTP {r.status_code}: {r.text[:300]}")
-            try:
-                resp = r.json()
-            except ValueError as e:
-                last = f"bad JSON body ({type(e).__name__})"
-                self._backoff(attempt)
-                continue
-            if "choices" not in resp:
-                err = resp.get("error") or resp
-                code = err.get("code") if isinstance(err, dict) else None
-                if code in (429, 502, 503):
-                    last = f"API error {code}"
+        try:
+            headers = self._headers()
+            for attempt in range(self.retries + 1):
+                if reservation is None:
+                    reservation = self.spend.reserve(estimate, self.check_credits)
+                try:
+                    may_have_billed = True
+                    last = "unconfirmed POST"
+                    r = self._http().post(url, headers=headers, content=payload)
+                except (httpx.TransportError, http.client.IncompleteRead, ConnectionError) as e:
+                    # Connect/pool failures precede submission; a truncated response or timeout may be billed.
+                    may_have_billed = not isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+                    last = type(e).__name__
+                else:
+                    if r.status_code in (408, 409, 425, 429, 500, 502, 503, 504):
+                        may_have_billed = r.status_code not in (409, 425, 429)
+                        last = f"HTTP {r.status_code}"
+                    elif r.status_code >= 400:
+                        may_have_billed = r.status_code >= 500
+                        last = f"HTTP {r.status_code}"
+                        raise LLMError(f"{provider()} HTTP {r.status_code}: {r.text[:300]}")
+                    else:
+                        try:
+                            resp = r.json()
+                        except ValueError as e:
+                            last = f"bad JSON body ({type(e).__name__})"
+                        else:
+                            if isinstance(resp, dict) and "choices" in resp:
+                                self._record_spend(body["model"], resp, reservation=reservation, rates=rates)
+                                return resp
+                            err = (resp.get("error") or resp) if isinstance(resp, dict) else resp
+                            code = err.get("code") if isinstance(err, dict) else None
+                            may_have_billed = code != 429
+                            last = "API error response"
+                            if code not in (429, 502, 503):
+                                raise LLMError(f"{provider()} error: {json.dumps(err)[:300]}")
+                            last = f"API error {code}"
+                if may_have_billed:
+                    # Keep exposure for an attempt whose charge could not be observed. A retry needs its own room.
+                    self._release_attempt(reservation, body["model"], reason=last)
+                    reservation = None
+                    may_have_billed = False
+                if attempt < self.retries:
                     self._backoff(attempt)
-                    continue
-                raise LLMError(f"OpenRouter error: {json.dumps(err)[:300]}")
-            self._record_spend(body["model"], resp)
-            return resp
-        raise LLMError(f"OpenRouter unreachable after {self.retries + 1} attempts: {last}")
+            raise LLMError(f"{provider()} unreachable after {self.retries + 1} attempts: {last}")
+        finally:
+            if reservation is not None:
+                self._release_attempt(reservation, body["model"], reason=last if may_have_billed else None)
+
+    def _budgeted_payload(self, wire: dict) -> tuple[bytes, Decimal, tuple[Decimal, Decimal]]:
+        max_tokens = wire.get("max_tokens")
+        if type(max_tokens) is not int or max_tokens <= 0 or "max_completion_tokens" in wire:
+            raise BudgetExceeded("live requests need a positive integer max_tokens as their only output limit")
+        if wire.get("stream") or wire.get("n", 1) != 1:
+            raise BudgetExceeded("live reservations require a single non-streamed completion")
+        messages, tools = wire.get("messages") or [], wire.get("tools") or []
+        for message in messages:
+            content = message.get("content")
+            if content is not None and not isinstance(content, str) and not (
+                isinstance(content, list) and all(isinstance(p, dict) and p.get("type") == "text"
+                                                  and isinstance(p.get("text"), str) for p in content)
+            ):
+                raise BudgetExceeded("live reservations require text message content")
+        if (any(tool.get("type") != "function" for tool in tools) or wire.get("plugins") or wire.get("web_search_options")
+                or wire.get("modalities") not in (None, ["text"]) or str(wire["model"]).endswith(":online")
+                or any(str(model).endswith(":online") for model in wire.get("models") or [])):
+            raise BudgetExceeded("live reservations cannot bound provider-side tools or non-text charges")
+        try:
+            rate_in, rate_out = _nonnegative_decimal(PRICE_IN), _nonnegative_decimal(PRICE_OUT)
+            if provider() == "deepseek":
+                peak = DEEPSEEK_PEAK_RATES.get(wire["model"])
+                if peak is None:
+                    raise BudgetExceeded(f"no peak rates configured for DeepSeek model {wire['model']!r}")
+                rate_in = max(rate_in, _nonnegative_decimal(peak[0]))
+                rate_out = max(rate_out, _nonnegative_decimal(peak[1]))
+            else:
+                routing = dict(wire.get("provider") or {})
+                ceilings = dict(routing.get("max_price") or {})
+                rate_in = min(rate_in, _nonnegative_decimal(ceilings.get("prompt", rate_in)))
+                rate_out = min(rate_out, _nonnegative_decimal(ceilings.get("completion", rate_out)))
+                ceilings.update(prompt=float(rate_in), completion=float(rate_out), request=0, image=0)
+                routing.update(max_price=ceilings, require_parameters=True)
+                wire = {**wire, "provider": routing}
+        except (ValueError, InvalidOperation) as e:
+            raise BudgetExceeded("live token pricing must be finite and nonnegative") from e
+        payload = canonical(wire).encode("utf-8")
+        # Allow one token per wire byte (including tool schemas) plus server-side chat framing.
+        prompt_bound = len(payload) + 256 + 64 * (len(messages) + len(tools))
+        estimate = (prompt_bound * rate_in + max_tokens * rate_out) / 1_000_000
+        return payload, estimate, (rate_in, rate_out)
 
     def _wire(self, body: dict) -> tuple[str, dict]:
         """Translate the logical (OpenRouter-shaped) request for the configured provider."""
@@ -268,22 +429,39 @@ class LLM:
     def _backoff(self, attempt: int) -> None:
         time.sleep(min(30.0, 1.5 * (2 ** attempt)))
 
-    def _record_spend(self, model: str, resp: dict) -> None:
-        usage = resp.get("usage") or {}
-        if usage.get("cost") is None:
-            usage["cost"] = ((usage.get("prompt_tokens") or 0) * PRICE_IN + (usage.get("completion_tokens") or 0) * PRICE_OUT) / 1e6
+    def _release_attempt(self, reservation: _Reservation, model: str, *, reason: str | None) -> None:
+        if self.spend.release(reservation, unconfirmed=reason is not None) and reason is not None:
+            self._append_spend(model, outcome="unconfirmed", exposure_usd=float(reservation.amount), reason=reason)
+
+    def _record_spend(self, model: str, resp: dict, *, reservation: _Reservation | None = None,
+                      rates: tuple[Decimal, Decimal] | None = None) -> None:
+        usage = resp.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
+        try:
+            cost = _nonnegative_decimal(usage.get("cost"))
+        except (ValueError, InvalidOperation):
+            rate_in, rate_out = rates or (_nonnegative_decimal(PRICE_IN), _nonnegative_decimal(PRICE_OUT))
+            try:
+                prompt = _nonnegative_decimal(usage.get("prompt_tokens"))
+                completion = _nonnegative_decimal(usage.get("completion_tokens"))
+                cost = (prompt * rate_in + completion * rate_out) / 1_000_000
+            except (ValueError, InvalidOperation):
+                # A successful response without billable usage cannot safely refund any reservation.
+                cost = reservation.amount if reservation is not None else Decimal(0)
+            usage["cost"] = float(cost)
             usage["cost_estimated"] = True
-            resp["usage"] = usage
-        cost = float(usage.get("cost") or 0.0)
-        with self.spend.lock:
-            self.spend.spent_usd += cost
-            self.spend.calls += 1
+        resp["usage"] = usage
+        self.spend.settle(reservation, cost)
+        self._append_spend(model, cost_usd=float(cost), cost_estimated=bool(usage.get("cost_estimated")),
+                           prompt_tokens=usage.get("prompt_tokens"), completion_tokens=usage.get("completion_tokens"))
+
+    def _append_spend(self, model: str, **entry: Any) -> None:
         try:
             self.spend_file.parent.mkdir(parents=True, exist_ok=True)
             with self.spend_file.open("a") as f:
-                f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "model": model, "cost_usd": cost,
-                                    "prompt_tokens": usage.get("prompt_tokens"), "completion_tokens": usage.get("completion_tokens"),
-                                    "provider": provider(), "pid": os.getpid()}) + "\n")
+                f.write(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "model": model,
+                                    "provider": provider(), "pid": os.getpid(), **entry}) + "\n")
         except OSError:
             pass
 

@@ -1,6 +1,6 @@
 import json
 
-from orderguard_guard import cli
+from orderguard_guard import DATA, cli, llm, receiver_client
 
 
 def test_sign_then_verify(tmp_path, capsys):
@@ -39,3 +39,33 @@ def test_scripted_demo_runs_offline_and_every_layer_acts(capsys):
     assert "L5 refused" in out and "L6 figure check: contradicted" in out
     assert "L2 quarantined (instruction)" in out and "transfer_funds offered: False" in out and "transfer_funds offered: True" not in out
     assert "Ledger snapshot" in out
+
+
+def test_demo_exits_unsuccessfully_when_recordings_are_missing(monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("OG_LLM", "replay")
+    monkeypatch.setattr(llm, "REPLAY_DIR", tmp_path)
+    monkeypatch.setattr(receiver_client, "bridge_available", lambda: (False, "test uses the local ledger"))
+    assert cli.main(["demo"]) == 1
+    out = capsys.readouterr().out
+    assert "ReplayMiss" in out and "Demo incomplete" in out
+    assert "Ledger snapshot" in out
+
+
+def test_demo_replays_the_bundled_deepseek_cases_and_checks_paper_effects(monkeypatch, capsys):
+    monkeypatch.setenv("OG_LLM", "replay")
+    monkeypatch.setattr(llm, "REPLAY_DIR", DATA / "replay")
+    monkeypatch.setattr(receiver_client, "bridge_available", lambda: (False, "test uses local ledgers"))
+    ledgers = []
+    make_ledger = receiver_client.LocalLedger
+
+    def ledger():
+        result = make_ledger()
+        ledgers.append(result)
+        return result
+
+    monkeypatch.setattr(receiver_client, "LocalLedger", ledger)
+    assert cli.main(["demo", "--model", "deepseek/deepseek-v4.1-flash-1017"]) == 0
+    assert [len(item.orders) for item in ledgers] == [1, 0, 1, 1]
+    out = capsys.readouterr().out
+    assert "L5 refused" in out and "L6 figure check: contradicted" in out
+    assert "L2 quarantined (instruction)" in out and "ReplayMiss" not in out

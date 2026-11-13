@@ -5,118 +5,341 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OrderGuard</title>
 <meta name="color-scheme" content="light dark">
+<meta name="description" content="Pre-trade guard for AI trading agents: local dashboard.">
+<script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="top">
-  <div class="wrap bar">
-    <h1>OrderGuard <span class="sub">pre-trade guard for AI trading agents</span></h1>
-    <nav aria-label="Sections">
-      <a href="#status">Status</a><a href="#screen">Screen</a><a href="#order">Order</a><a href="#graph">Triggers</a>
-      <a href="#scenario">Scenario</a><a href="#ledger">Ledger</a><a href="#results">Results</a>
-    </nav>
+<div class="shell">
+
+<!-- ===================== Sidebar: wordmark, navigation with layer pills, environment ===================== -->
+<aside class="side" id="sidebar" aria-label="OrderGuard">
+  <a class="brand" href="#overview"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.700-7-4.800-7-9V4z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m6.800 10 2.400 2.400L13.400 8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>OrderGuard</a>
+  <nav class="nav" id="nav" aria-label="Pages">
+    <a href="#overview" data-view="overview"><span>Overview</span></a>
+    <a href="#screen" data-view="screen"><span>Screen text</span><span class="lp"><span>L1</span><span>L2</span></span></a>
+    <a href="#order" data-view="order"><span>Check order</span><span class="lp"><span>L5</span><span>L6</span></span></a>
+    <a href="#graph" data-view="graph"><span>Triggers</span><span class="lp"><span>L7</span></span></a>
+    <a href="#scenario" data-view="scenario"><span>Scenarios</span><span class="lp"><span>L1&ndash;L8</span></span></a>
+    <a href="#arena" data-view="arena"><span>Swarm arena</span><span class="lp"><span>L5</span><span>L7</span><span>L8</span></span></a>
+    <a href="#ledger" data-view="ledger"><span>Ledger</span><span class="lp"><span>L8</span></span></a>
+    <a href="#results" data-view="results"><span>Results</span></a>
+  </nav>
+  <div class="env" id="env" aria-label="Environment" aria-live="polite">
+    <div class="row"><span class="k">Mode</span><span class="v" id="env-mode">Connecting</span></div>
+    <div class="row"><span class="k">Model</span><span class="v mono" id="env-model">&mdash;</span></div>
+    <div><div class="row"><span class="k">Budget</span><span class="v" id="env-budget-t">&mdash;</span></div>
+      <div class="mtrack mt8" role="img" aria-label="Budget used" id="env-budget"><div class="mseg ok first last" id="env-budget-f"></div></div></div>
+    <div class="row"><span class="k">Receiver</span><span class="v"><span class="dot" id="env-dot"></span><span id="env-recv">&mdash;</span></span></div>
   </div>
+  <p class="notice">Research prototype. Simulated markets only: no real orders and no broker connection.</p>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="col">
+<header class="top">
+  <button type="button" class="icon menu-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <span class="wm">OrderGuard</span>
+  <span class="grow"></span>
+  <button type="button" class="icon ghost" id="pal-btn" aria-label="Open the command palette">Search <kbd>&#8984;K</kbd></button>
+  <button type="button" class="icon ghost" id="theme-btn" aria-label="Theme: follow system. Activate to change.">Theme: system</button>
 </header>
-<main id="main" class="wrap">
-  <p class="banner">Research prototype. Simulated markets only: no real orders, no broker connection.</p>
 
-  <section id="status" aria-labelledby="h-status" class="card">
-    <h2 id="h-status">Status</h2>
-    <dl id="status-body" class="kv" aria-live="polite"><dt>Loading</dt><dd>...</dd></dl>
-    <form id="auth-form" class="row" hidden>
-      <label for="token">Access token</label>
-      <input id="token" type="password" autocomplete="off" required>
-      <button type="submit">Use token</button>
-    </form>
+<main id="main" class="page" tabindex="-1">
+  <form id="auth-form" class="card token-card" hidden>
+    <h2>Access token required</h2>
+    <p class="hint">This server was started with <code>ORDERGUARD_APP_TOKEN</code>. The token is kept for this browser tab only.</p>
+    <div class="field"><label for="token">Access token</label>
+      <input id="token" type="password" autocomplete="off" required aria-describedby="token-err">
+      <p class="err" id="token-err" role="alert"></p></div>
+    <button type="submit">Use token</button>
+  </form>
+
+  <!-- ===================== Overview ===================== -->
+  <section id="overview" class="view" aria-labelledby="h-overview">
+    <header>
+      <h1 id="h-overview" class="hero" tabindex="-1">AI agents will believe fake information</h1>
+      <p>OrderGuard decides what an agent may do using numbers the agent cannot touch, and checks the facts an order relies on. Every decision names the layer that made it and gives its reasons.</p>
+      <p class="notice">Research prototype. Simulated markets only: no real orders and no broker connection.</p>
+    </header>
+    <section class="sect" aria-labelledby="h-proof">
+      <h3 id="h-proof">What the live runs show</h3>
+      <div id="ov-proof" aria-live="polite"><p class="hint">Loading the recorded live results…</p></div>
+    </section>
+    <div class="card sect">
+      <h3>The pipeline on this server</h3>
+      <p class="hint">Reads from this server. Hover or focus a station for what the layer checks.</p>
+      <div class="rail-wrap" id="ov-rail" aria-live="polite"></div>
+      <div id="ov-layers"></div>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>Mandate the dashboard uses</h3><p class="hint">Signed with a throwaway key at startup. Order checks use it unless you paste your own.</p><div id="m-demo" aria-live="polite"></div></div>
+      <div class="card"><h3>Your configured mandate</h3><p class="hint">From <code>mandate.json</code> in your config directory, verified against <code>signing.pub</code>.</p><div id="m-conf" aria-live="polite"></div></div>
+    </div>
+    <div class="cols sect">
+      <div class="card"><h3>Model and budget</h3><div id="model-box" aria-live="polite"></div></div>
+      <div class="card"><h3>Receiver (L8)</h3><div id="recv-box" aria-live="polite"></div></div>
+    </div>
+    <div class="card sect">
+      <h3>Where to start</h3>
+      <div class="presets" id="ov-start"></div>
+    </div>
   </section>
 
-  <section id="screen" aria-labelledby="h-screen" class="card">
-    <h2 id="h-screen">Screen a text chunk <span class="tag">L1 + L2</span></h2>
-    <p class="hint">L1 strips hidden characters in code. L2 asks a model whether the chunk is safe to show an agent.</p>
-    <form id="screen-form">
-      <div class="row"><label for="screen-kind">Kind</label>
-        <select id="screen-kind"><option>tool</option><option>web</option><option>feed</option><option>doc</option></select></div>
-      <label for="screen-text">Text</label>
-      <textarea id="screen-text" rows="5" required maxlength="100000" placeholder="Paste a web page, feed window or tool result"></textarea>
-      <button type="submit">Screen</button>
-    </form>
-    <div id="screen-out" class="out" aria-live="polite"></div>
-  </section>
-
-  <section id="order" aria-labelledby="h-order" class="card">
-    <h2 id="h-order">Check an order <span class="tag">L5 + L6</span></h2>
-    <p class="hint">The order is sized at the trusted price, never at its own limit. Cited figures are checked against SEC filings.</p>
-    <form id="order-form" class="grid">
-      <div><label for="o-ticker">Ticker</label><input id="o-ticker" value="AAPL" required maxlength="16"></div>
-      <div><label for="o-side">Side</label><select id="o-side"><option>buy</option><option>sell</option></select></div>
-      <div><label for="o-qty">Quantity</label><input id="o-qty" type="number" min="1" step="1" value="40" required></div>
-      <div><label for="o-limit">Limit price</label><input id="o-limit" type="number" min="0.01" step="0.01" value="222.9" required></div>
-      <div><label for="o-asof">Decision date</label><input id="o-asof" type="date" value="2024-11-06" required></div>
-      <div><label for="o-daily">Already placed today (USD)</label><input id="o-daily" type="number" min="0" step="1" value="0"></div>
-      <div class="wide"><label for="o-figs">Cited figures (JSON array, optional)</label>
-        <textarea id="o-figs" rows="3" spellcheck="false" placeholder='[{"metric":"revenue","fiscal_year":2024,"value":391035,"unit":"USD millions"}]'></textarea></div>
-      <div class="wide"><label class="check"><input id="o-req" type="checkbox"> Require every order to cite figures</label></div>
-      <div class="wide row">
-        <button type="submit">Check order</button>
-        <button type="button" id="o-preset-split" class="ghost">Load fake-split order</button>
-        <button type="button" id="o-preset-fig" class="ghost">Load fake-figure order</button>
+  <!-- ===================== Screen text ===================== -->
+  <section id="screen" class="view" aria-labelledby="h-screen" hidden>
+    <header>
+      <h1 id="h-screen" tabindex="-1">Screen text</h1>
+      <p>Paste anything an agent might read. L1 strips hidden characters in code, then local and model detectors each give their own verdict.</p>
+      <div class="lps"><span class="lcode">L1</span><span class="lcode">L2</span></div>
+    </header>
+    <div class="split">
+      <div class="inputs card">
+        <div class="presets" role="group" aria-label="Example texts"><span class="lbl">Examples</span>
+          <button type="button" class="ghost sm" data-screen-preset="hidden">Hidden instruction</button>
+          <button type="button" class="ghost sm" data-screen-preset="fake">Fake split notice</button>
+          <button type="button" class="ghost sm" data-screen-preset="benign">Plain market note</button></div>
+        <form id="screen-form" novalidate>
+          <div class="field"><label for="screen-kind">Kind of source</label>
+            <select id="screen-kind"><option value="tool">tool result</option><option value="web">web page</option><option value="feed">news feed</option><option value="doc">document</option></select></div>
+          <div class="field"><label for="screen-text">Text to screen</label>
+            <textarea id="screen-text" rows="9" maxlength="100000" aria-describedby="screen-text-err screen-text-help" placeholder="Paste a web page, feed window or tool result"></textarea>
+            <p class="help" id="screen-text-help">Up to 100,000 characters. Nothing is stored.</p>
+            <p class="err" id="screen-text-err" role="alert"></p></div>
+          <button type="submit">Screen text</button>
+        </form>
       </div>
-    </form>
-    <div id="order-out" class="out" aria-live="polite"></div>
-    <details id="mandate-box">
-      <summary>Mandate in use</summary>
-      <div id="mandate-view"></div>
-      <h3>Use your own signed mandate</h3>
-      <label for="m-json">Signed mandate (JSON)</label>
-      <textarea id="m-json" rows="6" spellcheck="false"></textarea>
-      <label for="m-key">Public key (base64, recommended)</label>
-      <input id="m-key" autocomplete="off">
-      <div class="row"><button type="button" id="m-clear" class="ghost">Back to the demo mandate</button></div>
+      <div class="result"><div id="screen-out" class="out" aria-live="polite" aria-busy="false"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== Check order ===================== -->
+  <section id="order" class="view" aria-labelledby="h-order" hidden>
+    <header>
+      <h1 id="h-order" tabindex="-1">Check order</h1>
+      <p>The order is sized at the trusted price, never at its own limit. Figures it cites are checked against SEC filings as of the decision date.</p>
+      <div class="lps"><span class="lcode">L5</span><span class="lcode">L6</span></div>
+    </header>
+    <div class="split">
+      <div class="inputs">
+        <div class="card">
+          <div class="presets" role="group" aria-label="Example orders"><span class="lbl">Examples</span>
+            <button type="button" class="ghost sm" data-order-preset="ok">Ordinary buy</button>
+            <button type="button" class="ghost sm" data-order-preset="split">Fake 10-for-1 split</button>
+            <button type="button" class="ghost sm" data-order-preset="figure">Fake revenue figure</button>
+            <button type="button" class="ghost sm" data-order-preset="stepup">Large order</button>
+            <button type="button" class="ghost sm" data-order-preset="sell">Sell outside the mandate</button>
+            <button type="button" class="ghost sm" data-order-preset="symbol">Unlisted ticker</button></div>
+          <form id="order-form" class="grid" novalidate>
+            <div class="field"><label for="o-ticker">Ticker</label><input id="o-ticker" value="AAPL" maxlength="16" autocomplete="off" aria-describedby="o-ticker-err"><p class="err" id="o-ticker-err" role="alert"></p></div>
+            <div class="field"><label for="o-side">Side</label><select id="o-side"><option>buy</option><option>sell</option></select></div>
+            <div class="field"><label for="o-qty">Quantity</label><input id="o-qty" type="number" min="1" step="1" value="40" inputmode="numeric" aria-describedby="o-qty-err"><p class="err" id="o-qty-err" role="alert"></p></div>
+            <div class="field"><label for="o-limit">Limit price (USD)</label><input id="o-limit" type="number" min="0.01" step="0.01" value="222.9" inputmode="decimal" aria-describedby="o-limit-err"><p class="err" id="o-limit-err" role="alert"></p></div>
+            <div class="field"><label for="o-asof">Decision date</label><input id="o-asof" type="date" value="2024-11-06" aria-describedby="o-asof-err"><p class="err" id="o-asof-err" role="alert"></p></div>
+            <div class="field"><label for="o-daily">Already placed today (USD)</label><input id="o-daily" type="number" min="0" step="1" value="0" inputmode="decimal" aria-describedby="o-daily-err"><p class="err" id="o-daily-err" role="alert"></p></div>
+            <div class="field wide"><label for="o-figs">Cited figures (JSON array, optional)</label>
+              <textarea id="o-figs" rows="3" spellcheck="false" aria-describedby="o-figs-err o-figs-help" placeholder='[{"metric":"revenue","fiscal_year":2024,"value":391035,"unit":"USD millions"}]'></textarea>
+              <p class="help" id="o-figs-help">Each item needs metric, fiscal_year, value and unit.</p>
+              <p class="err" id="o-figs-err" role="alert"></p></div>
+            <div class="field wide"><label class="check"><input id="o-req" type="checkbox"> Require every order to cite figures</label></div>
+            <div class="wide"><button type="submit">Check order</button></div>
+          </form>
+        </div>
+        <details class="card" id="mandate-box">
+          <summary>Mandate in use, or use your own</summary>
+          <div id="mandate-view" aria-live="polite"></div>
+          <h3 class="mt16">Use your own signed mandate</h3>
+          <p class="hint">Paste the contents of a signed <code>mandate.json</code> and the matching public key. Nothing is stored.</p>
+          <div class="field"><label for="m-json">Signed mandate (JSON)</label><textarea id="m-json" rows="6" spellcheck="false" aria-describedby="m-json-err"></textarea><p class="err" id="m-json-err" role="alert"></p></div>
+          <div class="field"><label for="m-key">Public key (base64, recommended)</label><input id="m-key" autocomplete="off" spellcheck="false"></div>
+          <button type="button" id="m-clear" class="ghost">Back to the demo mandate</button>
+        </details>
+      </div>
+      <div class="result"><div id="order-out" class="out" aria-live="polite" aria-busy="false"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== Triggers ===================== -->
+  <section id="graph" class="view" aria-labelledby="h-graph" hidden>
+    <header>
+      <h1 id="h-graph" tabindex="-1">Triggers</h1>
+      <p>A standing rule such as "sell if down 40%" fires only when at least two independent, unquarantined sources agree. The board shows each source, the median and the outcome next to a naive rule that trusts any single price.</p>
+      <div class="lps"><span class="lcode">L7</span></div>
+    </header>
+    <div class="split">
+      <div class="inputs card">
+        <form id="graph-form" novalidate>
+          <div class="field"><label for="g-preset">Market events</label>
+            <select id="g-preset">
+              <option value="single_venue_crash">Attack: one venue prints a -48% crash</option>
+              <option value="takeover_echo">Attack: a fake takeover echoed by three wires</option>
+              <option value="real_crash">Benign: a real -45% crash on all venues</option>
+              <option value="honest">Benign: a quiet morning</option>
+            </select></div>
+          <div class="field"><label for="g-quar">Quarantined sources (optional, comma separated)</label>
+            <input id="g-quar" autocomplete="off" placeholder="VenueC" aria-describedby="g-quar-err"><p class="err" id="g-quar-err" role="alert"></p></div>
+          <div class="field"><label for="g-blast">Source that lies, for the blast radius</label>
+            <input id="g-blast" value="VenueC" autocomplete="off" aria-describedby="g-blast-err"><p class="err" id="g-blast-err" role="alert"></p></div>
+          <button type="submit">Evaluate rules</button>
+        </form>
+      </div>
+      <div class="result"><div id="graph-out" class="out" aria-live="polite" aria-busy="false"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== Scenarios ===================== -->
+  <section id="scenario" class="view" aria-labelledby="h-scn" hidden>
+    <header>
+      <h1 id="h-scn" tabindex="-1">Scenarios</h1>
+      <p>Replay a whole agent run and see, call by call, which layer acted. Scripted demos use a stand-in agent with no model. Lab cases replay recorded model runs offline.</p>
+      <div class="lps"><span class="lcode">L1&ndash;L8</span></div>
+    </header>
+    <div class="split">
+      <div class="inputs card">
+        <div class="presets" role="group" aria-label="Example scenarios"><span class="lbl">Examples</span>
+          <button type="button" class="ghost sm" data-scn="demo-1">Honest trade</button>
+          <button type="button" class="ghost sm" data-scn="demo-2">Fake split in the feed</button>
+          <button type="button" class="ghost sm" data-scn="demo-3">Fake filing figures</button>
+          <button type="button" class="ghost sm" data-scn="demo-4">Injected transfer</button></div>
+        <form id="scn-form" novalidate>
+          <div class="field"><label for="scn-id">Scenario</label><select id="scn-id" aria-describedby="scn-id-err"><option value="">Loading</option></select><p class="err" id="scn-id-err" role="alert"></p></div>
+          <div class="field"><label for="scn-arm">Arm</label>
+            <select id="scn-arm" aria-describedby="scn-arm-help"><option value="">scenario default</option><option value="naive">naive</option><option value="gate_only">gate_only</option><option value="full">full</option></select>
+            <p class="help" id="scn-arm-help"><b>naive</b>: no checks, every tool. <b>gate_only</b>: L5 and L6 on orders, no money-movement tool. <b>full</b>: all layers. Scripted demos have a fixed arm.</p></div>
+          <button type="submit">Run scenario</button>
+        </form>
+      </div>
+      <div class="result"><div id="scn-out" class="out" aria-live="polite" aria-busy="false"></div></div>
+    </div>
+  </section>
+
+  <!-- ===================== Swarm arena ===================== -->
+  <section id="arena" class="view" aria-labelledby="h-arena" hidden>
+    <header>
+      <h1 id="h-arena" tabindex="-1">Swarm arena</h1>
+      <p>Many agents, one signed envelope. Every proposal is decided in code at the trusted price, in microseconds.</p>
+      <p class="notice">Simulated agents and fills. Market data is synthetic or a recorded public feed. No orders reach any exchange.</p>
+      <div class="lps"><span class="lcode">L5</span><span class="lcode">L7</span><span class="lcode">L8</span></div>
+    </header>
+    <details class="card policy-review" open>
+      <summary>Review a mandate</summary>
+      <div class="field policy-source"><label for="policy-source">Parent policy</label><select id="policy-source"><option value="demo">Demo policy</option><option value="configured">My configured policy</option></select></div>
+      <div id="policy-parent" aria-live="polite"></div>
+      <form id="policy-form" novalidate>
+        <fieldset id="policy-fields" disabled>
+          <details class="policy-scenario" id="policy-scenario"><summary>Simulation settings and risk limits</summary>
+            <div class="policy-grid">
+              <div class="field"><label for="policy-regime">Scenario</label><select id="policy-regime"><option value="normal">Normal</option><option value="volatile">Volatile prices</option><option value="poisoned">Poisoned feed</option><option value="collusion">Coordinated agents</option></select></div>
+              <div class="field"><label for="policy-seed">Seed</label><input id="policy-seed" type="number" min="0" max="4294967295" step="1" value="7" required></div>
+              <div class="field"><label for="policy-agents">Agents</label><input id="policy-agents" type="number" min="1" max="5000" step="1" value="150" required></div>
+              <div class="field"><label for="policy-steps">Ticks</label><input id="policy-steps" type="number" min="1" max="2000" step="1" value="400" required></div>
+              <div class="field"><label for="policy-max-bad">Max harmful notional per day (USD)</label><input id="policy-max-bad" type="number" min="0" max="1000000000000" step="0.01" placeholder="Optional"></div>
+              <div class="field"><label for="policy-max-refusal">Max legitimate refusals (%)</label><input id="policy-max-refusal" type="number" min="0" max="100" step="any" placeholder="Optional"></div>
+              <div class="field"><label for="policy-max-holds">Max orders held per day</label><input id="policy-max-holds" type="number" min="0" max="1000000000" step="any" placeholder="Optional"></div>
+            </div>
+          </details>
+          <div class="policy-actions">
+            <button type="button" id="policy-compare" value="search">Compare draft options</button>
+            <button type="button" id="policy-rank" value="rank" class="ghost">Preview draft ranking</button>
+          </div>
+          <div id="policy-options" class="policy-output" aria-live="polite" aria-busy="false"></div>
+          <fieldset id="policy-draft-fields">
+            <legend>Unsigned draft</legend>
+            <div class="policy-grid">
+            <div class="field"><label for="policy-symbols">Symbols</label><input id="policy-symbols" required aria-describedby="policy-symbol-help"><p id="policy-symbol-help" class="help">Separate symbols with commas.</p></div>
+            <div class="field"><label for="policy-sides">Order sides</label><select id="policy-sides"><option value="both">Buy and sell</option><option value="buy">Buy only</option><option value="sell">Sell only</option></select></div>
+            <div class="field"><label for="policy-order">Per order (USD)</label><input id="policy-order" type="number" min="0.01" step="0.01" required></div>
+            <div class="field"><label for="policy-daily">Per day (USD)</label><input id="policy-daily" type="number" min="0.01" step="0.01" required></div>
+            <div class="field"><label for="policy-band">Price band (%)</label><input id="policy-band" type="number" min="0" max="100" step="any" required></div>
+            <div class="field"><label for="policy-approval">Approval above (USD)</label><input id="policy-approval" type="number" min="0" step="0.01" placeholder="No separate threshold"></div>
+            </div>
+            <div class="policy-actions"><button type="submit" value="fit" class="ghost">Check draft</button><button type="submit" value="estimate" class="ghost">Estimate outcomes</button><button type="submit" value="simulate" class="ghost">Simulate both policies</button></div>
+          </fieldset>
+        </fieldset>
+      </form>
+      <div id="policy-out" class="policy-output" aria-live="polite" aria-busy="false"></div>
     </details>
-  </section>
-
-  <section id="graph" aria-labelledby="h-graph" class="card">
-    <h2 id="h-graph">Trigger graph <span class="tag">L7</span></h2>
-    <p class="hint">A standing rule fires only when at least two independent, unquarantined sources agree.</p>
-    <form id="graph-form">
-      <div class="row"><label for="g-preset">Events</label>
-        <select id="g-preset">
-          <option value="single_venue_crash">One venue prints a -48% crash</option>
-          <option value="real_crash">A real -45% crash on all venues</option>
-          <option value="takeover_echo">A fake takeover echoed by three wires</option>
-          <option value="honest">A quiet morning</option>
-        </select>
-        <button type="submit">Evaluate</button></div>
+    <form id="ar-form" class="card" novalidate aria-describedby="ar-cli">
+      <div class="ar-row">
+        <div class="field"><label for="ar-seed">Seed</label><input id="ar-seed" type="number" value="7" min="0" step="1" inputmode="numeric" aria-describedby="ar-seed-err"><p class="err" id="ar-seed-err" role="alert"></p></div>
+        <fieldset class="field"><legend>Agents</legend><div class="segc">
+          <label><input type="radio" name="ar-agents" value="200"><span>200</span></label><label><input type="radio" name="ar-agents" value="1000" checked><span>1,000</span></label><label><input type="radio" name="ar-agents" value="5000"><span>5,000</span></label></div></fieldset>
+        <div class="field"><label for="ar-steps">Steps</label><input id="ar-steps" type="number" value="400" min="50" max="800" step="1" inputmode="numeric" aria-describedby="ar-steps-err"><p class="err" id="ar-steps-err" role="alert"></p></div>
+        <fieldset class="field"><legend>Routing</legend><div class="segc" aria-describedby="ar-route-help">
+          <label><input type="radio" name="ar-routing" value="pinned" checked><span>Pinned</span></label><label><input type="radio" name="ar-routing" value="tightest_fit"><span>Tightest fit</span></label></div>
+          <p class="help" id="ar-route-help">Tightest fit routes each order to the smallest envelope that allows it</p></fieldset>
+        <div class="field"><label class="check" for="ar-share-on"><input type="checkbox" id="ar-share-on">Per-agent share</label>
+          <input id="ar-share" type="number" value="1" min="0.1" max="100" step="0.1" disabled aria-label="Per-agent share, percent of an envelope's daily budget" aria-describedby="ar-share-help ar-share-err"><p class="err" id="ar-share-err" role="alert"></p>
+          <p class="help" id="ar-share-help">Operator policy: no single agent may spend more than this share of an envelope's daily budget</p></div>
+        <div class="field"><label for="ar-feed">Feed</label><select id="ar-feed" aria-describedby="ar-feed-help"><option value="">Synthetic (seeded)</option></select>
+          <p class="help" id="ar-feed-help">No recorded feeds are offered by this server yet.</p></div>
+        <div class="field ar-go"><button type="submit">Run arena</button></div>
+      </div>
+      <p class="ar-cli"><code class="mono" id="ar-cli"></code><button type="button" class="ghost sm" id="ar-copy" aria-label="Copy the command line">Copy</button></p>
     </form>
-    <div id="graph-out" class="out" aria-live="polite"></div>
+    <div id="ar-out" class="sect" aria-live="polite" aria-busy="false"></div>
   </section>
 
-  <section id="scenario" aria-labelledby="h-scn" class="card">
-    <h2 id="h-scn">Run a demo scenario</h2>
-    <p class="hint">Scripted demos run with no model. Lab cases replay recorded model runs offline.</p>
-    <form id="scn-form" class="row">
-      <label for="scn-id">Scenario</label><select id="scn-id"></select>
-      <label for="scn-arm">Arm</label>
-      <select id="scn-arm"><option value="">(scenario default)</option><option>naive</option><option>gate_only</option><option>full</option></select>
-      <button type="submit">Run</button>
-    </form>
-    <div id="scn-out" class="out" aria-live="polite"></div>
+  <!-- ===================== Ledger ===================== -->
+  <section id="ledger" class="view" aria-labelledby="h-ledger" hidden>
+    <header>
+      <h1 id="h-ledger" tabindex="-1">Ledger</h1>
+      <p>The receiver keeps a hash-chained paper ledger. Integrity says whether any past entry was altered.</p>
+      <div class="lps"><span class="lcode">L8</span></div>
+    </header>
+    <div class="card">
+      <button type="button" id="ledger-load">Refresh ledger</button>
+      <div id="ledger-out" class="out sect" aria-live="polite" aria-busy="false"></div>
+    </div>
   </section>
 
-  <section id="ledger" aria-labelledby="h-ledger" class="card">
-    <h2 id="h-ledger">Ledger <span class="tag">L8</span></h2>
-    <div class="row"><button type="button" id="ledger-load">Refresh</button></div>
-    <div id="ledger-out" class="out" aria-live="polite"></div>
+  <!-- ===================== Results ===================== -->
+  <section id="results" class="view" aria-labelledby="h-results" hidden>
+    <header>
+      <h1 id="h-results" tabindex="-1">Results</h1>
+      <p>Measured results from the attack lab, read from <code>docs/RESULTS.md</code>. Simulated markets, few repeats: read the caveats beside the numbers.</p>
+    </header>
+    <div id="res-head" aria-live="polite" aria-busy="false"></div>
+    <div class="card caveats" id="res-caveats"><h3>Honest caveats</h3><div id="res-caveat-body" aria-live="polite"></div></div>
+    <div class="card"><div id="res-chart" aria-live="polite"></div></div>
+    <div class="card">
+      <div class="filters">
+        <div class="field"><label for="res-sec">Table</label><select id="res-sec"></select></div>
+        <div class="field"><label for="res-fam">Family</label><select id="res-fam"><option value="">all families</option></select></div>
+        <div class="field"><label for="res-arm">Arm</label><select id="res-arm"><option value="">all arms</option><option>naive</option><option>gate_only</option><option>full</option></select></div>
+      </div>
+      <div id="res-out" class="out" aria-live="polite" aria-busy="false"></div>
+    </div>
   </section>
-
-  <section id="results" aria-labelledby="h-results" class="card">
-    <h2 id="h-results">Results</h2>
-    <div class="row"><label for="res-sec">Section</label><select id="res-sec"></select></div>
-    <div id="res-out" class="out" aria-live="polite"></div>
-  </section>
+  <p class="foot">Served locally. Nothing on this page is loaded from the network.</p>
 </main>
-<footer class="wrap foot">OrderGuard dashboard. Everything on this page is served locally; nothing is loaded from the network.</footer>
+</div>
+</div>
+
+<!-- ===================== Command palette and shortcuts ===================== -->
+<dialog id="palette" aria-label="Command palette">
+  <input id="pal-in" class="pal-in" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" aria-label="Jump to a page or run an example" placeholder="Jump to a page or run an example" autocomplete="off" spellcheck="false">
+  <ul id="pal-list" role="listbox" aria-label="Results"></ul>
+</dialog>
+<dialog id="help" aria-labelledby="help-h">
+  <div class="dlg-b"><h2 id="help-h">Keyboard shortcuts</h2>
+    <dl class="keys">
+      <dt><kbd>&#8984;K</kbd> or <kbd>Ctrl</kbd> <kbd>K</kbd></dt><dd>Command palette</dd>
+      <dt><kbd>g</kbd> <kbd>o</kbd></dt><dd>Overview</dd><dt><kbd>g</kbd> <kbd>s</kbd></dt><dd>Screen text</dd>
+      <dt><kbd>g</kbd> <kbd>c</kbd></dt><dd>Check order</dd><dt><kbd>g</kbd> <kbd>t</kbd></dt><dd>Triggers</dd>
+      <dt><kbd>g</kbd> <kbd>n</kbd></dt><dd>Scenarios</dd><dt><kbd>g</kbd> <kbd>a</kbd></dt><dd>Swarm arena</dd><dt><kbd>g</kbd> <kbd>l</kbd></dt><dd>Ledger</dd><dt><kbd>g</kbd> <kbd>r</kbd></dt><dd>Results</dd>
+      <dt><kbd>?</kbd></dt><dd>This list</dd><dt><kbd>Esc</kbd></dt><dd>Close a dialog or the menu</dd>
+    </dl>
+    <p class="hint mt12">Shortcuts pause while you type in a field.</p>
+    <p class="mt12"><button type="button" class="ghost" id="help-close">Close</button></p></div>
+</dialog>
+
+<script src="/static/ui.js"></script>
+<script src="/static/pages.js"></script>
+<script src="/static/pages2.js"></script>
+<script src="/static/arena.js"></script>
+<script src="/static/policy.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

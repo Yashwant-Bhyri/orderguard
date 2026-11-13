@@ -18,10 +18,11 @@ import math
 import re
 from pathlib import Path
 
-from .normalise import TAG_HI, TAG_LO, clean
+from . import decision as _decision
+from .normalise import TAG_HI, TAG_LO, clean, fold_confusables, mixed_script_tokens
 
 ARTIFACT = Path(__file__).resolve().parents[2] / "data" / "models" / "injection_clf.json"
-FORMAT = "orderguard-injection-clf/1"
+FORMAT = "orderguard-injection-clf/2"
 MIN_LINE_CHARS = 6
 MAX_LINES = 400
 MAX_LINE_CHARS = 4000
@@ -34,15 +35,23 @@ _DIGITS = re.compile(r"\d")
 
 # ---- features (shared by training and inference) ---------------------------------------------------------------------
 
-def prepare_lines(text: str) -> list[str]:
-    """L1-clean `text` and return the lines to score (hidden Unicode-tag text, decoded, is added as its own line)."""
+def analyse(text: str) -> dict:
+    """L1-clean `text`: {"lines": lines to score, "findings": L1 findings, "tag_payload": bool}.
+    Hidden Unicode-tag text, decoded, is added as its own line; look-alike letters inside mixed-script tokens are folded to Latin."""
     text = (text or "")[:MAX_CHARS]
     extra = ""
     if any(TAG_LO <= ord(c) <= TAG_HI for c in text):
         extra = "".join(chr(ord(c) - TAG_LO) for c in text if 0x20 <= ord(c) - TAG_LO < 0x7F)
-    cleaned, _ = clean(text)
+    cleaned, findings = clean(text)
+    for tok, _ in mixed_script_tokens(cleaned):
+        cleaned = cleaned.replace(tok, fold_confusables(tok))
     lines = [ln.strip() for ln in cleaned.split("\n")] + ([extra.strip()] if extra.strip() else [])
-    return [ln[:MAX_LINE_CHARS] for ln in lines if len(ln) >= MIN_LINE_CHARS][:MAX_LINES]
+    lines = [ln[:MAX_LINE_CHARS] for ln in lines if len(ln) >= MIN_LINE_CHARS][:MAX_LINES]
+    return {"lines": lines, "findings": findings + (["tag characters: hidden payload decoded"] if extra.strip() else []), "tag_payload": bool(extra.strip())}
+
+
+def prepare_lines(text: str) -> list[str]:
+    return analyse(text)["lines"]
 
 
 def _norm(line: str) -> str:
@@ -80,10 +89,17 @@ class Classifier:
     def __init__(self, art: dict):
         if art.get("format") != FORMAT:
             raise ValueError(f"unsupported classifier artifact format {art.get('format')!r}")
-        self.meta = {k: art[k] for k in ("format", "threshold", "prefilter_threshold", "metrics", "training_data_sha256", "config") if k in art}
+        self.meta = {k: art[k] for k in ("format", "threshold", "prefilter_threshold", "cascade", "calibration", "use_decision", "metrics", "training_data_sha256", "config") if k in art}
         self.threshold = float(art["threshold"])
         self.prefilter_threshold = float(art.get("prefilter_threshold", max(self.threshold, 0.9)))
+        casc = art.get("cascade") or {}
+        self.clean_below = float(casc.get("clean_below", 0.0))             # stage 1 "confident clean" (final p_attack under this passes)
+        self.attack_above = float(casc.get("attack_above", self.prefilter_threshold))
         self.intercept = float(art["intercept"])
+        plat = (art.get("calibration") or {}).get("platt") or {}
+        self.platt = (float(plat["a"]), float(plat["b"])) if plat else None
+        self.decision = _decision.Decision(art["decision"]) if art.get("decision") else None
+        self.use_decision = bool(art.get("use_decision", False)) and self.decision is not None   # else p_attack is the calibrated classifier probability
         self.blocks: dict[str, dict[str, tuple[float, float]]] = {}
         for name, b in art["blocks"].items():
             self.blocks[name] = {t: (i, c) for t, i, c in zip(b["terms"], b["idf"], b["coef"])}
@@ -109,23 +125,35 @@ class Classifier:
 
     @staticmethod
     def _sigmoid(z: float) -> float:
+        z = max(-60.0, min(60.0, z))
         return 1.0 / (1.0 + math.exp(-z)) if z >= 0 else math.exp(z) / (1.0 + math.exp(z))
 
     def score_lines(self, lines: list[str]) -> list[float]:
         return [self._sigmoid(self._line_logit(ln)[0]) for ln in lines]
 
     def score(self, text: str, *, top: int = 5) -> dict:
-        lines = prepare_lines(text)
+        """{"p_attack": final probability (decision layer if present), "p_clf": calibrated classifier probability, "label", "top_features", ...}"""
+        a = analyse(text)
+        lines = a["lines"]
+        tf = _decision.text_features(lines, a["findings"], a["tag_payload"])
         if not lines:
-            return {"p_attack": 0.0, "label": "clean", "top_features": [], "line": ""}
-        best_z, best_line, best_contrib = -1e9, "", []
-        for ln in lines:
-            z, contrib = self._line_logit(ln, explain=True)
-            if z > best_z:
-                best_z, best_line, best_contrib = z, ln, contrib
-        p = self._sigmoid(best_z)
+            zs, best_line, best_contrib = [], "", []
+        else:
+            scored = [(self._line_logit(ln, explain=True), ln) for ln in lines]
+            (bz, best_contrib), best_line = max(scored, key=lambda t: t[0][0])
+            zs = sorted((s[0][0] for s in scored), reverse=True)
+        zmax = zs[0] if zs else -_decision.Z_CLIP
+        p_clf = self._sigmoid(self.platt[0] * zmax + self.platt[1]) if self.platt else self._sigmoid(zmax)
+        out = {"p_clf": p_clf, "z": zmax}
+        if self.decision is not None:
+            x = _decision.vector(tf, zs)
+            out["decision"] = self.decision.explain(x)
+            p = self._sigmoid(self.decision.logit(x)) if self.use_decision else p_clf
+        else:
+            p = p_clf
         feats = [{"feature": g, "weight": round(x, 4)} for x, g in sorted(best_contrib, reverse=True)[:top] if x > 0]
-        return {"p_attack": p, "label": "attack" if p >= self.threshold else "clean", "top_features": feats, "line": best_line[:200]}
+        out.update({"p_attack": p, "label": "attack" if p >= self.threshold else "clean", "top_features": feats, "line": best_line[:200], "findings": a["findings"]})
+        return out
 
 
 def load(path: Path | str | None = None) -> Classifier:

@@ -19,7 +19,7 @@ import datetime as dt
 import hashlib
 import json
 import unicodedata
-from dataclasses import dataclass, field, asdict
+from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -97,6 +97,10 @@ class Mandate:
     @classmethod
     def from_dict(cls, d: dict) -> "Mandate":
         known = {f for f in cls.__dataclass_fields__}
+        required = [f.name for f in fields(cls) if f.default is MISSING and f.default_factory is MISSING]
+        missing = [f for f in required if d.get(f) is None]
+        if missing:
+            raise MandateInvalid(f"the mandate is missing required fields: {', '.join(missing)}")
         return cls(**{k: v for k, v in d.items() if k in known})
 
     @classmethod
@@ -137,12 +141,17 @@ class Mandate:
 
 
 def sign_mandate(mandate: dict | Mandate, private_key: Ed25519PrivateKey) -> dict:
-    """Return the mandate dict with `signature` (base64 Ed25519 over canonical JSON of everything else) and the signer's public key."""
-    body = mandate.to_dict(with_signature=False) if isinstance(mandate, Mandate) else {k: v for k, v in mandate.items() if k not in ("signature", "signerPublicKey")}
-    body["signerPublicKey"] = public_key_to_b64(private_key.public_key())
-    sig = private_key.sign(canonical_json({k: v for k, v in body.items() if k != "signerPublicKey"}))
-    body["signature"] = base64.b64encode(sig).decode()
-    return body
+    """Return the canonical mandate body with its Ed25519 signature and the signer's public key."""
+    if isinstance(mandate, Mandate):
+        mandate = mandate.to_dict(with_signature=False)
+    # Serialization omits nulls. Apply defaults to that shape so verify() rebuilds the same body.
+    body = Mandate.from_dict({k: v for k, v in mandate.items() if v is not None}).to_dict(with_signature=False)
+    signature = private_key.sign(canonical_json(body))
+    return {
+        **body,
+        "signerPublicKey": public_key_to_b64(private_key.public_key()),
+        "signature": base64.b64encode(signature).decode(),
+    }
 
 
 # ---- ticker normalisation -------------------------------------------------------------------------------------------

@@ -49,9 +49,20 @@ async function jsonFetch(base, path, body) {
 
 async function main() {
   const mandatePath = arg("--mandate");
-  if (!mandatePath) throw new Error("usage: serve.mjs --mandate mandate.json [--port P] [--step-up-usd N] [--anchor-ttl-sec S] [--anchor-renew-frac F|off]");
-  const mandate = JSON.parse(await readFile(resolve(mandatePath), "utf8"));
+  const proofPath = arg("--parent-proof");
+  const ownerPath = arg("--owner-public-key");
+  const revocations = arg("--revocations");
   const stepUp = arg("--step-up-usd");
+  if (Boolean(mandatePath) === Boolean(proofPath) || Boolean(proofPath) !== Boolean(ownerPath) || (proofPath && stepUp !== undefined)
+      || (revocations && !proofPath)) {
+    throw new Error("Choose --mandate FILE for a demo, or --parent-proof FILE --owner-public-key FILE for signed paper policy");
+  }
+  register();
+  const { ReceiverCore } = await import(pathToFileURL(join(root, "receiver/core/receiver-core.ts")).href);
+  const { SignedPaperPolicy } = await import(pathToFileURL(join(root, "receiver/core/paper-policy.ts")).href);
+  const signedPolicy = proofPath ? new SignedPaperPolicy(JSON.parse(await readFile(resolve(proofPath), "utf8")),
+    (await readFile(resolve(ownerPath), "utf8")).trim()) : undefined;
+  const mandate = signedPolicy?.parent ?? JSON.parse(await readFile(resolve(mandatePath), "utf8"));
   if (stepUp !== undefined) mandate.stepUpThresholdUsd = Number(stepUp);
   // Anchor lifetime and renewal point. r5 caps a mandate at 1 h and floors it at 2 s (see receiver/r5/PATCHES.md).
   const ttlRaw = arg("--anchor-ttl-sec") ?? process.env.ORDERGUARD_ANCHOR_TTL_SEC;
@@ -62,16 +73,25 @@ async function main() {
   const renewFrac = fracRaw === "off" ? null : Number(fracRaw);
   if (renewFrac !== null && !(renewFrac >= 0.1 && renewFrac <= 0.95)) throw new Error("--anchor-renew-frac must be 0.1..0.95 or off");
   const mandateExpiresMs = Date.parse(mandate.expiresAt);
+  if (signedPolicy && Date.now() >= mandateExpiresMs) throw new Error("The signed parent policy is expired");
+  let core = null;
+  const parentUnrevoked = async () => {
+    if (!revocations) return true;
+    try {
+      const ids = JSON.parse(await readFile(resolve(revocations), "utf8"));
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) return false;
+      if (!ids.includes(signedPolicy.parentId)) return true;
+      if (core && !core.revoked) core.revoke();
+      return false;
+    } catch (error) { return error?.code === "ENOENT"; }
+  };
+  if (!await parentUnrevoked()) throw new Error("The signed parent is revoked or its revocation list is invalid");
   const wanted = arg("--port");
   const port = wanted && wanted !== "0" ? Number(wanted) : await freePort();
-
-  register();
-  const { ReceiverCore } = await import(pathToFileURL(join(root, "receiver/core/receiver-core.ts")).href);
 
   const scratch = await mkdtemp(join(await realpath(tmpdir()), "orderguard-bridge-"));
   let r5 = null;
   let http = null;
-  let core = null;
   let closing = false;
   const shutdown = async (code) => {
     if (closing) return; closing = true;
@@ -143,12 +163,15 @@ async function main() {
       return status.mandates?.some((m) => m.mandateId === id && m.active === true && m.revocationPending !== true) === true;
     };
     const r5MandateActive = () => anchorActiveAt(current.id);
+    const parentAuthorityActive = async () => await parentUnrevoked() && await r5MandateActive();
 
     const schedule = () => {
       clearTimeout(timer);
-      if (renewFrac === null || closing || core?.revoked) return;
+      if (renewFrac === null || closing || core?.revoked || Date.now() >= mandateExpiresMs) return;
       const at = current.createdAt + Math.round((current.expiresAt - current.createdAt) * renewFrac);
-      timer = setTimeout(() => { renew().catch(() => { schedule(); }); }, Math.max(250, at - Date.now()));
+      timer = setTimeout(async () => {
+        if (await parentUnrevoked()) renew().catch(() => { schedule(); });
+      }, Math.max(250, at - Date.now()));
       timer.unref?.();
     };
     // Single-flight renewal. Never starts after revocation; never starts once the core mandate itself has expired.
@@ -169,7 +192,7 @@ async function main() {
     };
     // Gate for /propose and /approve: renew on demand if the anchor lapsed. Returns null when fine or a denial reason.
     const ensureAnchor = async () => {
-      if (core.revoked || Date.now() >= mandateExpiresMs) return null; // the core denies these with its own reason
+      if (core.revoked || Date.now() >= mandateExpiresMs || !await parentUnrevoked()) return null; // the core denies these with its own reason
       if (await r5MandateActive().catch(() => false)) return null;
       try { await renew(); } catch { /* fall through to the check below */ }
       if (core.revoked) return null;
@@ -180,8 +203,8 @@ async function main() {
     // ---- the receiver core, with the same owner passkey registered for step-up approval ----
     const coreOrigin = `http://127.0.0.1:${port}`;
     core = new ReceiverCore({
-      ledgerPath: join(scratch, "receiver-core.sqlite"), mandateId, mandate,
-      authority: { isActive: r5MandateActive }, webauthn: { origin: coreOrigin, rpId: "127.0.0.1" },
+      ledgerPath: join(scratch, "receiver-core.sqlite"), mandateId, mandate, signedPolicy,
+      authority: { isActive: parentAuthorityActive }, webauthn: { origin: coreOrigin, rpId: "127.0.0.1" },
     });
     await core.registerOwnerPasskey(registrationResponse(passkey, core.passkeyRegistrationChallenge(), coreOrigin));
 
@@ -201,8 +224,15 @@ async function main() {
       if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return send(res, 403, { error: "loopback only" });
       const path = new URL(req.url || "/", "http://x").pathname;
       try {
-        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, issuerMandateActive: await r5MandateActive().catch(() => false), anchorId: current.id, anchorExpiresAt: new Date(current.expiresAt).toISOString(), anchorRenewals: renewals, anchorRenewalError: renewalError });
+        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, issuerMandateActive: await parentAuthorityActive().catch(() => false), anchorId: current.id, anchorExpiresAt: new Date(current.expiresAt).toISOString(), anchorRenewals: renewals, anchorRenewalError: renewalError });
         if (req.method === "GET" && path === "/snapshot") { const s = core.snapshot(); return send(res, 200, { orders: s.orders, ledgerIntegrity: s.ledgerIntegrity, revoked: s.revoked, usedNotionalUsd: s.usedNotionalUsd }); }
+        if (signedPolicy && req.method === "GET" && path === "/policy") return send(res, 200, core.policy());
+        if (signedPolicy && req.method === "POST" && path === "/policy/activate") {
+          const proof = await readBody(req);
+          const lapsed = await ensureAnchor();
+          if (lapsed) return send(res, 409, { error: lapsed });
+          return send(res, 200, await core.activatePolicy(proof));
+        }
         if (req.method === "POST" && path === "/propose") {
           const b = await readBody(req);
           const lapsed = await ensureAnchor();
@@ -233,8 +263,8 @@ async function main() {
           const lapsed = await ensureAnchor();
           if (lapsed) return send(res, 200, denyAnchor(lapsed));
           let ch;
-          try { ch = core.beginApproval(b.orderId); } catch (e) { return send(res, 200, { decision: "denied", reason: e.code || "not_held", reasons: [e.code || "not_held"], ledgerEffect: false }); }
-          return send(res, 200, await core.approve(b.orderId, authenticationResponse(passkey, ch.challenge, coreOrigin)));
+          try { ch = core.beginApproval(b.orderId, b.authorization); } catch (e) { return send(res, 200, { decision: "denied", reason: e.code || "not_held", reasons: [e.code || "not_held"], ledgerEffect: false }); }
+          return send(res, 200, await core.approve(b.orderId, authenticationResponse(passkey, ch.challenge, coreOrigin), b.authorization));
         }
         return send(res, 404, { error: "not found" });
       } catch (e) {

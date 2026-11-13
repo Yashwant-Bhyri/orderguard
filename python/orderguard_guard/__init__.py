@@ -12,6 +12,6 @@ ROOT = Path(__file__).resolve().parents[2]          # repository root (python/or
 DATA = ROOT / "data"
 REPLAY_DIR = Path(os.getenv("OG_REPLAY_DIR", DATA / "replay"))
 RESULTS_DIR = Path(os.getenv("OG_RESULTS_DIR", ROOT / "results"))
-DEFAULT_MODEL = os.getenv("OG_MODEL", "deepseek/deepseek-v4.1-flash")
+DEFAULT_MODEL = os.getenv("OG_MODEL", "deepseek/deepseek-v4.1-flash-1017")
 
 __all__ = ["ROOT", "DATA", "REPLAY_DIR", "RESULTS_DIR", "DEFAULT_MODEL"]

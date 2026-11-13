@@ -1,6 +1,6 @@
 """L1 normalise: code-only cleaning of text before any model reads it.
 
-  - strips zero-width and bidi-control characters and Unicode tag characters (U+E0000 block), reporting them;
+  - strips default-ignorable Unicode characters, including zero-width and bidi controls, reporting them;
   - decodes what the tag characters spelled, so the hidden instruction is visible in the finding;
   - NFKC normalisation (fullwidth letters, ligatures, compatibility forms);
   - flags mixed-script tokens such as a Cyrillic А inside "АAPL";
@@ -22,6 +22,22 @@ ZERO_WIDTH = {
     "‪": "LRE", "‫": "RLE", "‬": "PDF", "‭": "LRO", "‮": "RLO",
     "⁦": "LRI", "⁧": "RLI", "⁨": "FSI", "⁩": "PDI", "؜": "ARABIC LETTER MARK",
 }
+# Further default-ignorable characters that render as nothing and can split a keyword in front of a text screen.
+ZERO_WIDTH.update({chr(c): n for c, n in (
+    (0x2061, "FUNCTION APPLICATION"), (0x2062, "INVISIBLE TIMES"), (0x2063, "INVISIBLE SEPARATOR"), (0x2064, "INVISIBLE PLUS"),
+    (0x034F, "COMBINING GRAPHEME JOINER"), (0x115F, "HANGUL CHOSEONG FILLER"), (0x1160, "HANGUL JUNGSEONG FILLER"),
+    (0x3164, "HANGUL FILLER"), (0xFFA0, "HALFWIDTH HANGUL FILLER"), (0x17B4, "KHMER VOWEL INHERENT AQ"),
+    (0x17B5, "KHMER VOWEL INHERENT AA"), (0x180B, "MONGOLIAN FVS1"), (0x180C, "MONGOLIAN FVS2"), (0x180D, "MONGOLIAN FVS3"),
+    (0x180F, "MONGOLIAN FVS4"))})
+ZERO_WIDTH.update({chr(c): f"VARIATION SELECTOR-{c - 0xFE00 + 1}" for c in range(0xFE00, 0xFE10)})
+# Remaining Default_Ignorable_Code_Point ranges from Unicode 17 DerivedCoreProperties.txt.
+# U+E0000..U+E007F are handled separately to recover the text encoded by Unicode tags.
+ZERO_WIDTH.update({
+    chr(c): unicodedata.name(chr(c), f"U+{c:04X}")
+    for start, end in ((0x2065, 0x2065), (0x206A, 0x206F), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3),
+                       (0x1D173, 0x1D17A), (0xE0080, 0xE0FFF))
+    for c in range(start, end + 1)
+})
 TAG_LO, TAG_HI = 0xE0000, 0xE007F
 _B64 = re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{48,}={0,2}(?![A-Za-z0-9+/=])")
 _TOKEN = re.compile(r"[^\W\d_]{2,}[\w]*", re.UNICODE)
@@ -73,12 +89,41 @@ def _decode_b64(run: str) -> str | None:
     try:
         raw = base64.b64decode(run + "=" * (-len(run) % 4), validate=False)
         text = raw.decode("utf-8")
-    except Exception:
+    except ValueError:
         return None
     if not text:
         return None
-    printable = sum(ch.isprintable() or ch in "\n\t" for ch in text) / len(text)
+    printable = sum(
+        ch.isprintable() or ch in "\n\t" or ch in ZERO_WIDTH or TAG_LO <= ord(ch) <= TAG_HI
+        for ch in text
+    ) / len(text)
     return text if printable > 0.95 else None
+
+
+def _expand_base64(text: str, findings: list[str]) -> str:
+    parts: list[str] = []
+    end = 0
+    while (match := _B64.search(text, end)) is not None:
+        parts.append(text[end:match.end()])
+        end = match.end()
+        run = match.group()
+        decoded = _decode_b64(run)
+        if decoded is None:
+            continue
+
+        # Decoding shrinks the input, so cleaning the decoded text also exposes nested runs.
+        cleaned, decoded_findings = clean(decoded)
+        annotation = f" [decoded base64: {cleaned}]"
+        if text.startswith(annotation, end):
+            end += len(annotation)
+            # A matching annotation can come from untrusted input. Still report hidden text in the encoded run.
+            findings.extend(severe(decoded_findings))
+        else:
+            findings.append(f"base64: a {len(run)}-character run decodes to {decoded[:160]!r}")
+            findings.extend(decoded_findings)
+        parts.append(annotation)
+    parts.append(text[end:])
+    return "".join(parts)
 
 
 def clean(text: str) -> tuple[str, list[str]]:
@@ -128,14 +173,7 @@ def clean(text: str) -> tuple[str, list[str]]:
         findings.append(f"mixed-script tokens: {shown}")
 
     # 5. Long base64 runs: decode and append so a model screen sees the payload.
-    def repl(m: re.Match) -> str:
-        decoded = _decode_b64(m.group(0))
-        if decoded is None:
-            return m.group(0)
-        findings.append(f"base64: a {len(m.group(0))}-character run decodes to {decoded[:160]!r}")
-        return f"{m.group(0)} [decoded base64: {decoded}]"
-    text = _B64.sub(repl, text)
-    return text, findings
+    return _expand_base64(text, findings), findings
 
 
 SEVERE = ("tag characters", "zero-width characters", "bidi controls", "mixed-script tokens")

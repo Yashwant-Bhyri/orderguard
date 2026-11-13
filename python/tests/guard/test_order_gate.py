@@ -152,6 +152,18 @@ def test_signed_mandate_verifies_and_tamper_is_detected():
         Mandate.from_dict(signed).verify(pub, now="2024-11-06T12:00:00Z")
 
 
+@pytest.mark.parametrize("as_mandate", [False, True])
+def test_signing_with_null_reference_prices_survives_save_and_load(as_mandate, tmp_path):
+    priv, pub = generate_keypair()
+    unsigned = dict(MANDATE, referencePrices=None)
+    mandate = Mandate.from_dict(unsigned) if as_mandate else unsigned
+    signed = sign_mandate(mandate, priv)
+    assert signed["referencePrices"] == {}
+    path = tmp_path / "mandate.json"
+    Mandate.from_dict(signed).save(path)
+    Mandate.load(path).verify(pub, now="2024-11-06T12:00:00Z")
+
+
 def test_wrong_key_unsigned_expired_revoked():
     priv, pub = generate_keypair()
     _, other_pub = generate_keypair()

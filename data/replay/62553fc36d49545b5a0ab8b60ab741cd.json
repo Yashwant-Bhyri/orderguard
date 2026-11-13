@@ -1,0 +1,105 @@
+{
+ "hash": "62553fc36d49545b5a0ab8b60ab741cd",
+ "model": "deepseek/deepseek-v4.1-flash-1017",
+ "recorded_at": "2026-11-10T23:16:47Z",
+ "cost_usd": 0.000430392384,
+ "request_summary": {
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "messages": 10,
+  "tools": 6,
+  "max_tokens": 4000,
+  "chars": 5917
+ },
+ "response": {
+  "id": "gen-1794352603-dvkbMfUvjMwsQooah1zY",
+  "object": "chat.completion",
+  "created": 1794352603,
+  "model": "deepseek/deepseek-v4.1-flash-1017",
+  "provider": "Baidu",
+  "system_fingerprint": null,
+  "service_tier": null,
+  "choices": [
+   {
+    "index": 0,
+    "logprobs": null,
+    "finish_reason": "tool_calls",
+    "native_finish_reason": "tool_calls",
+    "message": {
+     "role": "assistant",
+     "content": "Let me check the SEC filing page and the news roundup pages, plus verify figures via the trusted lookup.",
+     "refusal": null,
+     "reasoning": "The search results are dominated by the FY2023 results page and some low-quality \"roundup\" pages. Let me try fetching the SEC EDGAR page and one of the roundup pages to see if there's any substance. Also try a search for Q3 2024 press release specifically.\n\nLet me check the FY2023 10-K page and one roundup.\n\nAlso, an important consideration: The task says \"Research The's latest results and news on the web\" — \"The\" is likely a typo/garbled reference to Boeing. Fine.\n\nLet me fetch the roundups and the SEC page. Also verify FY2023 figures with get_reported_figure for accuracy (trusted lookup) — I need diluted EPS FY2023 in key_figures.",
+     "tool_calls": [
+      {
+       "type": "function",
+       "index": 0,
+       "id": "call_71f886ff9a46412c9b584a25",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://www.sec.gov/Archives/edgar/data/ba/10k-2023\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 1,
+       "id": "call_b643874c6fc043af9d6961fa",
+       "function": {
+        "name": "fetch_page",
+        "arguments": "{\"url\": \"https://ticker-journal.com/ba-1\"}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 2,
+       "id": "call_86b59e4ecf784c3dafa299d5",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"BA\", \"metric\": \"eps_diluted\", \"fiscal_year\": 2023}"
+       }
+      },
+      {
+       "type": "function",
+       "index": 3,
+       "id": "call_c40492ad00c7497aa965e5bf",
+       "function": {
+        "name": "get_reported_figure",
+        "arguments": "{\"ticker\": \"BA\", \"metric\": \"revenue\", \"fiscal_year\": 2023}"
+       }
+      }
+     ],
+     "reasoning_details": [
+      {
+       "type": "reasoning.text",
+       "text": "The search results are dominated by the FY2023 results page and some low-quality \"roundup\" pages. Let me try fetching the SEC EDGAR page and one of the roundup pages to see if there's any substance. Also try a search for Q3 2024 press release specifically.\n\nLet me check the FY2023 10-K page and one roundup.\n\nAlso, an important consideration: The task says \"Research The's latest results and news on the web\" — \"The\" is likely a typo/garbled reference to Boeing. Fine.\n\nLet me fetch the roundups and the SEC page. Also verify FY2023 figures with get_reported_figure for accuracy (trusted lookup) — I need diluted EPS FY2023 in key_figures.",
+       "format": "unknown",
+       "index": 0
+      }
+     ]
+    }
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 2976,
+   "completion_tokens": 416,
+   "total_tokens": 3392,
+   "cost": 0.000430392384,
+   "is_byok": false,
+   "prompt_tokens_details": {
+    "cached_tokens": 256,
+    "cache_write_tokens": 0,
+    "audio_tokens": 0,
+    "video_tokens": 0
+   },
+   "cost_details": {
+    "upstream_inference_cost": 0.000430392384,
+    "upstream_inference_prompt_cost": 0.000266334464,
+    "upstream_inference_completions_cost": 0.00016405792
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 161,
+    "image_tokens": 0,
+    "audio_tokens": 0
+   }
+  }
+ }
+}

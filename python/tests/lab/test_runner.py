@@ -7,7 +7,7 @@ from orderguard_lab.sandbox.policy import PolicyLLM
 
 def test_estimate_prints_calls_and_dollars():
     e = runner.estimate(C.select("all"), "deepseek/deepseek-v4.1-flash", ["naive", "gate_only", "full"], 1)
-    assert e["priced"] and e["price_in"] == 0.045 and e["price_out"] == 0.50
+    assert e["priced"] and (e["price_in"], e["price_out"]) == runner.PRICES["deepseek/deepseek-v4.1-flash"]
     assert e["total"]["runs"] == 3 * len(C.all_cases()) and e["total"]["usd"] > 0 and e["total"]["calls"] > e["total"]["runs"]
     e2 = runner.estimate(C.select("all"), "deepseek/deepseek-v4.1-flash", ["naive", "gate_only", "full"], 2)
     assert e2["per_arm"]["naive"]["usd"] == 2 * e["per_arm"]["naive"]["usd"]            # agent calls double with reps

@@ -1,7 +1,9 @@
 """FastAPI app. Bound to 127.0.0.1 by default; optional bearer token via ORDERGUARD_APP_TOKEN."""
 from __future__ import annotations
 
+import hashlib
 import hmac
+import re
 import logging
 import os
 import secrets
@@ -9,7 +11,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import services as S
@@ -18,6 +20,19 @@ from .models import CheckOrderRequest, ScenarioRequest, ScreenRequest, TriggerGr
 STATIC = Path(__file__).parent / "static"
 MAX_BODY = 1_000_000
 log = logging.getLogger("orderguard.app")
+
+
+def _versioned_index() -> str:
+    """index.html with every /static/<file> reference tagged ?v=<content hash>, so a changed asset always gets a new URL
+    and no browser can run a stale script or stylesheet after an upgrade."""
+    html = (STATIC / "index.html").read_text()
+
+    def tag(m: "re.Match") -> str:
+        f = STATIC / m.group(2)
+        if not f.is_file():
+            return m.group(0)
+        return f'{m.group(1)}/static/{m.group(2)}?v={hashlib.sha256(f.read_bytes()).hexdigest()[:12]}{m.group(3)}'
+    return re.sub(r'((?:src|href)=")/static/([A-Za-z0-9_.-]+)(")', tag, html)
 
 
 def create_app(token: str | None = None) -> FastAPI:
@@ -49,6 +64,9 @@ def create_app(token: str | None = None) -> FastAPI:
         resp.headers.setdefault("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'")
         if request.url.path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
+        else:
+            # The page and its scripts revalidate on every load (ETag/Last-Modified), so an upgrade never runs stale JS.
+            resp.headers.setdefault("Cache-Control", "no-cache")
         return resp
 
     @app.exception_handler(S.AppError)
@@ -72,9 +90,17 @@ def create_app(token: str | None = None) -> FastAPI:
 
     api = [Depends(auth)]
 
+    # Agent-swarm arena and envelope lab (python/orderguard_arena): same bearer auth as every other /api route.
+    from orderguard_arena.api import router as arena_router
+    app.include_router(arena_router, dependencies=api)
+
     @app.get("/api/health", dependencies=api)
     def health():
         return S.health()
+
+    @app.get("/api/overview", dependencies=api)
+    def overview():
+        return S.overview(state)
 
     @app.post("/api/screen", dependencies=api)
     def screen(req: ScreenRequest):
@@ -110,7 +136,7 @@ def create_app(token: str | None = None) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(STATIC / "index.html", media_type="text/html")
+        return HTMLResponse(_versioned_index(), headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

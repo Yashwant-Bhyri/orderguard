@@ -9,6 +9,7 @@ trap 'rm -rf "$tmp"' EXIT
 cd "$root"
 tar -cf - \
   --exclude=./node_modules --exclude=./.git --exclude=./.venv --exclude=./var --exclude=./.orderguard \
+  --exclude=./data/risk/.cache \
   --exclude=__pycache__ --exclude=.pytest_cache --exclude=.DS_Store \
   --exclude='*.db' --exclude='*.sqlite' --exclude='*.sqlite-journal' --exclude='*.mp4' \
   . | tar -xf - -C "$tmp"

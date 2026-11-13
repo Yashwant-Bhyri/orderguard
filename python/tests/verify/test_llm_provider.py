@@ -1,158 +1,184 @@
-"""The verify LLM client's provider switch: wire translation, unchanged cache keys, untouched default path.
+"""Verify's cache compatibility and shared LLM behavior with a fake HTTP transport."""
 
-Offline: httpx.post is monkeypatched, and the cache directory is a tmp_path, so nothing is sent or written
-under data/.
-"""
+import hashlib
 import json
 
 import httpx
 import pytest
 
+from orderguard_guard import llm as shared_llm
 from orderguard_verify.core import llm
 
-MODEL = "deepseek/deepseek-v4.1-flash"
+MODEL = "deepseek/deepseek-v4.1-flash-1017"
 SYSTEM, USER = "You extract claims.", "ACME had revenue of $5.0 billion."
+MESSAGES = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": USER}]
 ANSWER = {"claims": []}
-REPLY = {"choices": [{"message": {"role": "assistant", "content": json.dumps(ANSWER)}}],
-         "usage": {"prompt_tokens": 1000, "completion_tokens": 500}}
+REPLY = {"choices": [{"message": {"content": json.dumps(ANSWER)}}],
+         "usage": {"prompt_tokens": 100, "completion_tokens": 50}}
+LEGACY_CALL = llm.LLMCall(MODEL, 42, 17, 0.0005, 2.5, False)
 
 
 @pytest.fixture
-def env(monkeypatch, tmp_path):
+def mock_provider(monkeypatch, tmp_path):
     monkeypatch.delenv("OG_PROVIDER", raising=False)
-    monkeypatch.delenv("OG_ENV_FILE", raising=False)
-    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-test-key")
-    monkeypatch.setenv("OG_LLM", "live")
-    monkeypatch.setattr(llm, "CACHE_DIR", tmp_path / "cache")
-    return monkeypatch
-
-
-def capture(monkeypatch, reply=REPLY):
-    sent = []
-
-    def fake_post(url, **kw):
-        sent.append({"url": url, **kw})
-        return httpx.Response(200, json=reply, request=httpx.Request("POST", url))
-
-    monkeypatch.setattr(llm.httpx, "post", fake_post)
-    return sent
-
-
-def test_default_path_sends_the_logical_request_unchanged(env):
-    sent = capture(env)
-    parsed, call = llm.ask_json(SYSTEM, USER, model="nvidia/nemotron-3.5-super-vl:free", max_tokens=321)
-    assert parsed == ANSWER
-    assert sent[0]["url"] == llm.API_URL
-    assert sent[0]["json"] == {"model": "nvidia/nemotron-3.5-super-vl:free", "temperature": 0, "max_tokens": 321,
-                               "usage": {"include": True},
-                               "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": USER}]}
-    assert sent[0]["headers"]["Authorization"] == "Bearer or-test-key"
-    assert call.cost_usd == 0.0   # default path keeps the old behaviour: no cost reported, none estimated
-
-
-def test_default_wire_is_the_request_object_itself():
-    req = {"model": "m", "usage": {"include": True}}
-    assert llm._wire(req) == (llm.API_URL, req)
-
-
-def test_deepseek_wire_translation(env):
-    env.setenv("OG_PROVIDER", "deepseek")
-    env.setenv("DEEPSEEK_API_KEY", "ds-test-key")
-    sent = capture(env)
-    llm.ask_json(SYSTEM, USER, model=MODEL, max_tokens=77)
-    assert sent[0]["url"] == "https://api.deepseek.com/chat/completions"
-    body = sent[0]["json"]
-    assert body == {"model": "deepseek-flash", "temperature": 0, "max_tokens": 77,
-                    "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": USER}]}
-    assert "usage" not in body
-    assert sent[0]["headers"]["Authorization"] == "Bearer ds-test-key"
-
-
-def test_deepseek_other_model_ids_drop_the_vendor_prefix(env):
-    env.setenv("OG_PROVIDER", "deepseek")
-    req = {"model": "deepseek/deepseek-v4-pro", "usage": {"include": True}, "messages": []}
-    assert llm._wire(req)[1]["model"] == "deepseek-v4-pro"
-    assert llm._wire({"model": "vendor/some-model", "messages": []})[1]["model"] == "some-model"
-
-
-def test_deepseek_key_read_by_name_from_env_file(env, tmp_path):
-    env.setenv("OG_PROVIDER", "deepseek")
-    envfile = tmp_path / "keys.env"
-    envfile.write_text("OPENROUTER_API_KEY=or-only\nexport DEEPSEEK_API_KEY='file-key'\n")
-    env.setenv("OG_ENV_FILE", str(envfile))
-    assert llm._api_key() == "file-key"
-
-
-def test_deepseek_missing_key_is_reported_by_the_deepseek_name(env):
-    env.setenv("OG_PROVIDER", "deepseek")
-    with pytest.raises(llm.LLMUnavailable, match="DEEPSEEK_API_KEY"):
-        llm.ask_json(SYSTEM, USER, model=MODEL)
-
-
-def test_deepseek_cost_is_estimated_from_tokens_when_not_reported(env):
-    env.setenv("OG_PROVIDER", "deepseek")
-    env.setenv("DEEPSEEK_API_KEY", "ds-test-key")
-    capture(env)
-    _, call = llm.ask_json(SYSTEM, USER, model=MODEL)
-    assert call.cost_usd == pytest.approx((1000 * llm.PRICE_IN + 500 * llm.PRICE_OUT) / 1e6)
-    assert call.prompt_tokens == 1000 and call.completion_tokens == 500
-
-
-def test_cache_key_is_computed_from_the_logical_request(env, tmp_path):
-    """A recording made under OpenRouter is found again under deepseek, and a live deepseek call writes the same file."""
-    key = llm._cache_path(MODEL, SYSTEM, USER)
-    assert key.name == llm._cache_path(MODEL, SYSTEM, USER).name
-    assert key.name.endswith(".json") and len(key.stem) == 32
-
-    # live under deepseek writes to the path the OpenRouter-shaped request would produce
-    env.setenv("OG_PROVIDER", "deepseek")
-    env.setenv("DEEPSEEK_API_KEY", "ds-test-key")
-    capture(env)
-    llm.ask_json(SYSTEM, USER, model=MODEL)
-    assert (llm.CACHE_DIR / key.name).exists()
-
-    # and a replay under deepseek hits that recording without any network call
-    env.setenv("OG_LLM", "replay")
-    env.setattr(llm.httpx, "post", lambda *a, **k: pytest.fail("replay must not call the network"))
-    parsed, call = llm.ask_json(SYSTEM, USER, model=MODEL)
-    assert parsed == ANSWER and call.cached is True
-
-
-def test_cache_key_does_not_depend_on_provider(env):
-    env.setenv("OG_LLM", "replay")
-    llm.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path = llm._cache_path(MODEL, SYSTEM, USER)
-    path.write_text(json.dumps({"text": json.dumps(ANSWER),
-                                "call": {"model": MODEL, "prompt_tokens": 0, "completion_tokens": 0,
-                                         "cost_usd": 0.0, "latency_s": 0.0, "cached": False}}))
-    for prov in (None, "openrouter", "deepseek"):
-        if prov is None:
-            env.delenv("OG_PROVIDER", raising=False)
-        else:
-            env.setenv("OG_PROVIDER", prov)
-        assert llm.ask_json(SYSTEM, USER, model=MODEL)[0] == ANSWER
-
-
-def test_deepseek_provider_defaults_to_a_deepseek_model(monkeypatch, tmp_path):
-    """The default model (a free OpenRouter model) does not exist on DeepSeek's API; the provider picks V4.1 Flash."""
-    import orderguard_verify.core.llm as L
-    sent = {}
-
-    class R:
-        status_code = 200
-        def raise_for_status(self): pass
-        def json(self): return {"choices": [{"message": {"content": '{"ok": true}'}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
-
-    def fake_post(url, **kw):
-        sent.update(kw["json"])
-        return R()
-
-    monkeypatch.setenv("OG_PROVIDER", "deepseek")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-not-a-key")
-    monkeypatch.setenv("OG_LLM", "live")
     monkeypatch.delenv("OG_MODEL", raising=False)
-    monkeypatch.setattr(L, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(L.httpx, "post", fake_post)
-    L.ask_json("s", "u")
-    assert sent["model"] == "deepseek-flash"
+    monkeypatch.setenv("OG_LLM", "live")
+    monkeypatch.setenv("OG_MAX_TOKENS", "77")
+    monkeypatch.setattr(llm, "CACHE_DIR", tmp_path / "verify-cache")
+    monkeypatch.setattr(shared_llm, "REPLAY_DIR", tmp_path / "shared-replay")
+    monkeypatch.setattr(shared_llm, "SPEND", shared_llm.Spend(budget_usd=0.05))
+    monkeypatch.setattr(shared_llm, "PRICE_IN", 0.30)
+    monkeypatch.setattr(shared_llm, "PRICE_OUT", 1.20)
+    spend_file = tmp_path / "spend.jsonl"
+    monkeypatch.setenv("OG_SPEND_FILE", str(spend_file))
+
+    requests = []
+    provider = {"balance": 1.0, "reply": REPLY, "status": 200}
+
+    def handle(request):
+        requests.append(request)
+        if request.method == "GET":
+            assert str(request.url) in (shared_llm.DEEPSEEK_BALANCE_URL, shared_llm.CREDITS_URL)
+            return httpx.Response(200, json={
+                "balance_infos": [{"currency": "USD", "total_balance": provider["balance"]}],
+                "data": {"total_credits": provider["balance"], "total_usage": 0},
+            })
+        assert request.method == "POST"
+        return httpx.Response(provider["status"], json=provider["reply"])
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr(shared_llm.LLM, "_http", lambda self: client)
+        monkeypatch.setattr(shared_llm.LLM, "_headers", lambda self: {})
+        yield requests, provider, spend_file
+
+
+def record_legacy_answer():
+    digest = hashlib.sha256(json.dumps([MODEL, SYSTEM, USER]).encode()).hexdigest()[:32]
+    path = llm.CACHE_DIR / f"{digest}.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"text": json.dumps(ANSWER), "call": LEGACY_CALL.__dict__}))
+
+
+def test_live_verify_delegates_to_shared_deepseek_client(mock_provider, monkeypatch):
+    requests, _, spend_file = mock_provider
+    record_legacy_answer()
+
+    parsed, call = llm.ask_json(SYSTEM, USER)
+
+    assert parsed == ANSWER
+    balance, completion = requests
+    assert str(balance.url) == shared_llm.DEEPSEEK_BALANCE_URL
+    assert str(completion.url) == shared_llm.DEEPSEEK_URL
+    assert json.loads(completion.content) == {
+        "model": "deepseek-flash", "messages": MESSAGES, "max_tokens": 77, "temperature": 0,
+    }
+    assert call.model == MODEL
+    assert (call.prompt_tokens, call.completion_tokens) == (100, 50)
+    assert call.cost_usd == pytest.approx(0.00009)
+    assert call.cached is False
+    assert shared_llm.SPEND.calls == 1
+    assert shared_llm.SPEND.spent_usd == pytest.approx(call.cost_usd)
+    [logged] = spend_file.read_text().splitlines()
+    spend_entry = json.loads(logged)
+    assert spend_entry["model"] == MODEL
+    assert spend_entry["provider"] == "deepseek"
+    assert spend_entry["cost_usd"] == pytest.approx(call.cost_usd)
+
+    monkeypatch.setenv("OG_LLM", "replay")
+    _, replayed = llm.ask_json(SYSTEM, USER)
+    assert replayed == llm.LLMCall(MODEL, 100, 50, call.cost_usd, 0.0, True)
+    assert [request.method for request in requests] == ["GET", "POST"]
+
+
+def test_live_verify_can_use_openrouter(mock_provider, monkeypatch):
+    requests, provider, _ = mock_provider
+    monkeypatch.setenv("OG_PROVIDER", "openrouter")
+    provider["reply"] = {**REPLY, "usage": {**REPLY["usage"], "cost": 0.0001}}
+    model = "nvidia/nemotron-3.5-super-vl:free"
+
+    _, call = llm.ask_json(SYSTEM, USER, model=model, max_tokens=321)
+
+    balance, completion = requests
+    assert str(balance.url) == shared_llm.CREDITS_URL
+    assert str(completion.url) == shared_llm.API_URL
+    assert json.loads(completion.content) == {
+        "model": model, "messages": MESSAGES, "max_tokens": 321, "temperature": 0, "usage": {"include": True},
+        "provider": {"max_price": {"prompt": 0.30, "completion": 1.20, "request": 0, "image": 0},
+                     "require_parameters": True},
+    }
+    assert call.cost_usd == pytest.approx(0.0001)
+
+
+def test_live_verify_rejects_calls_that_cannot_fit_shared_budget(mock_provider):
+    requests, _, spend_file = mock_provider
+    shared_llm.SPEND.budget_usd = 0.001
+
+    with pytest.raises(llm.LLMUnavailable, match="live call needs .* live cap"):
+        llm.ask_json(SYSTEM, USER, max_tokens=1000)
+
+    assert all(request.method == "GET" for request in requests)
+    assert shared_llm.SPEND.calls == 0
+    assert not spend_file.exists()
+
+
+def test_live_verify_translates_shared_credit_refusal(mock_provider):
+    requests, provider, spend_file = mock_provider
+    provider["balance"] = 0.10
+
+    with pytest.raises(llm.LLMUnavailable, match=r"balance.*0\.10.*0\.30"):
+        llm.ask_json(SYSTEM, USER)
+
+    assert [request.method for request in requests] == ["GET"]
+    assert not spend_file.exists()
+
+
+def test_provider_error_details_stay_out_of_verify_exception(mock_provider):
+    _, provider, _ = mock_provider
+    provider.update(status=401, reply={"error": "private provider diagnostic"})
+
+    with pytest.raises(llm.LLMUnavailable, match="request failed") as exc:
+        llm.ask_json(SYSTEM, USER)
+
+    assert "private provider diagnostic" not in str(exc.value)
+    assert exc.value.__suppress_context__
+
+
+@pytest.mark.parametrize("provider", ["deepseek", "openrouter"])
+@pytest.mark.parametrize("mode", ["replay", "record", "auto"])
+def test_legacy_cache_preserves_original_answer_and_measurements(mock_provider, monkeypatch, provider, mode):
+    requests, _, _ = mock_provider
+    record_legacy_answer()
+    monkeypatch.setenv("OG_PROVIDER", provider)
+    monkeypatch.setenv("OG_LLM", mode)
+
+    parsed, call = llm.ask_json(SYSTEM, USER)
+
+    assert parsed == ANSWER
+    assert call == llm.LLMCall(MODEL, 42, 17, 0.0005, 2.5, True)
+    assert requests == []
+
+
+def test_new_recording_is_replayed_from_shared_cache(mock_provider, monkeypatch):
+    requests, _, _ = mock_provider
+    monkeypatch.setenv("OG_LLM", "record")
+    _, live = llm.ask_json(SYSTEM, USER)
+    assert len(list(shared_llm.REPLAY_DIR.glob("*.json"))) == 1
+    assert not llm.CACHE_DIR.exists()
+
+    monkeypatch.setenv("OG_LLM", "replay")
+    monkeypatch.setenv("OG_PROVIDER", "openrouter")
+    parsed, replayed = llm.ask_json(SYSTEM, USER)
+
+    assert parsed == ANSWER
+    assert replayed == llm.LLMCall(MODEL, 100, 50, live.cost_usd, 0.0, True)
+    assert [request.method for request in requests] == ["GET", "POST"]
+
+
+def test_replay_miss_reports_both_recording_stores(mock_provider, monkeypatch):
+    requests, _, _ = mock_provider
+    monkeypatch.setenv("OG_LLM", "replay")
+
+    with pytest.raises(llm.LLMUnavailable, match="OG_LLM=replay.*No legacy Verify recording"):
+        llm.ask_json(SYSTEM, USER)
+
+    assert requests == []

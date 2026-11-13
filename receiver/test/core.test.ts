@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ReceiverCore, type MandateScope } from '../core/receiver-core.ts';
 import { normaliseSymbol } from '../core/valuation.ts';
+import { SignedPaperPolicy } from '../core/paper-policy.ts';
 // @ts-expect-error plain .mjs helper
 import { virtualPasskey, registrationResponse, authenticationResponse } from '../bridge/synthetic-passkey.mjs';
 
@@ -178,4 +180,41 @@ test('a held order cannot be approved after revocation, and a forged assertion i
   assert.equal(late.decision, 'denied');
   assert.equal(core.orders().filter((o) => o.status === 'filled').length, 0);
   done();
+});
+
+test('a delayed order uses the new signed revision and the revision survives core restart', async () => {
+  const keys = generateKeyPairSync('ed25519');
+  const owner = Buffer.from(keys.publicKey.export({ format: 'jwk' }).x!, 'base64url').toString('base64');
+  const proof = (body: object) => {
+    const bytes = Buffer.from(JSON.stringify(body));
+    return { payload: bytes.toString('base64'), signature: sign(null, bytes, keys.privateKey).toString('base64') };
+  };
+  const signedPolicy = new SignedPaperPolicy(proof(MANDATE), owner);
+  let resume!: (active: boolean) => void;
+  const delayed = new Promise<boolean>((resolve) => { resume = resolve; });
+  let calls = 0;
+  let now = Date.now();
+  const expiresAt = new Date(now + 60_000).toISOString();
+  const { core, done } = make({}, { signedPolicy, now: () => now,
+    authority: { isActive: () => ++calls === 1 ? delayed : Promise.resolve(true) } });
+  try {
+    const original = core.policy()!;
+    const pending = core.propose({ symbol: 'AAPL', side: 'buy', quantity: 4, limitPrice: 222.7, clientOrderId: 'delayed' });
+    const activation = await core.activatePolicy(proof({ purpose: 'orderguard.paper-draft-activation.v1',
+      parentId: original.parentId, ledgerId: original.ledgerId, revision: original.revision,
+      draft: { ...MANDATE, maxOrderNotionalUsd: 500, expiresAt } }));
+    resume(true);
+    assert.equal((await pending).reason, 'per_order_cap');
+    assert.equal(core.orders().length, 0);
+    core.restart();
+    assert.deepEqual(core.policy(), activation.policy);
+    assert.equal(core.events().filter((event) => event.type === 'policy_activated').length, 1);
+    const valid = { symbol: 'AAPL', side: 'buy', quantity: 1, limitPrice: 222.7, clientOrderId: 'within-draft' };
+    assert.equal((await core.propose(valid)).ledgerEffect, true);
+    now = Date.parse(expiresAt);
+    assert.equal((await core.propose({ ...valid, clientOrderId: 'after-expiry' })).reason, 'mandate_expired');
+    assert.equal(core.ledgerIntegrity(), true);
+  } finally {
+    done();
+  }
 });

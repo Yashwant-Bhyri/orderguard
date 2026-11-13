@@ -13,6 +13,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { verifyAuthenticationResponse, verifyRegistrationResponse, type AuthenticationResponseJSON, type RegistrationResponseJSON } from '@simplewebauthn/server';
 import { B4FaultScheduler, applyLogicalDelay } from '../r5/fault-scheduler.js';
 import { buildTrustedPrices, normaliseSymbol, notionalCents, withinBand, type DenyCode, type QuoteSource } from './valuation.js';
+import type { PaperPolicyState, SignedPaperPolicy } from './paper-policy.js';
 
 export interface MandateScope {
   symbols: string[];
@@ -58,6 +59,7 @@ export interface CoreOptions {
   mandateId: string;
   mandate: MandateScope;
   authority?: Authority;
+  signedPolicy?: SignedPaperPolicy;
   quoteSource?: QuoteSource;
   faults?: B4FaultScheduler;
   /** Deliberately broken variants used only by the mutation tests. */
@@ -108,10 +110,11 @@ export class ReceiverCore {
 
   constructor(private readonly opts: CoreOptions) {
     this.now = opts.now ?? Date.now;
-    this.prices = buildTrustedPrices({ referencePrices: opts.mandate.referencePrices, quoteSource: opts.quoteSource });
-    this.expiresAtMs = Date.parse(opts.mandate.expiresAt);
+    const parent = opts.signedPolicy?.parent ?? opts.mandate;
+    this.prices = buildTrustedPrices({ referencePrices: parent.referencePrices, quoteSource: opts.quoteSource });
+    this.expiresAtMs = Date.parse(parent.expiresAt);
     if (!Number.isFinite(this.expiresAtMs)) throw new Error('mandate.expiresAt must be an ISO timestamp');
-    for (const symbol of opts.mandate.symbols) if (!normaliseSymbol(symbol).ok) throw new Error('mandate lists an invalid symbol');
+    for (const symbol of parent.symbols) if (!normaliseSymbol(symbol).ok) throw new Error('mandate lists an invalid symbol');
     this.open();
   }
 
@@ -134,6 +137,17 @@ export class ReceiverCore {
     `);
     const stored = this.meta('passkey');
     if (stored) this.passkey = JSON.parse(stored) as Passkey;
+    this.tx(() => {
+      const policy = this.policy();
+      const signed = this.opts.signedPolicy;
+      if (policy && policy.parentId !== signed?.parentId) throw new Error('The ledger is bound to a different signed parent');
+      if (signed && !policy) {
+        if (this.db.prepare('SELECT seq FROM events LIMIT 1').get()) throw new Error('Cannot attach a signed parent to an existing ledger');
+        const initial = { ledgerId: randomBytes(16).toString('hex'), parentId: signed.parentId, revision: 0,
+          activeId: signed.parentId, scope: signed.parent };
+        this.setMeta('paper_policy', JSON.stringify(initial));
+      }
+    });
   }
 
   /** Simulates a process crash and restart: all in-memory state is dropped, the ledger file survives. */
@@ -192,6 +206,44 @@ export class ReceiverCore {
       this.db.prepare("UPDATE orders SET status = 'cancelled' WHERE status = 'held'").run();
       return { revoked: true as const, seq };
     });
+  }
+
+  // ---------- signed paper policy ----------
+
+  policy(): PaperPolicyState | null {
+    const value = this.meta('paper_policy');
+    return value === null ? null : JSON.parse(value) as PaperPolicyState;
+  }
+
+  async activatePolicy(proof: unknown): Promise<{ policy: PaperPolicyState; cancelled: number; replay: boolean }> {
+    const signed = this.opts.signedPolicy;
+    if (!signed) throw new Error('Signed paper activation is unavailable');
+    if (this.opts.authority && !await this.opts.authority.isActive()) throw new Error('The issuer reports that the parent is inactive');
+    return this.tx(() => {
+      const state = this.policy()!;
+      if (this.revoked || this.now() >= this.expiresAtMs) throw new Error('The parent policy is inactive');
+      const action = signed.authorization(proof, state, 'orderguard.paper-draft-activation.v1', this.meta('last_paper_activation') ?? undefined);
+      if (action.replay) return { policy: state, cancelled: 0, replay: true };
+      const scope = signed.containedDraft(action.body.draft, this.now());
+      if (JSON.stringify(scope) === JSON.stringify(state.scope)) return { policy: state, cancelled: 0, replay: false };
+      const policy = { ...state, scope, activeId: action.digest.slice(0, 16), revision: state.revision + 1 };
+      const held = this.db.prepare("SELECT order_id FROM orders WHERE status = 'held' ORDER BY seq").all() as { order_id: string }[];
+      for (const order of held) this.appendEvent('cancelled', order.order_id, { reason: 'policy_changed', revision: state.revision });
+      this.db.prepare("UPDATE orders SET status = 'cancelled' WHERE status = 'held'").run();
+      this.appendEvent('policy_activated', null, { parentId: policy.parentId, activeId: policy.activeId,
+        revision: policy.revision, authorizationDigest: action.digest, cancelled: held.length });
+      this.setMeta('paper_policy', JSON.stringify(policy));
+      this.setMeta('last_paper_activation', action.digest);
+      return { policy, cancelled: held.length, replay: false };
+    });
+  }
+
+  private verifyPaperApproval(orderId: string, proof: unknown): void {
+    const signed = this.opts.signedPolicy;
+    if (!signed) return;
+    const state = this.policy()!;
+    const action = signed.authorization(proof, state, 'orderguard.paper-order-approval.v1');
+    if (action.body.orderId !== orderId) throw new Error('Signature was issued for a different held order');
   }
 
   // ---------- decisions ----------
@@ -254,7 +306,9 @@ export class ReceiverCore {
     if (!active) return this.deny('mandate_revoked', 'issuer reports the mandate is not active');
 
     // 4. Scope, valued at the TRUSTED price.
-    const scope = this.opts.mandate;
+    const policy = this.opts.signedPolicy ? this.policy() : null;
+    const scope = policy?.scope ?? this.opts.mandate;
+    if (policy && this.now() >= Date.parse(scope.expiresAt)) return this.deny('mandate_expired');
     const allowed = new Set(scope.symbols.map((s) => (normaliseSymbol(s) as { symbol: string }).symbol));
     if (!allowed.has(sym.symbol)) return this.deny('unlisted_symbol');
     if (!(scope.sides as string[]).includes(side)) return this.deny('side_not_allowed');
@@ -273,7 +327,8 @@ export class ReceiverCore {
     }
 
     // 6. Commit.
-    const row = { actionHash, clientOrderId: input.clientOrderId, ...canonical, trusted, cents, status: needsStepUp ? 'held' as const : 'filled' as const };
+    const row = { actionHash, clientOrderId: input.clientOrderId, ...canonical, trusted, cents,
+      status: needsStepUp ? 'held' as const : 'filled' as const, revision: policy?.revision };
     let result: Decision;
     if (this.opts.mutations?.budgetLockOff) {
       result = await this.commitWithoutLock(row);
@@ -306,7 +361,7 @@ export class ReceiverCore {
     const orderId = this.opts.mutations?.idempotencyOff
       ? 'og_' + sha(this.opts.mandateId + '|' + r.clientOrderId + '|' + seq).slice(0, 16)
       : 'og_' + sha(this.opts.mandateId + '|' + r.clientOrderId).slice(0, 16);
-    const eventSeq = this.appendEvent(r.status, orderId, { clientOrderId: r.clientOrderId, symbol: r.symbol, side: r.side, quantity: r.quantity, limitPrice: r.limitPrice, trustedPrice: r.trusted, notionalCents: r.cents });
+    const eventSeq = this.appendEvent(r.status, orderId, { clientOrderId: r.clientOrderId, symbol: r.symbol, side: r.side, quantity: r.quantity, limitPrice: r.limitPrice, trustedPrice: r.trusted, notionalCents: r.cents, revision: r.revision });
     this.db.prepare(`INSERT INTO orders (seq, order_id, client_order_id, action_hash, symbol, side, quantity, limit_price, trusted_price, notional_cents, status, fill_price, day)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(eventSeq, orderId, r.clientOrderId, r.actionHash, r.symbol, r.side, r.quantity, r.limitPrice, r.trusted, r.cents, r.status, r.status === 'filled' ? r.trusted : null, this.today());
     return {
@@ -323,7 +378,11 @@ export class ReceiverCore {
         const prior = this.findByClientId(r.clientOrderId);
         if (prior) return prior.action_hash === r.actionHash ? this.replayOf(prior) : this.deny('idempotency_conflict');
       }
-      if (this.dayBudgetUsedCents() + r.cents > Math.round(this.opts.mandate.maxDailyNotionalUsd * 100)) return this.deny('daily_cap');
+      const policy = this.opts.signedPolicy ? this.policy() : null;
+      if (policy && policy.revision !== r.revision) return this.deny('mandate_changed');
+      const scope = policy?.scope ?? this.opts.mandate;
+      if (this.now() >= Date.parse(scope.expiresAt)) return this.deny('mandate_expired');
+      if (this.dayBudgetUsedCents() + r.cents > Math.round(scope.maxDailyNotionalUsd * 100)) return this.deny('daily_cap');
       return this.insertRow(r);
     });
   }
@@ -368,7 +427,8 @@ export class ReceiverCore {
   }
 
   /** Issue a single-use challenge bound to one held order. */
-  beginApproval(orderId: string): { orderId: string; challenge: string; credentialId: string } {
+  beginApproval(orderId: string, ownerProof?: unknown): { orderId: string; challenge: string; credentialId: string } {
+    try { this.verifyPaperApproval(orderId, ownerProof); } catch { throw new ApprovalError('approval_invalid'); }
     const row = this.db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId) as LedgerRow | undefined;
     if (!row || row.status !== 'held') throw new ApprovalError('not_held');
     if (!this.passkey) throw new ApprovalError('approval_invalid', 'no owner passkey registered');
@@ -377,7 +437,8 @@ export class ReceiverCore {
     return { orderId, challenge, credentialId: this.passkey.id };
   }
 
-  async approve(orderId: string, assertion: AuthenticationResponseJSON): Promise<Decision> {
+  async approve(orderId: string, assertion: AuthenticationResponseJSON, ownerProof?: unknown): Promise<Decision> {
+    try { this.verifyPaperApproval(orderId, ownerProof); } catch { return this.deny('approval_invalid'); }
     const row = this.db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId) as LedgerRow | undefined;
     if (!row) return this.deny('not_held');
     if (row.status === 'filled') return this.replayOf(row);
@@ -396,10 +457,16 @@ export class ReceiverCore {
       return this.deny('approval_invalid', 'assertion did not verify');
     }
     if (!verified.verified) return this.deny('approval_invalid');
+    if (this.opts.signedPolicy && this.opts.authority) {
+      try { if (!await this.opts.authority.isActive()) return this.deny('mandate_revoked'); }
+      catch { return this.deny('mandate_revoked'); }
+    }
     return this.tx(() => {
-      this.passkey!.counter = verified.authenticationInfo.newCounter;
+      this.passkey!.counter = Math.max(this.passkey!.counter, verified.authenticationInfo.newCounter);
       this.setMeta('passkey', JSON.stringify(this.passkey));
       if (this.meta('revoked_seq') !== null) return this.deny('mandate_revoked');
+      const policy = this.opts.signedPolicy ? this.policy() : null;
+      if (this.now() >= Date.parse((policy?.scope ?? this.opts.mandate).expiresAt)) return this.deny('mandate_expired');
       const fresh = this.db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId) as LedgerRow;
       if (fresh.status !== 'held') return this.replayOf(fresh);
       this.appendEvent('approved', orderId, { actionHash: fresh.action_hash });
@@ -439,14 +506,13 @@ export class ReceiverCore {
       if (e.orderId) last.set(e.orderId, e.type);
     }
     const revoked = this.revokedSeq() !== null;
-    let used = 0;
     for (const o of this.orders()) {
       const lastType = last.get(o.orderId);
-      const expected = o.status === 'filled' ? ['filled', 'approved'] : ['held'];
-      if (!lastType || (o.status !== 'cancelled' && !expected.includes(lastType)) || (o.status === 'cancelled' && !revoked)) return false;
-      if (o.status !== 'cancelled') used += Math.round(o.notionalUsd * 100);
+      const expected = o.status === 'filled' ? ['filled', 'approved'] : o.status === 'held' ? ['held'] : revoked ? ['held', 'cancelled'] : ['cancelled'];
+      if (!lastType || !expected.includes(lastType)) return false;
     }
-    return used <= Math.round(this.opts.mandate.maxDailyNotionalUsd * 100);
+    const maxDaily = this.db.prepare("SELECT COALESCE(MAX(total), 0) AS cents FROM (SELECT SUM(notional_cents) AS total FROM orders WHERE status IN ('filled','held') GROUP BY day)").get() as { cents: number };
+    return maxDaily.cents <= Math.round((this.opts.signedPolicy?.parent ?? this.opts.mandate).maxDailyNotionalUsd * 100);
   }
 
   snapshot(): { orders: LedgerOrder[]; ledgerIntegrity: boolean; revoked: boolean; usedNotionalUsd: number } {
@@ -467,4 +533,5 @@ interface LedgerRow {
 interface CommitRow {
   actionHash: string; clientOrderId: string; symbol: string; side: string; quantity: number; limitPrice: number;
   trusted: number; cents: number; status: 'filled' | 'held';
+  revision?: number;
 }

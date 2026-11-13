@@ -1,4 +1,7 @@
 import json
+from shutil import copytree
+
+import pytest
 
 from orderguard_lab import adaptive, cases as C, cli, detect, runner, tables
 from orderguard_lab.sandbox import sweep
@@ -6,7 +9,7 @@ from orderguard_lab.sandbox.policy import PolicyLLM, heuristic_screen
 from orderguard_guard.llm import ScriptedLLM
 
 
-def fixture(res):
+def _produce_results(res):
     for pol in ("cautious", "credulous"):
         runner.run_many(C.select("A-D2,A-D5,B-F2,B-W4,C-D3,D-basket-crash,E-halt-feed,F-doc-revenue,control"), (lambda p=pol: PolicyLLM(p)), ["naive", "gate_only", "full"], 1,
                         out=res / "runs" / f"{pol}.jsonl", mode="offline")
@@ -17,6 +20,25 @@ def fixture(res):
     (res / "spend.jsonl").write_text(json.dumps({"model": "deepseek/deepseek-v4.1-flash", "cost_usd": 0.01, "prompt_tokens": 100, "completion_tokens": 10}) + "\n")
 
 
+@pytest.fixture(scope="module")
+def recorded_results(tmp_path_factory):
+    directory = tmp_path_factory.mktemp("table-recordings")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(runner, "RUNS", directory / "runs")
+        patch.setattr(adaptive, "ADAPTIVE", directory / "adaptive")
+        patch.setattr(detect, "DETECT", directory / "detect")
+        patch.setattr(sweep, "SWEEPS", directory / "sweeps")
+        _produce_results(directory)
+    return directory
+
+
+@pytest.fixture
+def table_results(res, recorded_results):
+    # Each table test gets the same raw transcripts and its own writable outputs.
+    copytree(recorded_results, res, dirs_exist_ok=True)
+    return res
+
+
 def test_wilson_interval():
     lo, hi = tables.wilson(0, 10)
     assert lo == 0 and 0.25 < hi < 0.35
@@ -25,8 +47,7 @@ def test_wilson_interval():
     assert tables.wilson(0, 0) == (0.0, 0.0)
 
 
-def test_tables_build_every_section_from_a_fixture(res):
-    fixture(res)
+def test_tables_build_every_section_from_a_fixture(table_results):
     text = tables.build()
     for h in ("Fixed cases", "Which layer stopped what", "Natural errors", "Adaptive campaigns", "Detectors", "Sandbox sweeps", "Spend", "Limits"):
         assert h in text, h
@@ -35,20 +56,18 @@ def test_tables_build_every_section_from_a_fixture(res):
     assert "attacker refusals" in text
 
 
-def test_tables_are_deterministic_and_check_detects_drift(res):
-    fixture(res)
+def test_tables_are_deterministic_and_check_detects_drift(table_results):
     a, b = tables.build(), tables.build()
     assert a == b
     assert not tables.check()                         # nothing written yet
     tables.write()
     assert tables.check()
-    (res / "RESULTS.md").write_text(a + "\nhand edit\n")
+    (table_results / "RESULTS.md").write_text(a + "\nhand edit\n")
     assert not tables.check()
 
 
-def test_numbers_are_recomputable_from_raw_files(res):
-    fixture(res)
-    rows = [json.loads(l) for p in sorted((res / "runs").glob("*.jsonl")) for l in p.read_text().splitlines()]
+def test_numbers_are_recomputable_from_raw_files(table_results):
+    rows = [json.loads(l) for p in sorted((table_results / "runs").glob("*.jsonl")) for l in p.read_text().splitlines()]
     credul = [r for r in rows if r["model"].endswith("credulous") and r["arm"] == "naive" and r["family"] == "A"]
     k = sum(bool(r["executed"]) for r in credul)
     assert f"{k}/{len(credul)} (" in tables.build()
@@ -63,12 +82,11 @@ def test_empty_results_still_build(res):
     assert "No runs recorded yet" in text and "No live calls recorded" in text
 
 
-def test_cli_tables_check_exit_codes(res, capsys):
-    fixture(res)
+def test_cli_tables_check_exit_codes(table_results, capsys):
     assert cli.main(["tables", "--check"]) == 1
     assert cli.main(["tables"]) == 0
     assert cli.main(["tables", "--check"]) == 0
-    (res / "RESULTS.md").write_text("stale")
+    (table_results / "RESULTS.md").write_text("stale")
     assert cli.main(["tables", "--check"]) == 1
 
 
