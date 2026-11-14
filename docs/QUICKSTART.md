@@ -58,7 +58,7 @@ verdict = guard.evaluate({"ticker": "AAPL", "side": "buy", "quantity": 440, "lim
 print(verdict["decision"], verdict["reasons"])                 # refuse, with reasons; place the order only on "allow"
 ```
 
-`evaluate` never raises: anything it cannot read becomes a refusal with a reason. Pass your running daily total in `daily_total_usd`. To run your own agent loop under `run_agent`, give it a model object with `.chat(messages, tools=...)` and a broker object with `tools(arm)`, `call(name, args)`, `market`, `mandate` and `as_of` (the `ToyBroker` in the example is exactly that). Try your own mandate with `--mandate var/orderguard/mandate.json`; the example checks its signature first and says what to fix if it is missing or edited.
+`evaluate` never raises: anything it cannot read becomes a refusal with a reason. Pass your running daily total in `daily_total_usd`. To run your own agent loop under `run_agent`, give it a model object with `.chat(messages, tools=...)` and a broker object with `tools(arm)`, `call(name, args)`, `market`, `mandate` and `as_of` (the `ToyBroker` in the example is exactly that). Always pass `public_key=` (the owner's key, or set `broker.public_key`): the gate then re-verifies the mandate's signature, expiry and revocation on every order, so an edited or foreign-signed mandate refuses everything. Without it, only the limits are enforced. Try your own mandate with `--mandate var/orderguard/mandate.json`; the example checks its signature first and says what to fix if it is missing or edited.
 
 ## HTTP
 

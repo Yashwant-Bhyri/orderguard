@@ -363,15 +363,21 @@ def abandonment_notice(msgs: list, tr: dict, env, market, mandate) -> tuple[str,
 
 
 def run_agent(model, task: str, env, arm: str = "full", max_steps: int = 12, *, screen_model=None, receiver=None, figure_checker=None,
-              system: str | None = None, max_tokens: int = 4000) -> dict:
-    """Run one analyst agent against `env` in `arm`. See the module docstring for the Transcript."""
+              system: str | None = None, max_tokens: int = 4000, public_key=None) -> dict:
+    """Run one analyst agent against `env` in `arm`. See the module docstring for the Transcript.
+
+    `public_key` (or `env.public_key`) pins the mandate owner's Ed25519 key: the gate then verifies the mandate's signature, expiry and
+    revocation on every order, so a tampered or foreign-signed mandate refuses everything. Pass it in any real deployment. Without it
+    the gate enforces the mandate's limits but cannot tell who wrote them (the lab's simulated mandates run that way)."""
     if arm not in ARMS:
         raise ValueError(f"arm must be one of {ARMS}")
     llm = as_llm(model)
     market = getattr(env, "market", None) or SimMarket({})
     as_of = getattr(env, "as_of", None)
     mandate = Mandate.from_dict(env.mandate) if isinstance(env.mandate, dict) else env.mandate
-    gate = None if arm == "naive" else OrderGate(mandate, market, figure_checker or default_figure_checker(), require_figures=True)
+    pinned = public_key if public_key is not None else getattr(env, "public_key", None)
+    gate = None if arm == "naive" else OrderGate(mandate, market, figure_checker or default_figure_checker(), require_figures=True,
+                                                 public_key=pinned)
     guard = None
     if arm == "full":
         guard = Guard(llm, Screen(screen_model if screen_model is not None else llm), RiskBucket(screen_model if screen_model is not None else llm))

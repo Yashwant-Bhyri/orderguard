@@ -138,7 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     broker = ToyBroker(mandate)
     # arm="gate_only" is the order guard alone: every order goes through the signed mandate and the trusted price before the broker sees it.
     # arm="full" adds screening of everything the agent reads and needs a screening model (or recordings) for that.
-    transcript = run_agent(ScriptedLLM(script()), "Buy Apple for the account.", broker, arm="gate_only")
+    # public_key pins the owner: the gate re-verifies the signature, expiry and revocation on every order.
+    transcript = run_agent(ScriptedLLM(script()), "Buy Apple for the account.", broker, arm="gate_only",
+                           public_key=G.public_key_from_b64(owner_pub))
 
     refused = held = 0
     for n, call in enumerate((c for c in transcript["calls"] if c["name"] == "place_order"), 1):

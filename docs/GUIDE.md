@@ -137,7 +137,7 @@ Three ways in, from most to least Python-specific.
 
 ### Python: `run_agent`
 
-`run_agent` runs one analyst agent against a tool environment in a chosen arm, applying the layers around every tool output and every order.
+`run_agent` runs one analyst agent against a tool environment in a chosen arm, applying the layers around every tool output and every order. In any real deployment pass `public_key=` (the mandate owner's Ed25519 key, or set it as `env.public_key`) so the gate verifies the signature, expiry and revocation on every order; without it the gate enforces the mandate's limits but cannot tell who wrote them.
 
 ```python
 from orderguard_guard.agent import run_agent
