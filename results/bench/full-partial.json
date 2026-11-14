@@ -1,0 +1,115 @@
+{
+ "profile": "full",
+ "status": "partial: the gate-only scaling runs completed and were audited; the run was stopped during the single-scorer gate + risk run (see risk_scorer_scaling)",
+ "agents": 100000,
+ "owners": 400,
+ "envelopes": 1200,
+ "steps": 1000,
+ "workload_items": 1090768,
+ "gate_runs": [
+  {
+   "workers": 1,
+   "decisions": 1090608,
+   "wall_s": 24.18,
+   "decisions_per_s": 45099,
+   "audit_breaches": 0,
+   "gate_digest_prefix": "ef51b8a25162"
+  },
+  {
+   "workers": 2,
+   "decisions": 1090608,
+   "wall_s": 15.2,
+   "decisions_per_s": 71752,
+   "audit_breaches": 0,
+   "gate_digest_prefix": "ef51b8a25162"
+  },
+  {
+   "workers": 4,
+   "decisions": 1090608,
+   "wall_s": 9.1,
+   "decisions_per_s": 119882,
+   "audit_breaches": 0,
+   "gate_digest_prefix": "ef51b8a25162"
+  },
+  {
+   "workers": 8,
+   "decisions": 1090608,
+   "wall_s": 7.77,
+   "decisions_per_s": 140302,
+   "audit_breaches": 0,
+   "gate_digest_prefix": "ef51b8a25162"
+  }
+ ],
+ "gate_digest_identical_across_worker_counts": true,
+ "risk_scorer_scaling": {
+  "edge_cap": 400000,
+  "points": [
+   {
+    "share_of_swarm": "1/8",
+    "agents_seen": 12500,
+    "decisions_done": 25000,
+    "step": 229,
+    "edges": 123479,
+    "us_per_decision": 133.1
+   },
+   {
+    "share_of_swarm": "1/8",
+    "agents_seen": 12500,
+    "decisions_done": 100000,
+    "step": 758,
+    "edges": 149195,
+    "us_per_decision": 111.6
+   },
+   {
+    "share_of_swarm": "2/8",
+    "agents_seen": 25000,
+    "decisions_done": 25000,
+    "step": 131,
+    "edges": 138557,
+    "us_per_decision": 107.9
+   },
+   {
+    "share_of_swarm": "2/8",
+    "agents_seen": 25000,
+    "decisions_done": 100000,
+    "step": 399,
+    "edges": 386436,
+    "us_per_decision": 100.7
+   },
+   {
+    "share_of_swarm": "2/8",
+    "agents_seen": 25000,
+    "decisions_done": 175000,
+    "step": 661,
+    "edges": 325315,
+    "us_per_decision": 123.1
+   },
+   {
+    "share_of_swarm": "2/8",
+    "agents_seen": 25000,
+    "decisions_done": 250000,
+    "step": 926,
+    "edges": 321596,
+    "us_per_decision": 129.9
+   },
+   {
+    "share_of_swarm": "4/8",
+    "agents_seen": 50000,
+    "decisions_done": 25000,
+    "step": 78,
+    "edges": 146070,
+    "us_per_decision": 118.9
+   },
+   {
+    "share_of_swarm": "4/8",
+    "agents_seen": 50000,
+    "decisions_done": 100000,
+    "step": 225,
+    "edges": 513431,
+    "us_per_decision": 68760.7
+   }
+  ],
+  "finding": "orderguard_risk.features rebuilds its agent co-activity map on every update once it holds more than 400,000 edges; with half the 100,000-agent swarm in one scorer the map reached 513,431 edges and scoring went from about 120 us to 68,761 us per decision"
+ },
+ "source": "og-bench run --profile full on the machine in quick.json (same machine, same session), stopped after the gate runs; numbers copied from its log"
+}

@@ -271,6 +271,11 @@ class EnvelopeBook:
             env.verify(self.public_key)
         except MandateInvalid as e:
             raise ValueError(f"envelope {env.name!r} rejected: {e}") from None
+        known = self._envs.get(env.id)
+        if known is not None:
+            # A replayed signed mandate is the same envelope. Keep its daily budget, portfolio state and revocation: re-adding it
+            # must never reset a spent budget or bring a revoked envelope back.
+            return known
         self._envs[env.id] = env
         self._by_name[env.name] = env
         return env

@@ -8,7 +8,7 @@
 // idempotency lookup, budget check, insert) runs inside one BEGIN IMMEDIATE transaction with
 // no await in it. Concurrent proposals interleave only at the awaits before the commit.
 
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { verifyAuthenticationResponse, verifyRegistrationResponse, type AuthenticationResponseJSON, type RegistrationResponseJSON } from '@simplewebauthn/server';
 import { B4FaultScheduler, applyLogicalDelay } from '../r5/fault-scheduler.js';
@@ -118,8 +118,17 @@ export function canonicalAction(mandateId: string, o: { symbol: string; side: st
 interface Passkey { id: string; publicKey: string; counter: number }
 interface PendingApproval { challenge: string; actionHash: string; expiresAt: number }
 
+/** The day's running totals and every symbol's position, as the ledger says at the event head (seq, hash). */
+interface Totals {
+  seq: number; hash: string; day: string; used: number; count: number;
+  sym: Map<string, number>; pos: Map<string, { net: number; hb: number; hs: number }>;
+}
+
 export class ReceiverCore {
   private db!: DatabaseSync;
+  private readonly stmts = new Map<string, StatementSync>();
+  private totalsCache: Totals | null = null;
+  private lastAppended: { seq: number; hash: string } | null = null;
   private readonly prices: QuoteSource;
   private readonly now: () => number;
   private readonly expiresAtMs: number;
@@ -148,6 +157,8 @@ export class ReceiverCore {
 
   private open(): void {
     const file = this.opts.ledgerPath !== ':memory:';
+    this.stmts.clear();
+    this.totalsCache = null;
     try {
       this.db = new DatabaseSync(this.opts.ledgerPath);
       if (this.opts.fast) this.db.exec('PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY;');
@@ -204,6 +215,8 @@ export class ReceiverCore {
         if (this.meta('mandate_id') === null) this.setMeta('mandate_id', this.opts.mandateId);
         if (this.meta('max_daily_cents') === null) this.setMeta('max_daily_cents', String(Math.round(scope.maxDailyNotionalUsd * 100)));
         if (schema === null) this.setMeta('schema', String(SCHEMA_VERSION));
+        // Derived data only, created after the ledger verified: lets today() find the newest day without scanning every order.
+        this.db.exec('CREATE INDEX IF NOT EXISTS orders_day ON orders(day)');
       });
     } catch (error) {
       try { this.db.close(); } catch { /* already closed */ }
@@ -223,10 +236,17 @@ export class ReceiverCore {
     this.open();
   }
 
-  close(): void { this.db.close(); }
+  close(): void { this.stmts.clear(); this.totalsCache = null; this.db.close(); }
+
+  /** A prepared statement, compiled once per open database. */
+  private q(sql: string): StatementSync {
+    let st = this.stmts.get(sql);
+    if (!st) { st = this.db.prepare(sql); this.stmts.set(sql, st); }
+    return st;
+  }
 
   private meta(key: string): string | null {
-    const row = this.db.prepare('SELECT v FROM meta WHERE k = ?').get(key) as { v: string } | undefined;
+    const row = this.q('SELECT v FROM meta WHERE k = ?').get(key) as { v: string } | undefined;
     return row ? row.v : null;
   }
   private setMeta(key: string, value: string): void {
@@ -235,12 +255,13 @@ export class ReceiverCore {
 
   /** Append one hash-chained event. Must run inside a transaction. */
   private appendEvent(type: string, orderId: string | null, payload: object): number {
-    const head = this.db.prepare('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1').get() as { seq: number; hash: string } | undefined;
+    const head = this.q('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1').get() as { seq: number; hash: string } | undefined;
     const seq = (head?.seq ?? 0) + 1;
     const prev = head?.hash ?? GENESIS;
     const body = JSON.stringify(payload);
     const hash = sha([prev, seq, type, orderId ?? '', body].join('|'));
-    this.db.prepare('INSERT INTO events (seq, type, order_id, payload, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?)').run(seq, type, orderId, body, prev, hash);
+    this.q('INSERT INTO events (seq, type, order_id, payload, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?)').run(seq, type, orderId, body, prev, hash);
+    this.lastAppended = { seq, hash };
     return seq;
   }
 
@@ -251,6 +272,7 @@ export class ReceiverCore {
       this.db.exec('COMMIT');
       return result;
     } catch (error) {
+      this.totalsCache = null;
       try { this.db.exec('ROLLBACK'); } catch { /* already rolled back */ }
       throw error;
     }
@@ -335,7 +357,7 @@ export class ReceiverCore {
   }
 
   private findByClientId(clientOrderId: string): (LedgerRow | undefined) {
-    return this.db.prepare('SELECT * FROM orders WHERE client_order_id = ? ORDER BY seq LIMIT 1').get(clientOrderId) as LedgerRow | undefined;
+    return this.q('SELECT * FROM orders WHERE client_order_id = ? ORDER BY seq LIMIT 1').get(clientOrderId) as LedgerRow | undefined;
   }
 
   private replayOf(row: LedgerRow): Decision {
@@ -457,13 +479,45 @@ export class ReceiverCore {
    */
   private today(): string {
     const clock = new Date(this.now()).toISOString().slice(0, 10);
-    const newest = this.db.prepare('SELECT MAX(day) AS d FROM orders').get() as { d: string | null };
+    const newest = this.q('SELECT MAX(day) AS d FROM orders').get() as { d: string | null };
     return newest.d && newest.d > clock ? newest.d : clock;
   }
 
+  /**
+   * The day's budget, order count and per-symbol notional (filled and held), and every symbol's position over all days, exactly as the
+   * ledger's queries compute them. The result is kept for the next commit only while the ledger head (seq AND hash of the newest event)
+   * is unchanged: every write to the orders table appends an event in the same transaction, so a commit, an approval, a revocation, a
+   * policy change, another process writing the same file, or a rolled-back transaction all move the head and force a recompute.
+   */
+  private totals(day: string): Totals {
+    const head = this.q('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1').get() as { seq: number; hash: string } | undefined;
+    const seq = head?.seq ?? 0;
+    const hash = head?.hash ?? GENESIS;
+    const c = this.totalsCache;
+    if (c && c.day === day && c.seq === seq && c.hash === hash) return c;
+    const sym = new Map<string, number>();
+    let used = 0;
+    let count = 0;
+    for (const r of this.q("SELECT symbol, COALESCE(SUM(notional_cents), 0) AS s, COUNT(*) AS n FROM orders WHERE status IN ('filled','held') AND day = ? GROUP BY symbol")
+      .all(day) as Array<{ symbol: string; s: number; n: number }>) {
+      sym.set(r.symbol, r.s);
+      used += r.s;
+      count += r.n;
+    }
+    const pos = new Map<string, { net: number; hb: number; hs: number }>();
+    for (const r of this.q(`SELECT symbol,
+        COALESCE(SUM(CASE WHEN status = 'filled' THEN (CASE side WHEN 'buy' THEN quantity ELSE -quantity END) END), 0) AS net,
+        COALESCE(SUM(CASE WHEN status = 'held' AND side = 'buy' THEN quantity END), 0) AS hb,
+        COALESCE(SUM(CASE WHEN status = 'held' AND side = 'sell' THEN quantity END), 0) AS hs
+      FROM orders GROUP BY symbol`).all() as Array<{ symbol: string; net: number; hb: number; hs: number }>) {
+      pos.set(r.symbol, { net: r.net, hb: r.hb, hs: r.hs });
+    }
+    this.totalsCache = { seq, hash, day, used, count, sym, pos };
+    return this.totalsCache;
+  }
+
   private dayBudgetUsedCents(): number {
-    const r = this.db.prepare("SELECT COALESCE(SUM(notional_cents), 0) AS s FROM orders WHERE status IN ('filled','held') AND day = ?").get(this.today()) as { s: number };
-    return r.s;
+    return this.totals(this.today()).used;
   }
 
   /**
@@ -471,22 +525,16 @@ export class ReceiverCore {
    * budget check, so concurrent proposals can never together pass them. Returns a denial, or null when the order fits (or no limit is set).
    */
   private portfolioDenial(scope: MandateScope, r: CommitRow): Decision | null {
-    const day = this.today();
+    const t = this.totals(this.today());
     if (scope.maxOrdersPerDay !== undefined) {
-      const n = (this.db.prepare("SELECT COUNT(*) AS n FROM orders WHERE status IN ('filled','held') AND day = ?").get(day) as { n: number }).n;
-      if (n + 1 > scope.maxOrdersPerDay) return this.deny('order_count_cap');
+      if (t.count + 1 > scope.maxOrdersPerDay) return this.deny('order_count_cap');
     }
     if (scope.maxSymbolDailyNotionalUsd !== undefined) {
-      const used = (this.db.prepare("SELECT COALESCE(SUM(notional_cents), 0) AS s FROM orders WHERE status IN ('filled','held') AND day = ? AND symbol = ?")
-        .get(day, r.symbol) as { s: number }).s;
+      const used = t.sym.get(r.symbol) ?? 0;
       if (used + r.cents > Math.round(scope.maxSymbolDailyNotionalUsd * 100)) return this.deny('symbol_daily_cap');
     }
     if (scope.maxPositionUsd !== undefined) {
-      const q = this.db.prepare(`SELECT
-          COALESCE(SUM(CASE WHEN status = 'filled' THEN (CASE side WHEN 'buy' THEN quantity ELSE -quantity END) END), 0) AS net,
-          COALESCE(SUM(CASE WHEN status = 'held' AND side = 'buy' THEN quantity END), 0) AS hb,
-          COALESCE(SUM(CASE WHEN status = 'held' AND side = 'sell' THEN quantity END), 0) AS hs
-        FROM orders WHERE symbol = ?`).get(r.symbol) as { net: number; hb: number; hs: number };
+      const q = t.pos.get(r.symbol) ?? { net: 0, hb: 0, hs: 0 };
       const s = r.side === 'buy' ? r.quantity : -r.quantity;
       const exposure = Math.max(Math.abs(q.net + q.hb + s), Math.abs(q.net - q.hs + s)); // held orders counted whichever way grows the exposure
       if (Math.round(exposure * r.trusted * 100) > Math.round(scope.maxPositionUsd * 100)) return this.deny('position_cap');
@@ -495,13 +543,34 @@ export class ReceiverCore {
   }
 
   private insertRow(r: CommitRow): Decision {
-    const seq = (this.db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM events').get() as { n: number }).n;
+    const seq = (this.q('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM events').get() as { n: number }).n;
     const orderId = this.opts.mutations?.idempotencyOff
       ? 'og_' + sha(this.opts.mandateId + '|' + r.clientOrderId + '|' + seq).slice(0, 16)
       : orderIdOf(this.opts.mandateId, r.clientOrderId);
+    const day = this.today();
+    const c = this.totalsCache;
+    const fresh = c !== null && c.day === day && (() => {
+      const h = this.q('SELECT seq, hash FROM events ORDER BY seq DESC LIMIT 1').get() as { seq: number; hash: string } | undefined;
+      return c.seq === (h?.seq ?? 0) && c.hash === (h?.hash ?? GENESIS);
+    })();
     const eventSeq = this.appendEvent(r.status, orderId, { clientOrderId: r.clientOrderId, symbol: r.symbol, side: r.side, quantity: r.quantity, limitPrice: r.limitPrice, trustedPrice: r.trusted, notionalCents: r.cents, revision: r.revision });
-    this.db.prepare(`INSERT INTO orders (seq, order_id, client_order_id, action_hash, symbol, side, quantity, limit_price, trusted_price, notional_cents, status, fill_price, day)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(eventSeq, orderId, r.clientOrderId, r.actionHash, r.symbol, r.side, r.quantity, r.limitPrice, r.trusted, r.cents, r.status, r.status === 'filled' ? r.trusted : null, this.today());
+    this.q(`INSERT INTO orders (seq, order_id, client_order_id, action_hash, symbol, side, quantity, limit_price, trusted_price, notional_cents, status, fill_price, day)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(eventSeq, orderId, r.clientOrderId, r.actionHash, r.symbol, r.side, r.quantity, r.limitPrice, r.trusted, r.cents, r.status, r.status === 'filled' ? r.trusted : null, day);
+    if (fresh && c && this.lastAppended) {
+      // The totals described the ledger just before this row; move them to the new head by adding exactly this row.
+      c.seq = this.lastAppended.seq;
+      c.hash = this.lastAppended.hash;
+      c.used += r.cents;
+      c.count += 1;
+      c.sym.set(r.symbol, (c.sym.get(r.symbol) ?? 0) + r.cents);
+      const p = c.pos.get(r.symbol) ?? { net: 0, hb: 0, hs: 0 };
+      if (r.status === 'filled') p.net += r.side === 'buy' ? r.quantity : -r.quantity;
+      else if (r.side === 'buy') p.hb += r.quantity;
+      else p.hs += r.quantity;
+      c.pos.set(r.symbol, p);
+    } else {
+      this.totalsCache = null;
+    }
     return {
       decision: r.status, reason: r.status === 'held' ? 'step_up_required' : 'within_mandate', reasons: [], orderId,
       ledgerEffect: r.status === 'filled', trustedPrice: r.trusted, notionalUsd: r.cents / 100,
