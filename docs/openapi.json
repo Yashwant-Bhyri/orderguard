@@ -1623,6 +1623,86 @@
         "summary": "Screen"
       }
     },
+    "/api/theater/bench": {
+      "get": {
+        "description": "The headline of results/bench/summary.json when it exists, else `present: false`. Read on every request; never cached.",
+        "operationId": "theater_bench_api_theater_bench_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Theater Bench"
+      }
+    },
+    "/api/theater/source": {
+      "get": {
+        "description": "Without `id`, the list of source files. With one of those ids (or `bench`), that committed file as plain text. An allow-list of exact ids; no path is ever taken from the request.",
+        "operationId": "theater_source_api_theater_source_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9_]{1,24}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Theater Source"
+      }
+    },
+    "/api/theater/timeline": {
+      "get": {
+        "description": "The precomputed Swarm Theater timeline: the packed event strip, per-step aggregates, feed, focus attacks, queue and sourced facts of the recorded run. Served gzip-compressed when the client accepts it.",
+        "operationId": "theater_timeline_api_theater_timeline_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Theater Timeline"
+      }
+    },
     "/api/trigger-graph": {
       "post": {
         "operationId": "trigger_graph_api_trigger_graph_post",

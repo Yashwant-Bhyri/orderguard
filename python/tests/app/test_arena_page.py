@@ -65,7 +65,7 @@ def test_arena_js_static_contract():
         assert bad not in js, bad
     assert not re.search(r"https?://", js) and not re.search(r"""style\s*[:=]\s*["']""", js)
     assert js.count("fetch(") == 0                      # all data access goes through OG.api
-    assert sum(p.stat().st_size for p in ROOT.iterdir() if p.is_file()) < 200_000   # nine pages incl. arena, order-risk card and mandate policy; still no framework or build step
+    assert sum(p.stat().st_size for p in ROOT.iterdir() if p.is_file()) < 260_000   # ceiling raised from 200 KB for the Swarm Theater (its own page, stylesheet and script, about 60 KB): a canvas swarm, five beats and keyboard controls without a framework or build step
 
 
 def test_arena_js_runs_in_a_dom_if_jsdom_is_available(client, tmp_path, monkeypatch):

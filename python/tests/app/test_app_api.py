@@ -384,8 +384,8 @@ def test_dashboard_static_contract():
     from pathlib import Path
     root = Path(__file__).resolve().parents[2] / "orderguard_app" / "static"
     files = [p for p in root.iterdir() if p.is_file()]
-    # The Swarm arena adds the recorded-feed tape, charts and envelope lab; keep the whole no-build UI below its 180 KB ceiling.
-    assert sum(p.stat().st_size for p in files) < 200_000   # nine pages incl. arena, order-risk card and mandate policy; still no framework or build step
+    # The Swarm arena adds the recorded-feed tape, charts and envelope lab; keep the whole no-build UI below its ceiling (260 KB since the Swarm Theater, docs/APP.md).
+    assert sum(p.stat().st_size for p in files) < 260_000   # ceiling raised from 200 KB for the Swarm Theater (its own page, stylesheet and script, about 60 KB): a canvas swarm, five beats and keyboard controls without a framework or build step
     html = (root / "index.html").read_text()
     assert 'style="' not in html and "<style" not in html and not re.search(r"<script(?![^>]*src=)", html)
     for src in re.findall(r'<script[^>]*src="/static/([^"]+)"', html):

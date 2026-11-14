@@ -1,0 +1,167 @@
+/* Swarm Theater. Tokens come from app.css (docs/DESIGN.md section 2); this file only lays the page out. Colour carries meaning: neutral dots,
+   amber hold, red refuse, violet stopped by the order-risk layer. Shape carries it too (circle, square, diamond) so it never rests on colour. */
+
+body.th { min-height: 100vh; }
+.th-top { display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.th-brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; color: var(--text); text-decoration: none; }
+.th-brand svg { width: 20px; height: 20px; }
+.th-sub { color: var(--text-2); }
+.th-link { font-size: 13px; }
+.grow { flex: 1; }
+#th-main { max-width: 1280px; margin: 0 auto; padding: 16px 24px 0; outline: none; }
+
+/* beats */
+.th-beats ol { list-style: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; padding: 0; }
+.th-beats button { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-height: 56px; padding: 8px 12px 12px; text-align: left; font-weight: 400;
+  background: var(--surface); color: var(--text-2); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.th-beats button:hover { background: var(--surface-2); opacity: 1; }
+.th-beats button[aria-current="step"] { color: var(--text); border-color: var(--accent); background: var(--surface); }
+.th-beats .n { font-size: 12px; color: var(--text-3); }
+.th-beats .t { font-size: 14px; font-weight: 600; }
+.th-beats .bar { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--accent); }
+.th-head { margin-bottom: 16px; }
+.th-kicker { margin: 0 0 4px; font-size: 12px; color: var(--text-3); }
+.th-head h1 { font-size: 32px; margin-bottom: 8px; outline: none; }
+.th-caption { font-size: 16px; line-height: 1.5; max-width: 78ch; min-height: 72px; margin: 0; color: var(--text); }
+.th-motion { margin: 8px 0 0; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--text-2); font-size: 13px; }
+
+/* stage and side */
+.th-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.th-stage { outline: none; }
+@media (min-width: 961px) { .th-stage { position: sticky; top: 12px; } }
+.th-envs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.th-env { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; box-shadow: var(--shadow); min-width: 0; }
+.th-env h3 { font-size: 14px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.th-env .why { margin: 2px 0 8px; font-size: 12px; color: var(--text-2); min-height: 32px; }
+.th-env canvas, .th-silent canvas { display: block; width: 100%; height: 170px; }
+.th-silent canvas { height: 28px; }
+.th-silent { display: flex; align-items: center; gap: 12px; margin: 12px 0 0; font-size: 12px; color: var(--text-2); }
+.th-silent canvas { flex: 0 0 240px; width: 240px; }
+.th-gauge { margin-top: 8px; }
+.th-gauge .row { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-2); margin-bottom: 4px; }
+.th-gauge .row b { color: var(--text); }
+.th-meter { position: relative; height: 12px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; }
+.th-meter i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--text-3); }
+.th-meter.hot i { background: var(--hold); }
+.th-meter.full i { background: var(--refuse); }
+.th-env .caps { margin: 6px 0 0; font-size: 12px; color: var(--text-2); }
+.th-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 12px 0 0; padding: 0; font-size: 12px; color: var(--text-2); }
+.th-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.th-legend svg { width: 12px; height: 12px; }
+.th-live { margin: 8px 0 0; font-size: 13px; color: var(--text-2); min-height: 20px; }
+
+.th-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; box-shadow: var(--shadow); }
+.th-panel h2 { font-size: 16px; margin-bottom: 8px; }
+.th-panel h3 { font-size: 14px; margin: 16px 0 8px; }
+.th-big { font-size: 32px; line-height: 1.1; font-weight: 600; font-variant-numeric: tabular-nums; }
+.th-big.bad { color: var(--refuse); }
+.th-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.th-stat { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.th-stat .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; display: block; }
+.th-stat .k { font-size: 12px; color: var(--text-2); }
+.th-stat.allow .v { color: var(--allow); } .th-stat.hold .v { color: var(--hold); } .th-stat.refuse .v { color: var(--refuse); } .th-stat.quarantine .v { color: var(--quarantine); }
+.th-note { font-size: 12px; color: var(--text-2); margin: 8px 0 0; }
+.th-fam { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.th-fam li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.th-fam li.off { color: var(--text-3); }
+
+.th-feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; min-height: 210px; align-content: start; }
+.th-feed li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; background: var(--surface); }
+.th-feed .m { display: block; font-size: 12px; color: var(--text-3); }
+
+/* focus */
+.th-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.th-tabs button { min-height: 36px; font-weight: 400; }
+.th-tabs button[aria-pressed="true"] { border-color: var(--accent); background: var(--surface-2); }
+.th-flow { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; counter-reset: s; }
+.th-flow > li { position: relative; padding: 12px 12px 12px 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.th-flow > li::before { counter-increment: s; content: counter(s); position: absolute; left: 12px; top: 12px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong); font: 600 12px/18px var(--sans); text-align: center; }
+.th-flow h4 { margin: 0 0 4px; font-size: 13px; }
+.th-flow p { margin: 0 0 4px; }
+.th-flow .mono { font-size: 12px; word-break: break-all; }
+.th-flow ul { margin: 4px 0; padding-left: 16px; }
+.th-flow details { margin-top: 4px; font-size: 12px; color: var(--text-2); }
+.th-flow summary { cursor: pointer; }
+.th-ct { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
+.th-ct th, .th-ct td { text-align: right; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+.th-ct th:first-child, .th-ct td:first-child { text-align: left; }
+.th-act { display: flex; align-items: center; gap: 8px; margin: 2px 0; font-size: 12px; }
+.th-act .t { flex: 1; height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.th-act .t i { display: block; height: 100%; width: 0; background: var(--quarantine); }
+.th-chain { list-style: none; margin: 4px 0; padding: 0; font-size: 12px; }
+.th-chain li { display: flex; gap: 8px; padding: 2px 0; }
+.th-chain li.at { font-weight: 600; color: var(--accent); }
+
+/* queue */
+.th-queue { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 8px; }
+.th-queue > li { display: grid; grid-template-columns: 32px 1fr; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+.th-queue .rk { font-size: 20px; font-weight: 600; color: var(--text-3); text-align: center; }
+.th-queue .pl { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 6px; align-items: center; }
+.th-queue .adv { margin-top: 6px; padding: 8px; border: 1px dashed var(--line-strong); border-radius: 6px; background: var(--surface-2); }
+.th-queue .truth { margin-top: 6px; font-size: 12px; }
+.th-card { margin-top: 16px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); font-size: 13px; }
+.th-card h3 { margin: 0 0 4px; }
+
+/* proof */
+.th-tiles { display: grid; gap: 12px; }
+.th-tile { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.th-tile h3 { margin: 0 0 4px; font-size: 13px; color: var(--text-2); font-weight: 600; }
+.th-tile .big { font-size: 24px; line-height: 1.2; font-weight: 600; font-variant-numeric: tabular-nums; }
+.th-tile p { margin: 4px 0 0; font-size: 13px; }
+.th-tile .cav { color: var(--text-2); font-size: 12px; }
+.th-tile.slot { border-style: dashed; border-color: var(--line-strong); }
+.th-split { display: flex; height: 12px; border-radius: 999px; overflow: hidden; margin: 8px 0; border: 1px solid var(--line-strong); }
+.th-split i { display: block; height: 100%; }
+.th-split .a { background: var(--allow); } .th-split .b { background: var(--quarantine); } .th-split .c { background: var(--text-3); } .th-split .d { background: var(--refuse); }
+.th-src { font-size: 12px; margin-left: 4px; }
+.th-checks { margin: 4px 0 0; padding-left: 16px; font-size: 12px; color: var(--text-2); }
+
+/* controls */
+.th-controls { position: sticky; bottom: 0; z-index: 5; margin-top: 24px; padding: 12px 0 8px; background: var(--bg); border-top: 1px solid var(--line); }
+.th-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.th-btns .sh { display: none; }
+.th-speed select { min-height: 36px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); font: inherit; }
+.th-scrub { position: relative; margin: 12px 0 4px; }
+.th-scrub input { width: 100%; margin: 0; accent-color: var(--accent); height: 24px; }
+.th-marks { list-style: none; margin: 0; padding: 0; position: absolute; left: 0; right: 0; top: 2px; height: 20px; pointer-events: none; }
+.th-marks li { position: absolute; top: 0; width: 2px; height: 20px; background: var(--line-strong); opacity: .8; }
+.th-time { display: flex; justify-content: space-between; gap: 12px; margin: 0; font-size: 12px; color: var(--text-2); }
+.th-keys { margin: 4px 0 0; }
+.th-foot { margin: 32px 0 0; padding-bottom: 48px; }
+.th-sources { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 4px; font-size: 13px; }
+.th-sources li { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.th-sources .what { color: var(--text-2); }
+.th-limits { margin: 12px 0; display: grid; gap: 4px; color: var(--text-2); font-size: 13px; }
+
+@media (max-width: 960px) {
+  body[data-view="human"] .th-stage, body[data-view="proof"] .th-stage { display: none; }   /* on a narrow screen the queue and the scoreboard are the beat */
+  .th-grid { grid-template-columns: minmax(0, 1fr); }
+  #th-main { padding: 12px 16px 0; }
+  .th-top { padding: 8px 16px; }
+  .th-head h1 { font-size: 24px; }
+}
+@media (max-width: 700px) {
+  .th-beats ol { gap: 4px; }
+  .th-beats button { padding: 6px 6px 10px; min-height: 52px; }
+  .th-beats .t { font-size: 12px; }
+  .th-beats .n { display: none; }
+  .th-envs { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .th-env { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 4px 12px; padding: 8px 12px; }
+  .th-env h3, .th-env .why, .th-env .caps { grid-column: 1 / -1; }
+  .th-env .why { min-height: 0; margin-bottom: 4px; }
+  .th-env canvas { height: 84px; }
+  .th-gauge { margin-top: 0; align-self: center; }
+  .th-silent canvas { flex-basis: 140px; width: 140px; }
+  .th-caption { min-height: 120px; font-size: 15px; }
+  .th-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .th-big { font-size: 24px; }
+  .th-btns { flex-wrap: nowrap; gap: 4px; }
+  .th-btns button { padding: 0 8px; font-size: 12px; min-width: 36px; flex: 0 1 auto; }
+  .th-btns .lbl, .th-speed { display: none; }
+  .th-btns .sh { display: inline; }
+  .th-controls { padding: 8px 0 6px; margin-top: 16px; }
+  .th-scrub { margin: 6px 0 2px; }
+  .th-keys { display: none; }
+  .th-link { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .th-beats .bar { transition: none; } }

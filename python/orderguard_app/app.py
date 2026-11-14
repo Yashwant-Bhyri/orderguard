@@ -23,10 +23,10 @@ STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("orderguard.app")
 
 
-def _versioned_index() -> str:
-    """index.html with every /static/<file> reference tagged ?v=<content hash>, so a changed asset always gets a new URL
-    and no browser can run a stale script or stylesheet after an upgrade."""
-    html = (STATIC / "index.html").read_text()
+def _versioned_index(page: str = "index.html") -> str:
+    """A page (the dashboard, or the Swarm Theater) with every /static/<file> reference tagged ?v=<content hash>, so a changed asset always
+    gets a new URL and no browser can run a stale script or stylesheet after an upgrade."""
+    html = (STATIC / page).read_text()
 
     def tag(m: "re.Match") -> str:
         f = STATIC / m.group(2)
@@ -86,6 +86,10 @@ def create_app(token: str | None = None) -> FastAPI:
     from orderguard_arena.api import router as arena_router
     app.include_router(arena_router, dependencies=api)
 
+    # The Swarm Theater: a precomputed replay of one recorded run (orderguard_app/theater.py), guarded like every other /api route.
+    from .theater import router as theater_router
+    app.include_router(theater_router, dependencies=api)
+
     @app.get("/api/health", dependencies=api)
     def health():
         return S.health()
@@ -137,6 +141,10 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index():
         return HTMLResponse(_versioned_index(), headers={"Cache-Control": "no-cache"})
+
+    @app.get("/theater", include_in_schema=False)
+    def theater_page():
+        return HTMLResponse(_versioned_index("theater.html"), headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app

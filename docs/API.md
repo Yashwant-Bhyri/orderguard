@@ -23,6 +23,9 @@ export ORDERGUARD_APP_TOKEN=...   # the same value the server was started with
 | GET | [`/api/arena/run`](#get-apiarenarun) | Arena Run |
 | GET | [`/api/arena/frontier`](#get-apiarenafrontier) | Arena Frontier |
 | GET | [`/api/arena/envelopes`](#get-apiarenaenvelopes) | Arena Envelopes |
+| GET | [`/api/theater/timeline`](#get-apitheatertimeline) | The Swarm Theater's precomputed replay of one recorded arena run: packed event strip, per-step aggregates, feed, three focus attacks, the held-order queue and every sourced fact. Served gzip-compressed when the client accepts it. |
+| GET | [`/api/theater/bench`](#get-apitheaterbench) | The headline of results/bench/summary.json when that file exists, else present: false. Read on every request. |
+| GET | [`/api/theater/source`](#get-apitheatersource) | Without `id`, the list of files the theater is built from. With an id from that list (or `bench`), that committed file as plain text. An allow-list of exact ids; no path is taken from the request. |
 | GET | [`/api/health`](#get-apihealth) | Liveness and configuration summary: model mode, provider, whether a key is configured (never the key), budget, versions. |
 | GET | [`/api/overview`](#get-apioverview) | The eight layers and their status, the local classifier, the demo mandate and the configured mandate (signature checked), receiver and model state. |
 | POST | [`/api/screen`](#post-apiscreen) | Screen untrusted text: L1 code checks, the local classifier and, when configured, the L2 model screen. Returns a verdict of quarantine, clean or unknown. |
@@ -234,6 +237,69 @@ Errors: see [Errors](#errors).
 
 ```sh
 curl -s http://127.0.0.1:8600/api/arena/envelopes \
+  -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN"
+```
+
+### GET /api/theater/timeline
+
+The Swarm Theater's precomputed replay of one recorded arena run: packed event strip, per-step aggregates, feed, three focus attacks, the held-order queue and every sourced fact. Served gzip-compressed when the client accepts it.
+
+**Request body**: none
+
+**Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
+
+`beats`, `chain`, `checks`, `envelopes`, `events`, `facts`, `families`, `feed`, `feed_texts`, `focus`, `inputs`, `limits`, `per_step`, `queue`, `reserve_cents`, `run`, `series`, `sources`, `states`, `swarm`, `title`, `version`
+
+Errors: see [Errors](#errors).
+
+**Example**
+
+```sh
+curl -s http://127.0.0.1:8600/api/theater/timeline \
+  -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN"
+```
+
+### GET /api/theater/bench
+
+The headline of results/bench/summary.json when that file exists, else present: false. Read on every request.
+
+**Request body**: none
+
+**Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
+
+`path`, `present`, `rows`, `sha256`
+
+Errors: see [Errors](#errors).
+
+**Example**
+
+```sh
+curl -s http://127.0.0.1:8600/api/theater/bench \
+  -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN"
+```
+
+### GET /api/theater/source
+
+Without `id`, the list of files the theater is built from. With an id from that list (or `bench`), that committed file as plain text. An allow-list of exact ids; no path is taken from the request.
+
+**Query parameters**
+
+| Name | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string or null | no |  |
+
+**Request body**: none
+
+**Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
+
+`bench`, `sources`
+
+Errors: see [Errors](#errors).
+
+**Example**
+
+```sh
+curl -s http://127.0.0.1:8600/api/theater/source \
   -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN"
 ```
 

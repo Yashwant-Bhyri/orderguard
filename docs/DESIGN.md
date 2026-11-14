@@ -134,5 +134,5 @@ hints, `aria-live="polite"` on result regions, visible 2px `--accent` focus ring
 
 No external requests (strict CSP stays), no frameworks, no build step, no `innerHTML` with any string that came from
 the server or the user (build nodes, set `textContent`). Charts are inline SVG built with `createElementNS`. Keep total
-static weight under 200 KB uncompressed. This ceiling includes the Swarm arena's recorded-feed tape, charts, envelope
+static weight under 260 KB uncompressed (200 KB before the Swarm Theater added its page, stylesheet and script). This ceiling includes the Swarm Theater, the Swarm arena's recorded-feed tape, charts, envelope
 lab and order-risk card, and the mandate-policy page; `python/tests/app/test_arena_page.py` enforces it so the product keeps the arena without adding a frontend build step.
