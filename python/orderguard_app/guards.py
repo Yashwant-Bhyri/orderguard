@@ -36,6 +36,7 @@ LIMITS = (
     Limit("/api/screen", 120, 60.0, 8),
     Limit("/api/check-order", 240, 60.0, 8),
     Limit("/api/trigger-graph", 120, 30.0, 4),
+    Limit("/evidence/", 120, 15.0, 8),             # public read-only files: no token, so bounded here instead
 )
 DEFAULT = Limit("/api/", 600, 30.0, 32)
 

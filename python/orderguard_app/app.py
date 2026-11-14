@@ -90,6 +90,10 @@ def create_app(token: str | None = None) -> FastAPI:
     from .theater import router as theater_router
     app.include_router(theater_router, dependencies=api)
 
+    # Public, read-only view of committed results/ and docs/ files, so source links work in a plain browser link under a token (evidence.py).
+    from .evidence import router as evidence_router
+    app.include_router(evidence_router)
+
     @app.get("/api/health", dependencies=api)
     def health():
         return S.health()

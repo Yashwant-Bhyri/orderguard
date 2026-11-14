@@ -28,12 +28,16 @@ const fact = (id) => { const f = D.facts[id]; return f ? FMT[f.fmt](f.value) : i
 const fill = (tpl) => tpl.replace(/\{(\w+)\}/g, (m, id) => (D.facts[id] ? fact(id) : m));
 const money = (cents) => OG.usd(cents / 100, false);
 const srcPath = (id) => (D.sources.find((s) => s.id === id) || { path: id }).path;
+/* Source links go to the public /evidence/<path> view of the committed file (a plain link cannot carry the access token). A source outside
+   results/ and docs/ (the model file) is not public: it is fetched with the token and opened as text. */
+const PUBLIC_SRC = /^(results|docs)\//;
+const srcHref = (id) => { const p = id === "bench" ? "results/bench/summary.json" : srcPath(id); return PUBLIC_SRC.test(p) ? "/evidence/" + p : "/api/theater/source?id=" + id; };
 function srcLink(id, label) {
-  const a = h("a", { class: "th-src", href: "/api/theater/source?id=" + id, target: "_blank", rel: "noopener" }, label || srcPath(id).split("/").pop());
-  if (OG.token) a.addEventListener("click", async (e) => {      // with an access token set a plain link cannot send it: fetch, then open the text
+  const href = srcHref(id), a = h("a", { class: "th-src", href, target: "_blank", rel: "noopener" }, label || srcPath(id).split("/").pop());
+  if (OG.token && href.startsWith("/api/")) a.addEventListener("click", async (e) => {
     e.preventDefault();
     try {
-      const r = await fetch(a.getAttribute("href"), { headers: { Authorization: "Bearer " + OG.token } });
+      const r = await fetch(href, { headers: { Authorization: "Bearer " + OG.token } });
       window.open(URL.createObjectURL(await r.blob()), "_blank", "noopener");
     } catch (x) { status("The file could not be opened."); }
   });
@@ -364,7 +368,7 @@ function buildProof() {
     h("p", {}, "The order-risk layer scores in " + fact("risk_p50_us") + " median, " + fact("risk_p99_us") + " at the 99th percentile. ", src("latency")),
     h("p", { class: "cav" }, "One CPython thread on a laptop, local authorization only. Machine-dependent."));
   const tile4 = bench.present
-    ? h("div", { class: "th-tile" }, h("h3", {}, "Benchmark headline"), h("dl", { class: "kv" }, ...bench.rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, typeof v === "number" ? v.toLocaleString("en-US") : v)])), h("p", { class: "th-note" }, "Read from ", h("a", { class: "th-src", href: "/api/theater/source?id=bench", target: "_blank", rel: "noopener" }, bench.path), "."))
+    ? h("div", { class: "th-tile" }, h("h3", {}, "Benchmark headline"), h("dl", { class: "kv" }, ...bench.rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, typeof v === "number" ? v.toLocaleString("en-US") : v)])), h("p", { class: "th-note" }, "Read from ", srcLink("bench", bench.path), "."))
     : h("div", { class: "th-tile slot" }, h("h3", {}, "Benchmark headline"), h("p", {}, "Not written yet. This slot reads ", h("code", {}, bench.path), " as soon as it exists and shows its headline here."), h("p", { class: "cav" }, "Nothing is shown in its place."));
   P.proof.verified = h("p", {}, "Checking the recording's hash chain in this browser…");
   const checks = h("ul", { class: "th-checks" }, D.checks.map((c) => h("li", {}, (c.ok ? "✓ " : "✕ ") + c.name + ": " + c.detail + ".")));
@@ -502,7 +506,7 @@ function wire() {
     else if (e.key === "Home") { pause(); gotoBeat(0); }
   });
   window.addEventListener("hashchange", () => { if (!playing) readHash(); });
-  $("th-sources").replaceChildren(...D.sources.map((s) => h("li", {}, h("a", { href: "/api/theater/source?id=" + s.id, target: "_blank", rel: "noopener", class: "mono" }, s.path), h("span", { class: "what" }, s.what + " (" + Math.round(s.bytes / 1024).toLocaleString("en-US") + " KB, sha256 " + s.sha256.slice(0, 12) + ")"))));
+  $("th-sources").replaceChildren(...D.sources.map((s) => h("li", {}, Object.assign(srcLink(s.id, s.path), { className: "mono" }), h("span", { class: "what" }, s.what + " (" + Math.round(s.bytes / 1024).toLocaleString("en-US") + " KB, sha256 " + s.sha256.slice(0, 12) + ")"))));
   $("th-limits").replaceChildren(...D.limits.map((t) => h("li", {}, t)));
   if (reduce) { $("th-motion").hidden = false; $("b-play").disabled = true; $("b-speed").disabled = true; }
   let to = 0;

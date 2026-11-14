@@ -116,7 +116,7 @@ OG.pages.overview = {
       show("ov-speed", h("span", { class: "pv" }, v.p99_us + " µs p99"),
         h("span", { class: "pl" }, n(v.decisions_per_s) + " decisions a second" + (v.agents != null ? " for " + n(v.agents) + " agents" : "") +
           (v.breaches != null ? ", " + n(v.breaches) + " cap breaches" : "") + ", in the exchange-scale bench."),
-        h("a", { class: "src", href: "/api/theater/source?id=bench" }, "Source file"));
+        h("a", { class: "src", href: "/evidence/results/bench/summary.json" }, "Source file"));
     }).catch(() => {});
     show("ov-start",
       ["Check: fake split order", "Screen: hidden instruction", "Scenario: injected transfer"].map((label) => {

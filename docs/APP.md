@@ -20,7 +20,7 @@ A single page with a left sidebar (wordmark, navigation with the layer codes eac
 
 | Page | What it gives you |
 |---|---|
-| Overview | The home page: the promise, the "Watch a swarm get caught" call to action, a proof strip of four sourced numbers (checked against the result files by `og-arena verify`; the speed tile switches to the `results/bench/summary.json` headline once that file exists), four capability cards linking to the tool pages and example buttons. Under "This server": the L1 to L8 rail showing each layer's status (hover or focus a station for what it checks), the demo and configured mandates, model, provider, budget and receiver. |
+| Overview | The home page: the promise, the "Watch a swarm get caught" call to action, a proof strip of four sourced numbers (checked against the result files by `og-arena verify`; the speed tile switches to the `results/bench/summary.json` headline once that file exists; below 600px the strip stays a compact 2x2 grid rather than four tall cards; each source link opens the file through `/evidence/`, see below), four capability cards linking to the tool pages and example buttons. Under "This server": the L1 to L8 rail showing each layer's status (hover or focus a station for what it checks), the demo and configured mandates, model, provider, budget and receiver. |
 | Screen text | The input with what L1 found made visible (hidden-character chips, mixed-script tokens underlined with their folded spelling, base64 runs with the decoded payload), then a row per detector (local classifier with a probability bar, threshold tick and highlighted features; fast model; main model screen), each with its own verdict and latency. |
 | Check order | Verdict card with the layer that decided and numbered reasons, the path through L1 to L8, the agent's numbers beside the ones OrderGuard trusts, meters for the per-order cap, the daily cap and the price band, and the cited-figure table (claimed, filed truth, status, source). |
 | Triggers | The trigger board: every source with its independence group (quarantined ones struck through), each rule with its threshold, median and outcome ("needs 2 independent sources, has 1"), and the blast radius as bars. |
@@ -29,7 +29,7 @@ A single page with a left sidebar (wordmark, navigation with the layer codes eac
 | Ledger | Receiver orders and hash-chain integrity, or a clear not-connected state. |
 | Results | Headline tiles, the honest caveats directly beneath them, a grouped bar chart of attack success by family and arm with Wilson 95% whiskers (inline SVG, patterns as well as colours), and the tables with family and arm filters. |
 
-Tool pages show example actions, loading states and field errors. Press `Ctrl K` or `Cmd K` for the command palette and `?` for shortcuts. Use `g a` to open the swarm arena. The theme is remembered in `localStorage`. The layout is designed for 360px and respects `prefers-reduced-motion`. The mandate comparison was checked by keyboard in a 360px browser viewport in both light and dark themes. It had no page-level horizontal overflow. The twelve static files total 247,775 bytes uncompressed, within a 260 KB ceiling. The ceiling was 200 KB until the Swarm Theater added its own page, stylesheet and script, about 60 KB together; `python/tests/app/test_app_api.py` and `test_arena_page.py` enforce the new figure with that justification. The JavaScript runs without a build step.
+Tool pages show example actions, loading states and field errors. Press `Ctrl K` or `Cmd K` for the command palette and `?` for shortcuts. Use `g a` to open the swarm arena. The theme is remembered in `localStorage`. The layout is designed for 360px and respects `prefers-reduced-motion`. The mandate comparison was checked by keyboard in a 360px browser viewport in both light and dark themes. It had no page-level horizontal overflow. The twelve static files total 248,857 bytes uncompressed, within a 260 KB ceiling. The ceiling was 200 KB until the Swarm Theater added its own page, stylesheet and script, about 60 KB together; `python/tests/app/test_app_api.py` and `test_arena_page.py` enforce the new figure with that justification. The JavaScript runs without a build step.
 
 Screenshots: none are checked in. To capture them, run `orderguard serve`, open each page at 1280px and 360px in light and dark, and use the example buttons so each page shows a result (the fake split order, the hidden instruction text and the injected-transfer scenario are the clearest).
 
@@ -74,12 +74,31 @@ All JSON, under `/api`. Errors are `{"error": "..."}` with a proper status (401,
 | `GET /api/theater/timeline` | The Swarm Theater's precomputed timeline (below). About 217 KB, 73 KB gzipped (served gzip when the client accepts it). |
 | `GET /api/theater/bench` | The headline of `results/bench/summary.json` when it exists, else `{"present": false, ...}`. Read on every request. |
 | `GET /api/theater/source?id=...` | Without `id`, the files the theater is built from; with one of those ids (or `bench`), that committed file as plain text. An allow-list of exact ids: no path is read from the request. |
+| `GET /evidence/<path>` | Public and read-only (not under `/api`, no token): a committed file under `results/` or `docs/` as a readable page, or `?raw=1` for the bytes. See [Evidence endpoint](#evidence-endpoint). |
 | `GET /api/ledger` | L8 receiver snapshot when `ORDERGUARD_RECEIVER_URL` is set, else `{"connected": false, ...}`. |
 | `GET /api/results` | `docs/RESULTS.md` parsed into sections and tables (read-only), plus `charts` (per model, family and arm: k, n, rate and the report's Wilson interval) and `headline` (pooled live figures and spend). |
 
 ## Auth
 
 Set `ORDERGUARD_APP_TOKEN` to require `Authorization: Bearer <token>` on every `/api` route (constant-time compare). The page at `/` stays public so it can ask for the token; the dashboard keeps it in `sessionStorage` only. With a token set, the OpenAPI document is also disabled.
+
+## Evidence endpoint
+
+A browser link carries no bearer header, so with `ORDERGUARD_APP_TOKEN` set a link to `/api/theater/source?...` answers 401. The home proof strip and the Swarm Theater therefore link to `GET /evidence/<path>`, which is public (like `/` and `/theater`) and serves only files that are already public in the repository.
+
+**What it serves.** A file at `results/...` or `docs/...` with extension `.json`, `.jsonl`, `.md` or `.txt`. The default answer is a small HTML page on the dashboard's stylesheet and theme: the path, size, a short sha256, the text in a `<pre>` (JSON pretty-printed, everything HTML-escaped so a file can never inject markup) and a "Raw file" link. `?raw=1` returns the bytes with `application/json` or `text/plain; charset=utf-8`. Every response carries `nosniff`, the strict CSP and `X-Frame-Options: DENY` from the same middleware as the rest of the app; the route is rate-limited (120 a minute per client).
+
+**Why it is safe.**
+
+- *Explicit allow-list, not a file server.* The first path segment must be `results` or `docs`, and the extension one of four. Nothing else is reachable: not `var/` (the receiver ledger, spend and local state), not `data/`, `python/`, `.env*`, `.git`, keys or the signing material.
+- *Names that are refused anywhere in the path:* any segment that starts with a dot, or contains `key`, `secret`, `token`, `passw`, `credential`, `env`, `ledger`, `spend`, `.pem`, `.sqlite`, `.db` or `.log`. This keeps `results/spend.jsonl` (the spend record) out even though it sits under `results/`.
+- *No traversal.* A path is rejected if it is absolute, starts with `/`, has an empty, `.` or `..` segment, a backslash, a control character or NUL, or is over 200 characters. The server decodes percent-escapes once before the check, so `%2e%2e`, `%2f` and `%00` arrive as the characters they stand for and are refused; a double-encoded `%252e` stays a literal, harmless name that matches no file.
+- *No symlinks.* Every component from the repository root down must not be a symbolic link, the resolved file must stay inside `results/` or `docs/` and be a regular file, and it is opened with `O_NOFOLLOW`. A link planted inside an allowed directory therefore cannot lead out of it.
+- *Size caps.* A readable page is built for files up to 600,000 bytes; a larger file (the 5 MB event stream) gets the page with a note and the raw link instead. Raw reads stop at 8,000,000 bytes and answer 413.
+- *Read-only and uniform.* GET only (other methods answer 405). Every refusal, whatever the reason, is the same `404 {"error": "no such evidence file"}`, so a probe cannot tell a denied file from a missing one.
+- *Public by construction.* The route never reads the token or any secret, and returns nothing that is not committed in the repository. It exists so an operator can share a link to a number's source without sharing the token. Do not commit a private file under `results/` or `docs/`: from then on it is public by design. The tests are `python/tests/app/test_evidence.py` (traversal in plain and encoded forms, absolute paths, symlinks, the allow-list and deny-list, 404s, size caps, and access with and without a token set).
+
+The one theater source outside those directories, `data/models/order_risk.json`, is not public: its link still goes through `/api/theater/source` and the page fetches it with the token before opening it.
 
 ## Security notes
 

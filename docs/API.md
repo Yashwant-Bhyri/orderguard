@@ -613,6 +613,7 @@ Limits are per client address and in-process (a single local instance; rate-limi
 | `/api/screen` | 120 | 60s | 8 |
 | `/api/check-order` | 240 | 60s | 8 |
 | `/api/trigger-graph` | 120 | 30s | 4 |
+| `/evidence/` | 120 | 15s | 8 |
 | `/api/` | 600 | 30s | 32 |
 
 A deadline stops the wait, not the computation: the client gets a 504 at once and the abandoned work finishes in the background, while the concurrency cap stops abandoned runs from piling up. Request bodies are capped at 1,000,000 bytes; free-form JSON is limited to depth 8 and 200 keys per object, and every number must be finite.
