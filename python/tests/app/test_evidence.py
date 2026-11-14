@@ -88,7 +88,9 @@ def test_traversal_resolver_level(tree):
     for rel in ("../top.json", "results/../top.json", "/etc/passwd", "results/", "results", "", "docs", "results/sub", "results/sub/",
                 "results/./ok.json", "results/ok.json\n", "results/ok.json\x00.md", "results\\ok.json", "results//ok.json", "results/ok.json/"):
         assert E.resolve(rel) is None, rel
-    assert E.resolve("results/ok.json") is not None
+    resolved = E.resolve("results/ok.json")
+    assert resolved == (E.ROOT / "results/ok.json").resolve()
+    assert resolved.is_file() and not resolved.is_symlink()
 
 
 def test_symlinks_are_never_followed(tree):

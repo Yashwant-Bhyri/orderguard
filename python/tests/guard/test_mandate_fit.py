@@ -37,6 +37,34 @@ def test_equal_and_narrower_drafts(owner):
     assert result["parent_id"] == Mandate.from_dict(owner[0]).id
 
 
+@pytest.mark.parametrize(("field", "parent_cap", "child_cap"), [
+    ("maxSymbolDailyNotionalUsd", 20_000, 15_000),
+    ("maxPositionUsd", 20_000, 15_000),
+    ("maxOrdersPerDay", 20, 12),
+])
+def test_optional_portfolio_caps_can_be_tightened(field, parent_cap, child_cap):
+    key, pub = generate_keypair()
+    parent_body = BASE | {field: parent_cap}
+    parent = sign_mandate(parent_body, key)
+    draft = BASE | {"maxOrderNotionalUsd": 5_000, field: child_cap}
+    result = check_mandate_fit(parent, draft, pub, now=NOW)
+    assert result["fits"], result["violations"]
+    assert result["draft"][field] == child_cap
+
+
+@pytest.mark.parametrize(("field", "cap"), [
+    ("maxSymbolDailyNotionalUsd", 20_000),
+    ("maxPositionUsd", 20_000),
+    ("maxOrdersPerDay", 20),
+])
+def test_optional_portfolio_caps_accept_the_parent_boundary(field, cap):
+    key, pub = generate_keypair()
+    parent = sign_mandate(BASE | {field: cap}, key)
+    result = check_mandate_fit(parent, BASE | {field: cap}, pub, now=NOW)
+    assert result["fits"], result["violations"]
+    assert result["draft"][field] == cap
+
+
 @pytest.mark.parametrize(("edit", "code"), [
     ({"symbols": ["AAPL", "MSFT", "NVDA"]}, "symbols"),
     ({"sides": ["buy", "sell"]}, "sides"),

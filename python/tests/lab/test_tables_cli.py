@@ -47,6 +47,7 @@ def test_wilson_interval():
     assert tables.wilson(0, 0) == (0.0, 0.0)
 
 
+@pytest.mark.slow
 def test_tables_build_every_section_from_a_fixture(table_results):
     text = tables.build()
     for h in ("Fixed cases", "Which layer stopped what", "Natural errors", "Adaptive campaigns", "Detectors", "Sandbox sweeps", "Spend", "Limits"):
@@ -56,6 +57,7 @@ def test_tables_build_every_section_from_a_fixture(table_results):
     assert "attacker refusals" in text
 
 
+@pytest.mark.slow
 def test_tables_are_deterministic_and_check_detects_drift(table_results):
     a, b = tables.build(), tables.build()
     assert a == b
@@ -66,6 +68,7 @@ def test_tables_are_deterministic_and_check_detects_drift(table_results):
     assert not tables.check()
 
 
+@pytest.mark.slow
 def test_numbers_are_recomputable_from_raw_files(table_results):
     rows = [json.loads(l) for p in sorted((table_results / "runs").glob("*.jsonl")) for l in p.read_text().splitlines()]
     credul = [r for r in rows if r["model"].endswith("credulous") and r["arm"] == "naive" and r["family"] == "A"]
@@ -82,6 +85,7 @@ def test_empty_results_still_build(res):
     assert "No runs recorded yet" in text and "No live calls recorded" in text
 
 
+@pytest.mark.slow
 def test_cli_tables_check_exit_codes(table_results, capsys):
     assert cli.main(["tables", "--check"]) == 1
     assert cli.main(["tables"]) == 0

@@ -111,6 +111,7 @@ def test_heuristic_screen_flags_planted_text_not_filing_language():
     assert not heuristic_screen("The Company leases and owns facilities in several countries. Total net sales 391,035.")["flag"]
 
 
+@pytest.mark.slow
 def test_200_world_offline_sweep_under_20_seconds(res):
     names = sweep.technique_names()
     seeds = -(-200 // len(names))                                        # ceil: at least 200 worlds

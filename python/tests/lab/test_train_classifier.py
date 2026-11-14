@@ -83,6 +83,7 @@ def test_soup_equals_logit_average_for_linear_members():
     assert avg[0] == pytest.approx(max((1 + 3 - 1) / 3, (-2 + 0 + 5) / 3))
 
 
+@pytest.mark.slow
 def test_members_share_a_space_and_fit_is_deterministic(chunks):
     sub = [c for c in chunks if c["source"] == "lab"]
     members = [m for m in T.MEMBERS if m[0] in ("base", "aug")]

@@ -27,6 +27,7 @@ def test_replay_miss_is_loud_in_strict_mode_and_a_labelled_error_otherwise(monke
         runner.run_case(case, _MissingRecording(), "naive", mode="live")
 
 
+@pytest.mark.slow
 def test_offline_sweeps_and_corpus_never_reach_a_model(monkeypatch):
     from orderguard_guard import llm
     monkeypatch.setenv("OG_REPLAY_STRICT", "1")

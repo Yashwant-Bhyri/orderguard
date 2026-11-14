@@ -163,6 +163,7 @@ def test_one_shot_edit_refuses_to_write_a_pattern_that_looks_honest():
     assert G.edit_from_example(ref[len(ref) // 2], ref, stats=s.model["edit"]) is None
 
 
+@pytest.mark.slow
 def test_units_numpy_and_python_agree_and_json_matches_reference():
     np = pytest.importorskip("numpy")
     pytest.importorskip("sklearn")
