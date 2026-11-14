@@ -15,6 +15,10 @@ SMOKE = {"feed_inject": (0,), "page_inject": (0,), "fake_figures": (0,), "echo":
 
 def _config(a) -> C.Config:
     cfg = C.Config()
+    if C.CAMPAIGN.exists() and not (a.rounds or a.attackers or a.smoke or a.seeds or a.fresh):
+        cfg = C.Config.from_dict(json.loads(C.CAMPAIGN.read_text())["config"])      # the recorded campaign, including where live runs ended early
+    if a.fresh:
+        cfg = replace(cfg, limits={})
     if a.rounds:
         cfg = replace(cfg, rounds=a.rounds)
     if a.attackers:
@@ -109,6 +113,7 @@ def add_parser(sub) -> None:
     p.add_argument("--concurrency", type=int, default=0)
     p.add_argument("--out", default="")
     p.add_argument("--estimate", action="store_true")
+    p.add_argument("--fresh", action="store_true", help="ignore the stop points recorded in campaign.json (to try the missing rounds live)")
     p.add_argument("--no-report", action="store_true")
     p.add_argument("--verbose", action="store_true")
     p.add_argument("--check", action="store_true")

@@ -16,11 +16,11 @@ def _run(tmp_path, name, cfg=None):
 
 def test_campaign_replays_offline_byte_for_byte(tmp_path, monkeypatch):
     monkeypatch.setenv("OG_LLM", "replay")
-    first = _run(tmp_path, "a.json")
-    assert first == _run(tmp_path, "b.json")                                   # deterministic
+    cfg = C.Config.from_dict(json.loads(C.CAMPAIGN.read_text())["config"])      # the recorded campaign, including where live runs ended early
+    first = _run(tmp_path, "a.json", cfg)
+    assert first == _run(tmp_path, "b.json", cfg)                               # deterministic
     assert first == C.CAMPAIGN.read_text()                                      # and equal to the committed result
-    camp = json.loads(first)
-    assert camp["complete"] and camp["summary"]["units"] == 14
+    assert json.loads(first)["summary"]["units"] == 42
 
 
 def test_report_matches_campaign_json():

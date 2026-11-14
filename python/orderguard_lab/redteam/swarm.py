@@ -31,7 +31,7 @@ from .attacker import PlanError
 N_HONEST = 80
 STEPS = 1000
 SPD = 500
-MAX_ORDERS = {"order": 40, "collusion": 90}
+MAX_ORDERS = {"order": 20, "collusion": 36}
 N_IDS = {"order": 1, "collusion": 4}
 SCALARS = (str, int, float, bool, type(None))
 KEYS = ("step", "agent", "ticker", "side", "usd", "quantity", "limit_offset_pct", "limit_price", "key", "trigger_news_id", "type", "destination_account", "amount_usd")

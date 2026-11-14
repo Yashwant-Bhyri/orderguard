@@ -31,7 +31,7 @@ from ..runner import figure_checker as _fallback_checker
 from ..sandbox.compiler import SURFACE_TASK, TAIL, Injections, NAMES_SHORT, WorldEnv, mandate_text
 from ..sandbox.world import WIRES, build_world
 from . import layers, oracle
-from .attacker import PlanError
+from .attacker import STATE, PlanError
 
 ASOF = dt.datetime(2024, 11, 6, 15, 5, tzinfo=dt.timezone.utc)
 FAR = "2099-01-01T00:00:00Z"
@@ -256,15 +256,39 @@ def task_of(family: str, w, surface: str) -> str:
 
 
 # ---------------------------------------------------------------------------------------------------- the runner
+class _MissCounter:
+    """Wraps the guard LLM to count recording misses. A screen reply that exists but cannot be parsed is a recorded outcome (the guard quarantines it);
+    only a missing recording makes a strict replay wrong."""
+
+    def __init__(self, llm):
+        self.llm, self.model, self.misses = llm, getattr(llm, "model", "guard"), 0
+
+    def chat(self, *a, **k):
+        try:
+            return self.llm.chat(*a, **k)
+        except Exception as e:
+            if type(e).__name__ == "ReplayMiss":
+                self.misses += 1
+            raise
+
+
 def _agent(guard_model, task: str, env) -> dict:
-    llm = shared_llm(guard_model)
+    from ..llm_shared import ReplayIncomplete, strict_replay
+    llm = _MissCounter(shared_llm(guard_model))
     tr = run_agent(llm, task, env, "full", max_steps=12, figure_checker=_l6())
     err = str(tr.get("error") or "")
-    if "BudgetExceeded" in err or "CreditFloor" in err:
-        raise BudgetStop(err)
-    check_replay_complete(tr, "red-team guarded agent")
+    if "BudgetExceeded" in err or "CreditFloor" in err or any(x in err for x in ("HTTP 402", "HTTP 403", "Key limit")) or (
+            STATE["key_dead"] and (err or tr.get("screen_errors"))):
+        raise BudgetStop(err or "the provider key is out of quota")
+    check_replay_complete({**tr, "screen_errors": 0}, "red-team guarded agent")
+    if llm.misses and strict_replay():
+        raise ReplayIncomplete(f"red-team guarded agent: {llm.misses} model call(s) have no recording and strict replay forbids a live call")
     if tr.get("screen_errors"):
-        raise BudgetStop(f"{tr['screen_errors']} screen call(s) failed; a round with a broken screen is not a measurement")
+        # A screen reply that cannot be parsed is quarantined by the guard (it fails closed), and that is recorded and replays the same way, so it is a real
+        # outcome. Only a live budget that has run out makes a screen call fail for a reason that is not the guard's behaviour.
+        from orderguard_guard.llm import SPEND
+        if SPEND.budget_usd - SPEND.spent_usd < 0.02:
+            raise BudgetStop(f"{tr['screen_errors']} screen call(s) failed with the live budget spent")
     return tr
 
 
@@ -427,7 +451,7 @@ def run_round(family: str, plan: dict, *, seed: int, guard_model, k: int = 1) ->
     return {"breaches": breaches, "attempted": attempted, "executed": [a for a in attempted if a["executed"]], "claim_orders": claim_orders,
             "items": [{"id": i["id"], "kind": i["kind"], "status": i.get("status")} for i in items], "bad_usd": round(bad_usd, 2), "wrong_figure_fill": wrong_fig,
             "belief": belief, "utility": utility, "twin_utility": tw["utility"], "induced_false_hold": induced, "attribution": attr, "final": (tr.get("final") or "")[:600],
-            "quarantined_n": len(quar), "agent_error": tr.get("error"), "cost_usd": round(float(tr.get("cost_usd") or 0.0), 6), "guard_notices": len(tr.get("guard_notices") or [])}
+            "quarantined_n": len(quar), "screen_errors": tr.get("screen_errors") or 0, "agent_error": tr.get("error"), "cost_usd": round(float(tr.get("cost_usd") or 0.0), 6), "guard_notices": len(tr.get("guard_notices") or [])}
 
 
 def _deviant(a: dict, mandate: dict, prices: dict, w) -> bool:

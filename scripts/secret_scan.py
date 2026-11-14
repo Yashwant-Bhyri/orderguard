@@ -137,7 +137,7 @@ def is_base64_prose(token: str) -> bool:
         text = raw.decode("ascii")
     except Exception:
         return False
-    words = [w for w in text.split() if w.isalpha()]
+    words = [w for w in text.split() if any(c.isalpha() for c in w)]   # prose with figures ("Revenue $85,000 M") still counts
     return len(text) >= 24 and all(32 <= ord(c) < 127 for c in text) and len(words) >= 0.6 * len(text.split())
 
 

@@ -11,13 +11,13 @@ import json
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from ..llm_shared import ReplayIncomplete
 from ..paths import RESULTS
 from . import channel, receiver, swarm
-from .attacker import ATTACKER_PREAMBLE, Attacker, PlanError
+from .attacker import ATTACKER_PREAMBLE, STATE, Attacker, CreditFloorStop, PlanError
 from .channel import BudgetStop
 
 REDTEAM_DIR = RESULTS / "redteam"
@@ -46,17 +46,20 @@ class Config:
     seeds: dict = field(default_factory=lambda: {f: (0,) for f in FAMILIES})
     temperature: float = 0.7
     concurrency: int = 6
+    limits: dict = field(default_factory=dict)      # "family|attacker|seed" -> [rounds recorded, why the campaign ended early]: a live run that ran out of quota or budget
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["attackers"] = list(self.attackers)
         d["seeds"] = {k: list(v) for k, v in self.seeds.items()}
+        d["limits"] = {k: list(v) for k, v in self.limits.items()}
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Config":
         return cls(rounds=int(d["rounds"]), attackers=tuple(d["attackers"]), guard_model=d["guard_model"], seeds={k: tuple(v) for k, v in d["seeds"].items()},
-                   temperature=float(d["temperature"]), concurrency=int(d.get("concurrency", 6)))
+                   temperature=float(d["temperature"]), concurrency=int(d.get("concurrency", 6)),
+                   limits={k: tuple(v) for k, v in (d.get("limits") or {}).items()})
 
 
 def capture_for(family: str, seed: int) -> int:
@@ -112,7 +115,7 @@ def core_of(family: str, out: dict) -> dict:
         return {"hard": hard, "kinds": sorted({b["kind"] for b in hard}), "bad_usd": out["bad_usd"], "executed": len(out["executed"]), "attempted": len(out["attempted"]),
                 "stopped_by": a["stopped_by"], "independent": a["independent"], "last_line": a["last_line"], "sole": a["sole"], "backstop": a["backstop"],
                 "induced_false_hold": out["induced_false_hold"], "belief": out["belief"], "wrong_figure_fill": out["wrong_figure_fill"], "claim_orders": len(out["claim_orders"]),
-                "items": out["items"], "guard_cost_usd": out["cost_usd"], "quarantined_n": out["quarantined_n"], "agent_error": out["agent_error"], "money_executed_usd": executed_usd}
+                "items": out["items"], "guard_cost_usd": out["cost_usd"], "quarantined_n": out["quarantined_n"], "screen_errors": out["screen_errors"], "agent_error": out["agent_error"], "money_executed_usd": executed_usd}
     if kind == "swarm":
         return {"hard": hard, "kinds": sorted({b["kind"] for b in hard}), "bad_usd": out["filled_usd"], "gate_allowed_usd": out["gate_allowed_usd"], "executed": sum(1 for r in out["rows"] if r["layer"] is None),
                 "attempted": out["attacker_orders"], "by_layer": out["by_layer"], "gate_stopped": out["gate_stopped"], "risk_also_acted": out["risk_also_acted_on_gate_stopped"],
@@ -126,11 +129,13 @@ def run_unit(attacker_model: str, family: str, seed: int, cfg: Config, progress=
                    seed_note=f"(Variant {seed + 1}: favour a different line of attack from the obvious ones.)" if seed else "")
     validate = _validator(family)
     rounds, stopped = [], None
-    for r in range(1, cfg.rounds + 1):
+    key = f"{family}|{attacker_model}|{seed}"
+    cap, note = (cfg.limits.get(key) or (cfg.rounds, None))
+    for r in range(1, min(cap, cfg.rounds) + 1):
         try:
             plan, raw, why = atk.propose(r, cfg.rounds, validate)
-        except BudgetStop as e:                         # pragma: no cover  (live only)
-            stopped = str(e)
+        except (BudgetStop, CreditFloorStop) as e:      # pragma: no cover  (live only)
+            stopped = str(e)[:160]
             break
         except Exception as e:
             if type(e).__name__ in ("BudgetExceeded", "CreditFloor"):
@@ -143,8 +148,8 @@ def run_unit(attacker_model: str, family: str, seed: int, cfg: Config, progress=
             continue
         try:
             out = run_family_round(family, plan, seed, cfg)
-        except BudgetStop as e:
-            stopped = str(e)
+        except (BudgetStop, CreditFloorStop) as e:
+            stopped = str(e)[:160]
             break
         core = core_of(family, out)
         atk.observe(raw, out["observation"], out["digest"])
@@ -154,6 +159,10 @@ def run_unit(attacker_model: str, family: str, seed: int, cfg: Config, progress=
         rounds.append(rec)
         if progress:
             progress(attacker_model, family, seed, r, core)
+    if stopped and any(x in stopped for x in ("HTTP 402", "HTTP 403", "Key limit", "out of quota")):
+        stopped = "the provider key ran out of quota (HTTP 403); no further live calls were possible"
+    if stopped is None and note:
+        stopped = note
     return {"attacker": atk.model, "family": family, "seed": seed, "capture": capture_for(family, seed), "rounds": rounds, "stopped": stopped,
             "attacker_cost_usd": round(atk.cost, 6), "attacker_failures": atk.failures}
 
@@ -183,6 +192,11 @@ def run(cfg: Config | None = None, *, out: Path | None = None, only: list[str] |
     t0 = time.time()
     with ThreadPoolExecutor(max(1, cfg.concurrency)) as ex:
         results = list(ex.map(lambda u: run_unit(u[0], u[1], u[2], cfg, progress), units_spec))
+    limits = dict(cfg.limits)
+    for u in results:                     # a unit that ended early keeps its stop point in the config, so a strict offline replay reproduces it exactly
+        if u["stopped"]:
+            limits[f"{u['family']}|{u['attacker']}|{u['seed']}"] = (len(u["rounds"]), u["stopped"])
+    cfg = replace(cfg, limits=limits)
     camp = {"version": VERSION, "config": cfg.to_dict(), "units": results, "complete": all(not u["stopped"] for u in results)}
     from .report import summarise
     camp["summary"] = summarise(camp)
