@@ -25,6 +25,7 @@ The e2e tests **skip with a reason** when `node` is missing or the environment f
 | Suite (under `python/tests/`) | Layer | Guarantee |
 |---|---|---|
 | `safety/test_gate_properties.py` (12 tests, 1,500 generated orders each in the main ones) | L5 | `allow` or `hold` implies: normalised ticker on the allow-list and ASCII, side allowed, quantity x **trusted** price within the per-order cap, daily total within the cap, limit inside the band of the trusted price, mandate signed by the pinned key, unexpired, unrevoked, step-up respected. An independent oracle also checks the converse (a fully permitted order is not refused). Any change to a signed mandate field, a flipped/truncated/foreign/missing signature or a re-signed mandate refuses. The order's own limit price never changes the valuation. Extra order fields (`reference_price`, `approved`, ...) never change the decision. Money movement is never an order. Unverifiable, stale, contradicted or not-yet-public figures, a checker that raises, and missing required figures fail closed. `evaluate` is pure. |
+| `safety/test_gate_metamorphic.py` | L1/L5/L8 | Decisions survive mandate key reordering, ticker case/whitespace normalization and unknown order fields; tighter caps and larger same-symbol buy notionals cannot make a refusal more permissive. A generated order corpus compares the Python gate, arena envelope and in-memory TypeScript receiver. The same file exercises Unicode/encoding evasions and classifier truncation. |
 | `safety/test_normalise_properties.py` (13) | L1 | `clean` never raises on random Unicode, removes Unicode 17 default-ignorable characters and reports them, decodes nested base64 and tag-spelled instructions into findings, is idempotent, flags mixed-script tokens (Cyrillic or Greek inside Latin) and not pure-Latin ones, and the gate refuses a look-alike ticker. |
 | `safety/test_bucket_properties.py` (10) | L3 | A repeat (shared distinctive number), a dependent claim (shared entity) or anything from a quarantined source is quarantined; transitively through `admit`; unrelated items are not; quarantine only grows and keeps provenance; a failing model never creates a false quarantine. |
 | `safety/test_graph_properties.py` (9) | L7 | A rule never fires on fewer than `min_sources` independent unquarantined sources; echoes from one origin or owner count once; one lying venue cannot move the median out of the honest range; a real crash on every venue still fires; quarantined events are inert; blast radius is monotone in lie size and zero for one liar among two honest venues. |
@@ -35,6 +36,7 @@ The e2e tests **skip with a reason** when `node` is missing or the environment f
 | `safety/test_sandbox_determinism.py` (32) | sandbox | Same seed gives the same world digest, scenario and offline run record (also across thread schedules); benign-twin parity holds for every technique over 8 seeds. |
 | `e2e/test_receiver_e2e.py` (14) | L8 | Against the real TypeScript bridge: allowed fill, duplicate is a replay with no second effect, refused orders (unlisted, fake split price, sell, oversize, zero/negative) leave the ledger untouched, daily cap, oversize body, malformed bodies, router + paper broker through the receiver, after `/revoke` nothing fills and ledger integrity holds, a stopped bridge fails closed. |
 | `guard/test_portfolio_limits.py` (35) | L5 portfolio | The optional signed limits `maxSymbolDailyNotionalUsd`, `maxPositionUsd` and `maxOrdersPerDay`: each allows at its boundary and refuses one cent (or one order) over; missing or invalid state fails closed; held orders count toward the position in the direction that grows it; a mandate without the fields keeps its bytes, id and behaviour; `Envelope.check` matches `OrderGate` on 1,500 random states per limit combination; 12 parallel threads never pass a cap; sub-mandates can only tighten (Python `mandate_fit` and TypeScript `paper-policy`); a mandate signed in Python verifies in TypeScript and the reverse; policy packs sign and validate. |
+| `arena/test_authority_stateful.py` | L5 portfolio | A seeded sequence of reservations, holds, approvals, revocations and day rollovers checks shared budget, symbol totals, positions and order counts against an independent state model. A failing run is reduced to its shortest failing prefix by bisection. |
 | `guard/test_classifier_limits.py` (4) | L2 local | Long lines are read in overlapping windows; text past the classifier's bounds (characters or lines) is never returned as confidently clean, so the cascade escalates it to the model screen; a decoded Unicode-tag payload is always scored. |
 | `risk/` (order-risk layer) | risk | Tighten-only invariant over random inputs, JSON trees equal sklearn exactly, point-in-time features, deterministic shipped model under 5 MB, latency budget, one-shot weight edits hold the labelled pattern without retraining, programmed units cannot be explained away by data, the arena replay only tightens. |
 | `receiver/test/portfolio-limits.test.ts`, `receiver/test/ledger.test.ts` (npm) | L8 | The same portfolio limits inside the receiver's `BEGIN IMMEDIATE` transaction in integer cents, concurrent orders never passing a cap; the hash-chained ledger verifies on open, detects any edited, dropped or reordered row, and keeps idempotency across restarts. |
@@ -51,6 +53,23 @@ hash-seed independence, brute-force Pareto check, truncated and corrupt logs and
 `lab/test_strict_replay_and_parity.py` (a missing recording raises `ReplayIncomplete` under `OG_REPLAY_STRICT=1`, offline sweeps and the corpus
 never call a model, damaged raw results fail `og-lab tables --check`, matched controls for every family, twin parity for every technique over 40 seeds
 and every parameter value).
+
+## How we know the tests have teeth
+
+`scripts/mutate.py` changes one money-path decision at a time and runs its focused tests. Before adding the missing boundary cases, 21 of 22 mutants were
+killed (95.45%); the survivor exposed that an equal child mandate cap was not explicitly tested. The added equality test killed it. The current score is
+22/22 (100%), with no surviving mutants in `gate.py` or `scorer.tighten()`. The tool records each mutation and the test that killed it in
+[`results/testing/mutation.json`](../results/testing/mutation.json).
+
+Metamorphic checks vary mandate key order, ticker spelling and irrelevant order fields, tighten caps, and increase same-symbol notional. They assert that
+those transformations preserve decisions or move them only toward refusal. A seeded generated corpus also compares `OrderGate`, `Envelope.check` and
+the TypeScript `ReceiverCore` imported with `node --import tsx`; the receiver uses an in-memory SQLite ledger, so this needs no port or model provider.
+The authority model test interleaves state changes against a small reference model and bisects a failing operation sequence.
+
+The stdlib tracer in `scripts/trace_coverage.py` measured targeted Python coverage before and after these test changes: line coverage rose from 65.30% to
+69.07%, and branch-arc coverage from 38.86% to 40.18%. The five money-path modules have their per-file numbers in
+[`results/testing/baseline.json`](../results/testing/baseline.json). Branch coverage is measured as distinct source/destination line arcs, so outcomes
+that share a source line are not distinguishable. Timing-sensitive tests are excluded from traced runs and still run normally in the full suite.
 
 ## Resolved regression findings
 

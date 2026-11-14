@@ -38,6 +38,7 @@ def client():
 
 # ---- the builder ---------------------------------------------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_build_is_deterministic_and_the_committed_file_is_current(built):
     again = T.serialise(T.build())
     assert again == T.serialise(built), "two builds of the same files must be byte-identical (no clock, path or random)"

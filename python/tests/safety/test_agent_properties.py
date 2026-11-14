@@ -89,7 +89,7 @@ def random_call(rng, env):
     return name, {"ticker": "AAPL", "query": "apple"}
 
 
-@pytest.mark.parametrize("arm", GUARDED)
+@pytest.mark.parametrize("arm", [pytest.param(a, marks=pytest.mark.slow) if a == "full" else a for a in GUARDED])
 def test_no_sequence_of_agent_calls_moves_money_or_breaks_the_mandate(arm):
     rng = random.Random(1 if arm == "gate_only" else 2)
     mandate = E.default_mandate()

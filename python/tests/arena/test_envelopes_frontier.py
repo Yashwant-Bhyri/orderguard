@@ -114,6 +114,7 @@ def test_bench_smoke():
     assert r["replay_latency_us"]["p99"] >= r["replay_latency_us"]["p50"] > 0 and r["strict_orderGate_orders_per_s"] > 0
 
 
+@pytest.mark.slow
 def test_api_router_endpoints():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
