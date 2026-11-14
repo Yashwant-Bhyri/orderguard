@@ -339,9 +339,10 @@ Recorded model spend across logged requests from `results/spend.jsonl`. Provider
 | liquid/lfm-2.5-24b-a2b | openrouter | 696 | 549,498 | 637,641 | 0.4738 |
 | qwen/qwen3.7-flash | openrouter | 267 | 205,958 | 188,083 | 0.0304 |
 | qwen/qwen3.8-flash | openrouter | 200 | 262,535 | 126,179 | 0.0983 |
+| typesafe/jev-1.14 | openrouter-decisions | 200 | 319,417 | 4,000 | 0.0134 |
 | z-ai/glm-5.3-flash | openrouter | 275 | 197,831 | 32,508 | 0.0307 |
 
-Total US$5.5289.
+Total US$5.5423.
 
 ## Limits
 

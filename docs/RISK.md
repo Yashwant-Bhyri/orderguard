@@ -283,6 +283,7 @@ honest gate-allowed orders from the seed-7 arena stream, judged one by one:
 |---|---|---|---|---|---|---|
 | risk model (v2) | 100.0% | 100.0% | 0.0% | 196 µs | 569 µs | none beyond CPU |
 | LLM judge `deepseek/deepseek-v4.1-flash-1017` | 98.8% | 96.7% | 9.3% | 2.6 s | 6.5 s | US$0.05 for 200 calls |
+| decision model `typesafe/jev-1.14` at p >= 0.5 (untuned) | 89.6% | 91.7% | 0.7% | 1.1 s | 1.5 s | US$0.013 for 200 calls |
 | LLM judge `qwen/qwen3.8-flash` | 99.3% | 95.0% | 7.9% | 6.2 s | 15.6 s | US$0.10 for 200 calls (14 errors, held) |
 
 Every fast decision API reachable from the test location was tried on the same 200 orders (`judges` in the same file).
@@ -291,6 +292,13 @@ Every fast decision API reachable from the test location was tried on the same 2
 answered all 200 calls with empty content after spending its whole output budget reasoning (US$0.22): a judge that does not answer
 holds everything. The two judges that worked agree with each other and with the conclusion below: they find almost all bad dollars,
 hold 8 to 9% of honest orders, and take seconds per order.
+
+TypeSafe's **Jev**, a typed decision model reached through OpenRouter's decisions endpoint (`orderguard_guard/decisions.py`), answers
+"hold?" with a probability instead of prose. That changes the picture for the review lane: its ranking is nearly perfect on this sample
+(AUC 0.998), so a threshold can be chosen. Untuned at 0.5 it stops 89.6% of bad dollars while holding 0.7% of honest orders; at 0.44
+(chosen on this same sample, so optimistic) it stops all of them at the same 0.7%. It is about 2x faster than the fastest chat judge and
+about 4x cheaper, with no parse failures, but at 1.1 s per order it still belongs after a hold, not on the order path. Its natural jobs
+are triaging the human queue by probability and typed checks on mandate drafts.
 
 The LLM judge is a credible reviewer (it finds almost all of the bad dollars) and an expensive, slow, noisy gatekeeper: it holds
 9.3% of honest orders on this sample, which at swarm scale is thousands of false holds a day, and 3 of its calls
