@@ -127,7 +127,7 @@ def test_api_router_endpoints():
     f = c.get("/api/arena/frontier", params={"agents": 60, "steps": 120, "samples": 8}).json()
     assert f["frontier"] and "explanation" in f["recommendation"]
     from orderguard_arena.api import MAX_AGENTS, MAX_WORK
-    big = c.get("/api/arena/run", params={"agents": 100000, "steps": 100000}).json()
+    big = c.get("/api/arena/run", params={"agents": MAX_AGENTS, "steps": 2000}).json()
     cfg = big["summary"]["config"]
     assert cfg["agents"] <= MAX_AGENTS and cfg["agents"] * cfg["steps"] <= MAX_WORK          # one request stays bounded
     assert big["ran"] == {"agents": cfg["agents"], "steps": cfg["steps"], "feed": "synthetic"} and big["latency_us_samples"]

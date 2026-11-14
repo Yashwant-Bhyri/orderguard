@@ -68,3 +68,26 @@ def test_unusable_recordings_are_not_listed_or_silently_replaced(client, monkeyp
         for name in ("missing.jsonl", f"subdir/../{p.name}"):
             response = client.get(f"/api/arena/{endpoint}", params={"feed": name})
             assert response.status_code == 404
+
+
+@pytest.mark.parametrize("endpoint", ["run", "frontier", "envelopes"])
+@pytest.mark.parametrize("field,value,limit_text", [
+    ("agents", "-1", "agents must be from 1 to 5,000"), ("agents", "0", "agents must be from 1 to 5,000"), ("agents", "999999", "agents must be from 1 to 5,000"),
+    ("agents", "abc", "agents must be a whole number"), ("agents", "1.5", "agents must be a whole number"), ("agents", "", "agents must be a whole number"),
+    ("steps", "-1", "steps must be from 1 to 2,000"), ("steps", "0", "steps must be from 1 to 2,000"), ("steps", "2001", "steps must be from 1 to 2,000"),
+    ("steps", "1e3", "steps must be a whole number"), ("seed", "-5", "seed must be from 0"), ("seed", "x", "seed must be a whole number"),
+])
+def test_nonsense_sizes_are_422_naming_the_field_not_clamped(client, endpoint, field, value, limit_text):
+    if endpoint == "envelopes" and field != "agents":
+        pytest.skip("envelopes takes only agents")
+    r = client.get(f"/api/arena/{endpoint}", params={field: value})
+    assert r.status_code == 422 and limit_text in r.json()["detail"], r.text
+
+
+def test_only_the_documented_work_bound_still_adjusts_the_request(client):
+    r = client.get("/api/arena/run", params={"agents": 5000, "steps": 2000})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["requested"] == {"agents": 5000, "steps": 2000} and body["ran"]["steps"] == 500          # 2.5M agent-steps / 5,000 agents
+    small = client.get("/api/arena/run", params={"agents": 1, "steps": 1})
+    assert small.status_code == 200 and small.json()["ran"]["steps"] == 1

@@ -9,13 +9,14 @@ RUN --mount=type=cache,target=/root/.npm npm ci --workspaces --include-workspace
 
 # Stage 2: Python runtime with the node binary copied in for the bridge (same Debian family, so the binary is compatible).
 FROM python:3.12-slim AS runtime
-ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
     ORDERGUARD_HOME=/app/var/orderguard OG_RESULTS_DIR=/app/var/results OG_LLM=replay
 COPY --from=node-deps /usr/local/bin/node /usr/local/bin/node
 RUN useradd --create-home --uid 10001 orderguard
 WORKDIR /app
 COPY --from=node-deps /app/node_modules ./node_modules
 COPY --chown=orderguard:orderguard . .
+# PYTHONDONTWRITEBYTECODE: the container runs with a read-only root filesystem (see docker-compose.yml); only /app/var and /tmp are writable.
 # Editable install on purpose: the package locates receiver/, data/ and docs relative to the repository root (see orderguard_guard.ROOT),
 # so the source tree stays at /app and the console scripts point at it.
 RUN pip install -e . && mkdir -p /app/paper-policy /app/var/results /app/var/replay \

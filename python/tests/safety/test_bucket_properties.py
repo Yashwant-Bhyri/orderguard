@@ -155,3 +155,11 @@ def test_a_failing_model_never_lets_an_unsure_item_become_a_false_quarantine():
         b.add(item("s0", t, f"claim {fmt(distinct_number(rng))}"))
         assert b.related(item("s1", t, "a different thing entirely")) is None
         assert b.related(item("s0", "KO", "same source")) is not None
+
+
+def test_same_value_different_spelling_still_matches():
+    from orderguard_guard.bucket import RiskBucket, numbers_in
+    assert numbers_in("a $400.00 bid") == numbers_in("bid of 400") == ["400"]
+    b = RiskBucket()
+    b.add({"source": "wire-a", "ticker": "AAPL", "text": "Takeover bid at $400.00 per share"})
+    assert b.related({"source": "wire-b", "ticker": "AAPL", "text": "Bidder offers 400 a share"}) is not None

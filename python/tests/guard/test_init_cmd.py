@@ -90,3 +90,29 @@ def test_doctor_unreachable_receiver(tmp_path, monkeypatch):
     monkeypatch.setenv("ORDERGUARD_RECEIVER_URL", "http://127.0.0.1:1")
     assert any("receiver" in p and "unreachable" in p for p in init_cmd.doctor(d))
     assert init_cmd.doctor(d, check_receiver=False) == []
+
+
+def test_doctor_cli_treats_missing_optional_settings_as_notes(tmp_path, monkeypatch, capsys):
+    from orderguard_guard.cli import main
+    monkeypatch.setenv("OG_LLM", "live")
+    for v in ("DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "ORDERGUARD_APP_TOKEN", "ORDERGUARD_RECEIVER_URL", "OG_PROVIDER"):
+        monkeypatch.delenv(v, raising=False)
+    d = tmp_path / "cfg"
+    init_cmd.init(d)
+    assert main(["doctor", "--dir", str(d)]) == 0
+    out = capsys.readouterr().out
+    assert "note:" in out and "problem:" not in out and "ok:" in out
+    assert main(["doctor", "--dir", str(d), "--strict"]) == 1
+    (d / "signing.key").write_text("junk\n")
+    assert main(["doctor", "--dir", str(d)]) == 1 and "problem:" in capsys.readouterr().out
+
+
+def test_resign_errors_say_what_to_do(tmp_path, capsys):
+    from orderguard_guard.cli import main
+    assert main(["init", "--resign", "--dir", str(tmp_path / "none")]) == 1
+    assert "run `orderguard init` first" in capsys.readouterr().out
+    d = tmp_path / "cfg"
+    init_cmd.init(d)
+    (d / "mandate.json").write_text("{broken")
+    assert main(["init", "--resign", "--dir", str(d)]) == 1
+    assert "not valid JSON" in capsys.readouterr().out

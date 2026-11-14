@@ -46,6 +46,7 @@ Environment variable names (values are yours; never commit them):
 | `ORDERGUARD_APP_TOKEN` | bearer token the web app requires |
 | `ORDERGUARD_RECEIVER_URL` | bridge base URL, e.g. `http://127.0.0.1:8700` |
 | `ORDERGUARD_HOME` | config directory (default `./var/orderguard`) |
+| `ORDERGUARD_LEDGER` | persistent receiver ledger file (default `<config dir>/ledger/paper-ledger.sqlite` for `paper-receiver`) |
 | `OG_ENV_FILE` | path to an env file kept outside the repository |
 | `OG_RECORD_DIR` | optional writable model recording directory, checked before the bundled replay directory |
 
@@ -101,15 +102,22 @@ orderguard init --check
 
 Rebuild the image with `docker compose build`. Keep the current signed mandate when upgrading and re-sign it after an edit.
 
-## Backup
+## Ledger persistence and backup
 
-The bridge keeps its SQLite ledger (hash-chained event log, checked by `ledgerIntegrity`) in a temporary directory. Each receiver start creates a new paper session with a new ledger and revision. Compose leaves an exited receiver stopped so the app cannot silently resume against a fresh ledger. Before stopping the native bridge, save the state:
+`orderguard paper-receiver` keeps its SQLite ledger (hash-chained event log) at `<config dir>/ledger/paper-ledger.sqlite`. Change it with `--ledger PATH` or `ORDERGUARD_LEDGER`; `--ephemeral` (or `:ephemeral`) gives a throw-away ledger. After a restart the receiver keeps its orders, idempotency keys, UTC-day spending, policy revision and revocation. The bare bridge (`npm run bridge`, the demo, tests) is still throw-away unless `--ledger` is passed.
+
+At start the whole ledger is verified. A ledger that fails verification is never served: the receiver exits 1, names the first problem and leaves the file as found. Restore the last backup, or move the file aside to begin a new ledger. A ledger created under a different mandate, or a re-signed parent, is refused too: start a new ledger path. A revoked ledger stays revoked.
 
 ```sh
-curl -s http://127.0.0.1:8700/snapshot > var/ledger-snapshot-$(date +%Y%m%d%H%M%S).json
+orderguard ledger-verify                       # exit 0 verified, 1 failed verification, 2 problem; prints head SEQ:HASH
+orderguard ledger-verify --expect-head SEQ:HASH  # detects a truncated tail, using a head you recorded elsewhere
+orderguard ledger-backup [--out FILE]          # consistent, verified SQLite copy (default: ledger/backups/); refuses a tampered ledger
+orderguard ledger-export [--out FILE]          # JSON: orders, events, verification result; no key material
 ```
 
-In Compose, request the snapshot from the app container so the connection stays in the shared loopback namespace.
+All three work while the receiver runs. Back up on a schedule and record the printed head off the host. To restore, stop the receiver, copy the backup over the ledger path and start it; the start-up verification confirms it.
+
+In Compose the receiver's config mount is read-only, so it starts with a throw-away ledger and says so. To persist, mount a writable volume and add `--ledger /that/path/paper-ledger.sqlite` to the receiver command. Without that, take a snapshot before stopping:
 
 ```sh
 docker compose exec -T app node -e 'fetch("http://127.0.0.1:8700/snapshot").then(async r => { if (!r.ok) throw Error(r.status); console.log(JSON.stringify(await r.json())); })' \
@@ -130,7 +138,8 @@ Back up `var/orderguard/` with the signing key encrypted and offline.
 ## Troubleshooting
 
 - `listen EPERM` or "Operation not permitted" when starting the bridge or app: the sandbox forbids binding local ports. Run outside the sandbox, or enable local port binding in the sandbox settings.
-- `receiver unreachable`: check the bridge printed `READY`, the URL matches, and in compose that `app` uses `network_mode: service:receiver`.
+- `receiver unreachable`: check the bridge printed `READY`, the URL matches, and in compose that `app` uses `network_mode: service:receiver`. If the text says the request may or may not have been applied, retry with the same client order id (applied at most once) or check `ledger-verify` and the snapshot.
+- `bridge failed: ... integrity check`: the ledger was edited or damaged; see Ledger persistence and backup. `Another receiver ... is already using`: stop the other receiver or use a different ledger path.
 - `mandate: ... changed after the human signed it`: you edited `mandate.json`; run `orderguard init --resign`.
 - `mandate expired`: edit `expiresAt`, then `--resign`; restart the bridge.
 - `anchor_unavailable` denials: the bridge's r5 anchor could not renew; see `docs/receiver/bridge.md`.

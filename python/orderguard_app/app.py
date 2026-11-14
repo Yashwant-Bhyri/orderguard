@@ -13,12 +13,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import services as S
+from .guards import MAX_BODY, Guards
 from .models import CheckOrderRequest, ScenarioRequest, ScreenRequest, TriggerGraphRequest
 
 STATIC = Path(__file__).parent / "static"
-MAX_BODY = 1_000_000
 log = logging.getLogger("orderguard.app")
 
 
@@ -50,36 +51,27 @@ def create_app(token: str | None = None) -> FastAPI:
         if scheme.lower() != "bearer" or not hmac.compare_digest(value.encode(), token.encode()):
             raise HTTPException(401, "a valid bearer token is required", headers={"WWW-Authenticate": "Bearer"})
 
-    @app.middleware("http")
-    async def limits(request: Request, call_next):
-        try:
-            too_big = int(request.headers.get("content-length") or 0) > MAX_BODY
-        except ValueError:
-            too_big = True
-        if too_big:
-            return JSONResponse({"error": "request body too large"}, status_code=413)
-        resp = await call_next(request)
-        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        resp.headers.setdefault("Referrer-Policy", "no-referrer")
-        resp.headers.setdefault("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'")
-        if request.url.path.startswith("/api/"):
-            resp.headers.setdefault("Cache-Control", "no-store")
-        else:
-            # The page and its scripts revalidate on every load (ETag/Last-Modified), so an upgrade never runs stale JS.
-            resp.headers.setdefault("Cache-Control", "no-cache")
-        return resp
+    app.add_middleware(Guards, token=token)
 
     @app.exception_handler(S.AppError)
     async def _app_error(_: Request, e: S.AppError):
-        return JSONResponse({"error": e.message}, status_code=e.status)
+        body: dict = {"error": e.message}
+        if e.where:
+            body["details"] = [{"where": e.where, "problem": e.message}]
+        return JSONResponse(body, status_code=e.status)
 
-    @app.exception_handler(HTTPException)
-    async def _http_error(_: Request, e: HTTPException):
-        return JSONResponse({"error": e.detail}, status_code=e.status_code, headers=getattr(e, "headers", None))
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request: Request, e: StarletteHTTPException):
+        detail = e.detail
+        if e.status_code == 404 and request.url.path.startswith("/api/"):
+            detail = "no such endpoint; the API routes are listed in docs/API.md"
+        elif e.status_code == 405:
+            detail = "method not allowed for this endpoint; see docs/API.md"
+        return JSONResponse({"error": detail}, status_code=e.status_code, headers=getattr(e, "headers", None))
 
     @app.exception_handler(RequestValidationError)
     async def _invalid(_: Request, e: RequestValidationError):
-        return JSONResponse({"error": "invalid request", "details": [{"where": ".".join(str(x) for x in d["loc"]), "problem": d["msg"]} for d in e.errors()]},
+        return JSONResponse({"error": "invalid request", "details": [{"where": ".".join(str(x) for x in d["loc"]), "problem": re.sub(r"^Value error, ", "", d["msg"])} for d in e.errors()]},
                             status_code=422)
 
     @app.exception_handler(Exception)
@@ -143,7 +135,20 @@ def create_app(token: str | None = None) -> FastAPI:
 
 
 def serve(host: str = "127.0.0.1", port: int = 8600) -> None:
+    import socket
+    import sys
     import uvicorn
+    if not 1 <= port <= 65535:
+        print(f"orderguard: error: port {port} is out of range (1-65535)", file=sys.stderr)
+        raise SystemExit(2)
+    try:                                   # fail with a sentence, not a traceback, when the port is taken or not permitted
+        with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((host, port))
+    except OSError as e:
+        print(f"orderguard: error: cannot listen on {host}:{port} ({e.strerror or type(e).__name__})", file=sys.stderr)
+        print(f"hint: another program may be using the port: try `orderguard serve --port {port + 1}`", file=sys.stderr)
+        raise SystemExit(1) from None
     if not os.getenv("ORDERGUARD_APP_TOKEN") and host not in ("127.0.0.1", "localhost", "::1"):
         print("warning: binding a non-loopback address with no ORDERGUARD_APP_TOKEN; anyone who can reach it can use the API")
     uvicorn.run(create_app(), host=host, port=port, log_level="info")

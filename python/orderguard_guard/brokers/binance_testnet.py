@@ -82,7 +82,7 @@ Transport = Callable[[SignedRequest], tuple]          # -> (status_code, parsed_
 def _httpx_transport(req: SignedRequest) -> tuple:
     import httpx
     _check_url(req.url)
-    with httpx.Client(timeout=10.0, follow_redirects=False) as c:
+    with httpx.Client(timeout=10.0, follow_redirects=False, trust_env=False) as c:      # no proxy or netrc from the environment
         if req.method == "GET":
             r = c.get(req.url, params=req.params, headers=req.headers)
         else:
@@ -105,7 +105,7 @@ class BinanceTestnetBroker:
         if _norm_base(base_url) != TESTNET_BASE_URL:
             raise WrongHost(f"this broker is pinned to {TESTNET_BASE_URL}; it will not talk to any other host")
         self.base_url = TESTNET_BASE_URL
-        self.dry_run = bool(dry_run)
+        self._dry_run = bool(dry_run)
         self._transport = transport or _httpx_transport
         self.recv_window_ms, self.unit_size = int(recv_window_ms), dict(unit_size or {})
         self._filters = dict(filters or {})
@@ -113,6 +113,11 @@ class BinanceTestnetBroker:
         self._env = env if env is not None else os.environ
         self._seen: dict[str, Result] = {}
         self.last_request: dict | None = None
+
+    @property
+    def dry_run(self) -> bool:
+        """Fixed at construction. Read-only so that nothing can flip a dry-run broker live after it has been handed around."""
+        return self._dry_run
 
     # ---- credentials, by name only ---------------------------------------------------------------------------------------
     def _creds(self, required: bool) -> tuple[str | None, str | None]:
@@ -200,14 +205,28 @@ class BinanceTestnetBroker:
             res = Reject("dry run: the request was built and signed but not sent", idempotency_key)
             self._seen[idempotency_key] = res
             return res
-        status, body = self._send(req)
+        try:
+            status, body = self._send(req)
+        except WrongHost:
+            raise
+        except Exception as e:                       # noqa: BLE001 - transport failure: the order may or may not have reached the exchange
+            self.last_request = req.redacted()
+            return Reject(f"not confirmed: the exchange did not answer ({type(e).__name__}). The order may exist. Retry with the same key "
+                          "(the key is the exchange's client order id, so it is placed at most once) or check the testnet account.",
+                          idempotency_key, transient=True)
         self.last_request = req.redacted()
+        if not isinstance(body, dict):
+            body = {}
         if status == 200 and body.get("orderId") is not None:
             ex = body.get("fills") or []
             avg = (sum(float(x["price"]) * float(x["qty"]) for x in ex) / sum(float(x["qty"]) for x in ex)) if ex else float(order.get("limit_price", 0))
             res = Fill(str(body["orderId"]), str(order.get("symbol") or order.get("ticker")), str(order["side"]), int(order["quantity"]), avg, idempotency_key)
         else:
-            res = Reject(f"exchange rejected the order (HTTP {status}, code {body.get('code')})", idempotency_key)
+            retryable = status >= 500 or status == 429 or body.get("code") in (-1021, -1003, -1001)   # server error, rate limit, clock window, busy
+            res = Reject(f"exchange rejected the order (HTTP {status}, code {body.get('code')})" + (". Not final: retry later with the same key." if retryable else ""),
+                         idempotency_key, transient=retryable)
+            if retryable:
+                return res                            # not remembered, so the same key can be tried again
         self._seen[idempotency_key] = res
         return res
 

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from orderguard_guard import ROOT
 
-from .arena import ARENA_DIR, ArenaConfig, load_stream, run_arena
+from .arena import ARENA_DIR, ArenaConfig, StreamError, load_stream, run_arena
 from .authority import Authority
 from .envelopes import default_envelopes
 from .feeds import BinancePublicFeed, RecordedFeed, ReplayFeed
@@ -43,6 +43,7 @@ def print_summary(s: dict) -> None:
 def cmd_run(a) -> int:
     cfg = ArenaConfig(seed=a.seed, agents=a.agents, steps=a.steps, steps_per_day=a.steps_per_day, routing=a.routing, agent_share=a.agent_share,
                       name=a.name, strict=a.strict)
+    cfg.keep_events = bool(a.no_write or a.summary_only)   # with a log, events are streamed to disk as they are made and not held in memory (same digest)
     r = run_arena(cfg, out_dir=a.out_dir, write=not (a.no_write or a.summary_only))
     print_summary(r.summary)
     if a.summary_only:
@@ -75,7 +76,13 @@ def cmd_record(a) -> int:
 
 def cmd_frontier(a) -> int:
     path = Path(a.stream) if a.stream else max(ARENA_DIR.glob("arena-*.jsonl"), key=lambda p: p.stat().st_mtime)
-    meta, events = load_stream(path)
+    try:
+        meta, events = load_stream(path, allow_partial=a.allow_partial)
+    except (StreamError, OSError) as exc:
+        print(f"og-arena frontier: {exc}", file=sys.stderr)
+        return 2
+    if a.allow_partial:
+        print(f"note: using the complete events of {path.name} only; advice from a partial stream covers the days it reaches", file=sys.stderr)
     f = run_frontier(events, meta, samples=a.samples, seed=a.seed, max_leak_per_day=a.max_leak, max_approvals_per_day=a.max_approvals,
                      max_false_refusal=a.max_false_refusal)
     print(f"frontier over {len(events):,} proposals from {path.name}: {f['candidates']} candidates, {len(f['frontier'])} on the frontier")
@@ -208,6 +215,16 @@ def cmd_bench(a) -> int:
     return 0
 
 
+def cmd_verify(a) -> int:
+    from . import claims
+    checks = claims.run_all(quick=a.quick, frontier=not a.skip_frontier)
+    bad = [c for c in checks if not c.ok]
+    for c in checks:
+        print(f"{'ok  ' if c.ok else 'FAIL'} {c.name}" + (f"\n       {c.detail}" if c.detail else ""))
+    print(f"{len(checks) - len(bad)}/{len(checks)} claims reproduce" + ("" if not bad else f"; {len(bad)} do not. Fix the source of truth (regenerate the result with its command, or correct the text)."))
+    return 1 if bad else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="og-arena", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -246,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--max-approvals", type=float, default=None, help="risk budget: human approvals per day")
     f.add_argument("--max-false-refusal", type=float, default=0.05)
     f.add_argument("--out")
+    f.add_argument("--allow-partial", action="store_true", help="use the complete events of a log whose last line was cut off (an interrupted run)")
     f.set_defaults(fn=cmd_frontier)
     b = sub.add_parser("bench", help="throughput and latency at several swarm sizes")
     b.add_argument("--scales", default="200,1000,5000")
@@ -276,6 +294,10 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--out-dir")
     rp.add_argument("--no-write", action="store_true")
     rp.set_defaults(fn=cmd_replay)
+    v = sub.add_parser("verify", help="check every number in README/docs against the committed results, and regenerate the results from their seeds")
+    v.add_argument("--quick", action="store_true", help="docs against committed results only (about a second); skip regeneration")
+    v.add_argument("--skip-frontier", action="store_true", help="regenerate everything except the 240-candidate frontier (about 35 s)")
+    v.set_defaults(fn=cmd_verify)
     a = p.parse_args(argv)
     return a.fn(a)
 

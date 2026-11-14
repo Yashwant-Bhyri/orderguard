@@ -9,11 +9,12 @@
 // no await in it. Concurrent proposals interleave only at the awaits before the commit.
 
 import { DatabaseSync } from 'node:sqlite';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { verifyAuthenticationResponse, verifyRegistrationResponse, type AuthenticationResponseJSON, type RegistrationResponseJSON } from '@simplewebauthn/server';
 import { B4FaultScheduler, applyLogicalDelay } from '../r5/fault-scheduler.js';
 import { buildTrustedPrices, normaliseSymbol, notionalCents, withinBand, type DenyCode, type QuoteSource } from './valuation.js';
 import type { PaperPolicyState, SignedPaperPolicy } from './paper-policy.js';
+import { GENESIS, SCHEMA_VERSION, actionHashOf, orderIdOf, sha256 as sha, verifyLedgerDb, type LedgerCheck, type LedgerHead } from './ledger-verify.js';
 
 export interface MandateScope {
   symbols: string[];
@@ -25,6 +26,13 @@ export interface MandateScope {
   referencePrices?: Record<string, number>;
   /** Orders whose trusted notional is above this are held for owner passkey approval. */
   stepUpThresholdUsd?: number;
+  /** Optional portfolio limits. Absent means no limit. */
+  /** Cap on one symbol's notional per UTC day, counting filled and held orders (the concentration control). */
+  maxSymbolDailyNotionalUsd?: number;
+  /** Cap on the absolute net position in one symbol after the order, at the trusted price. Held orders count in the direction that grows exposure. */
+  maxPositionUsd?: number;
+  /** Cap on non-denied (filled or held) orders per UTC day. */
+  maxOrdersPerDay?: number;
 }
 
 export interface ProposedOrder {
@@ -68,6 +76,20 @@ export interface CoreOptions {
   now?: () => number;
   /** Skip fsync for throw-away campaign ledgers. */
   fast?: boolean;
+  /** Verify the whole ledger when a file is opened (default true). A ledger that fails is never served. */
+  verifyOnOpen?: boolean;
+  /** Longest the issuer may take to answer isActive() before the call counts as inactive. Default 10 s. */
+  authorityTimeoutMs?: number;
+  /** A head (seq, hash) recorded outside the ledger; opening fails if the ledger no longer contains it. */
+  expectHead?: LedgerHead;
+}
+
+/** The ledger file cannot be trusted or used. `code` says why; the message says what to do. */
+export class LedgerError extends Error {
+  constructor(readonly code: 'tampered' | 'unreadable' | 'bound_elsewhere' | 'too_new', message: string, readonly problems: string[] = []) {
+    super(message);
+    this.name = 'LedgerError';
+  }
 }
 
 export class FaultDropped extends Error { constructor() { super('request dropped before the receiver saw it'); } }
@@ -88,9 +110,6 @@ export interface LedgerOrder {
 }
 
 export interface LedgerEvent { seq: number; type: string; orderId: string | null; payload: string; prevHash: string; hash: string }
-
-const GENESIS = '0'.repeat(64);
-const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
 export function canonicalAction(mandateId: string, o: { symbol: string; side: string; quantity: number; limitPrice: number }): string {
   return JSON.stringify({ m: mandateId, symbol: o.symbol, side: o.side, quantity: o.quantity, limitPrice: o.limitPrice });
@@ -114,6 +133,13 @@ export class ReceiverCore {
     this.prices = buildTrustedPrices({ referencePrices: parent.referencePrices, quoteSource: opts.quoteSource });
     this.expiresAtMs = Date.parse(parent.expiresAt);
     if (!Number.isFinite(this.expiresAtMs)) throw new Error('mandate.expiresAt must be an ISO timestamp');
+    for (const k of ['maxSymbolDailyNotionalUsd', 'maxPositionUsd'] as const) {
+      const v = parent[k];
+      if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v <= 0)) throw new Error(`mandate.${k} must be a positive number`);
+    }
+    if (parent.maxOrdersPerDay !== undefined && (!Number.isSafeInteger(parent.maxOrdersPerDay) || parent.maxOrdersPerDay < 1)) {
+      throw new Error('mandate.maxOrdersPerDay must be a positive whole number');
+    }
     for (const symbol of parent.symbols) if (!normaliseSymbol(symbol).ok) throw new Error('mandate lists an invalid symbol');
     this.open();
   }
@@ -121,33 +147,71 @@ export class ReceiverCore {
   // ---------- storage ----------
 
   private open(): void {
-    this.db = new DatabaseSync(this.opts.ledgerPath);
-    if (this.opts.fast) this.db.exec('PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY;');
-    const idem = this.opts.mutations?.idempotencyOff ? '' : 'UNIQUE';
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS orders (
-        seq INTEGER PRIMARY KEY, order_id TEXT NOT NULL, client_order_id TEXT NOT NULL ${idem},
-        action_hash TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity INTEGER NOT NULL,
-        limit_price REAL NOT NULL, trusted_price REAL NOT NULL, notional_cents INTEGER NOT NULL,
-        status TEXT NOT NULL, fill_price REAL, day TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS events (
-        seq INTEGER PRIMARY KEY, type TEXT NOT NULL, order_id TEXT, payload TEXT NOT NULL,
-        prev_hash TEXT NOT NULL, hash TEXT NOT NULL);
-    `);
+    const file = this.opts.ledgerPath !== ':memory:';
+    try {
+      this.db = new DatabaseSync(this.opts.ledgerPath);
+      if (this.opts.fast) this.db.exec('PRAGMA synchronous=OFF; PRAGMA journal_mode=MEMORY;');
+      else if (file) this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+      const idem = this.opts.mutations?.idempotencyOff ? '' : 'UNIQUE';
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS orders (
+          seq INTEGER PRIMARY KEY, order_id TEXT NOT NULL, client_order_id TEXT NOT NULL ${idem},
+          action_hash TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL, quantity INTEGER NOT NULL,
+          limit_price REAL NOT NULL, trusted_price REAL NOT NULL, notional_cents INTEGER NOT NULL,
+          status TEXT NOT NULL, fill_price REAL, day TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS events (
+          seq INTEGER PRIMARY KEY, type TEXT NOT NULL, order_id TEXT, payload TEXT NOT NULL,
+          prev_hash TEXT NOT NULL, hash TEXT NOT NULL);
+      `);
+    } catch (error) {
+      try { this.db?.close(); } catch { /* never opened */ }
+      throw new LedgerError('unreadable', 'The ledger file could not be opened (' + String((error as Error)?.message ?? error).slice(0, 80)
+        + '). It may be corrupt or not an OrderGuard ledger. Restore it from a backup, or start with a new ledger path.');
+    }
+    const scope = this.opts.signedPolicy?.parent ?? this.opts.mandate;
+    try {
+      const schema = this.meta('schema');
+      if (schema !== null && Number(schema) > SCHEMA_VERSION) {
+        throw new LedgerError('too_new', 'This ledger was written by a newer OrderGuard release. Upgrade OrderGuard, or use a different ledger path.');
+      }
+      const bound = this.meta('mandate_id');
+      if (bound !== null && bound !== this.opts.mandateId) {
+        throw new LedgerError('bound_elsewhere', 'This ledger belongs to a different mandate. Start the receiver with a new ledger path, or restore the mandate it was created under.');
+      }
+      const verifyNow = file && this.opts.verifyOnOpen !== false && !this.opts.mutations;
+      if (verifyNow) {
+        // Verify before anything is written, so a damaged ledger is left exactly as found for inspection.
+        const check = verifyLedgerDb(this.db, { mandateId: this.opts.mandateId, maxDailyCents: Math.round(scope.maxDailyNotionalUsd * 100),
+          expectHead: this.opts.expectHead, skipOrderIdCheck: Boolean(this.opts.mutations?.idempotencyOff) });
+        if (!check.ok) {
+          throw new LedgerError('tampered', 'The ledger failed its integrity check, so the receiver will not serve it: ' + check.problems[0]
+            + '. Restore the last backup (or move this file aside and start a new ledger).', check.problems);
+        }
+      }
+      this.tx(() => {
+        const policy = this.policy();
+        const signed = this.opts.signedPolicy;
+        if (policy && policy.parentId !== signed?.parentId) {
+          throw new LedgerError('bound_elsewhere', 'This ledger is bound to a different signed parent policy (the owner re-signed or changed the mandate). Start with a new ledger path.');
+        }
+        if (signed && !policy) {
+          if (this.db.prepare('SELECT seq FROM events LIMIT 1').get()) throw new LedgerError('bound_elsewhere', 'This ledger already holds orders from a demo mandate and cannot be attached to a signed parent. Use a new ledger path.');
+          const initial = { ledgerId: randomBytes(16).toString('hex'), parentId: signed.parentId, revision: 0,
+            activeId: signed.parentId, scope: signed.parent };
+          this.setMeta('paper_policy', JSON.stringify(initial));
+        }
+        if (this.meta('mandate_id') === null) this.setMeta('mandate_id', this.opts.mandateId);
+        if (this.meta('max_daily_cents') === null) this.setMeta('max_daily_cents', String(Math.round(scope.maxDailyNotionalUsd * 100)));
+        if (schema === null) this.setMeta('schema', String(SCHEMA_VERSION));
+      });
+    } catch (error) {
+      try { this.db.close(); } catch { /* already closed */ }
+      if (error instanceof LedgerError) throw error;
+      throw new LedgerError('unreadable', 'The ledger could not be initialised (' + String((error as Error)?.message ?? error).slice(0, 80) + '). Check free disk space and permissions on the ledger directory.');
+    }
     const stored = this.meta('passkey');
     if (stored) this.passkey = JSON.parse(stored) as Passkey;
-    this.tx(() => {
-      const policy = this.policy();
-      const signed = this.opts.signedPolicy;
-      if (policy && policy.parentId !== signed?.parentId) throw new Error('The ledger is bound to a different signed parent');
-      if (signed && !policy) {
-        if (this.db.prepare('SELECT seq FROM events LIMIT 1').get()) throw new Error('Cannot attach a signed parent to an existing ledger');
-        const initial = { ledgerId: randomBytes(16).toString('hex'), parentId: signed.parentId, revision: 0,
-          activeId: signed.parentId, scope: signed.parent };
-        this.setMeta('paper_policy', JSON.stringify(initial));
-      }
-    });
   }
 
   /** Simulates a process crash and restart: all in-memory state is dropped, the ledger file survives. */
@@ -192,6 +256,24 @@ export class ReceiverCore {
     }
   }
 
+  /** The issuer's view of the mandate. Any error, a falsy answer or no answer within the timeout counts as inactive. */
+  private async issuerActive(): Promise<boolean> {
+    const authority = this.opts.authority;
+    if (!authority) return true;
+    const limit = this.opts.authorityTimeoutMs ?? 10_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const answer = await Promise.race([
+        authority.isActive(),
+        new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), limit); }),
+      ]);
+      return answer === true;
+    } catch { return false; } finally { clearTimeout(timer); }
+  }
+
+  /** Set once the HTTP port is known; the owner passkey ceremony checks this origin. */
+  setWebauthn(webauthn: { origin: string; rpId: string }): void { this.opts.webauthn = webauthn; }
+
   // ---------- revocation ----------
 
   get revoked(): boolean { return this.meta('revoked_seq') !== null; }
@@ -218,7 +300,7 @@ export class ReceiverCore {
   async activatePolicy(proof: unknown): Promise<{ policy: PaperPolicyState; cancelled: number; replay: boolean }> {
     const signed = this.opts.signedPolicy;
     if (!signed) throw new Error('Signed paper activation is unavailable');
-    if (this.opts.authority && !await this.opts.authority.isActive()) throw new Error('The issuer reports that the parent is inactive');
+    if (!await this.issuerActive()) throw new Error('The issuer reports that the parent is inactive');
     return this.tx(() => {
       const state = this.policy()!;
       if (this.revoked || this.now() >= this.expiresAtMs) throw new Error('The parent policy is inactive');
@@ -258,13 +340,43 @@ export class ReceiverCore {
 
   private replayOf(row: LedgerRow): Decision {
     if (row.status === 'cancelled') {
-      return { decision: 'denied', reason: 'mandate_revoked', reasons: ['mandate_revoked'], orderId: row.order_id, ledgerEffect: false, replay: true };
+      const reason = this.revoked ? 'mandate_revoked' : 'mandate_changed'; // a held order is cancelled by revocation or by a policy change
+      return { decision: 'denied', reason, reasons: [reason], orderId: row.order_id, ledgerEffect: false, replay: true };
     }
     return {
       decision: row.status === 'held' ? 'held' : 'filled', reason: row.status === 'held' ? 'step_up_required' : 'replay_of_committed_order',
       reasons: [], orderId: row.order_id, ledgerEffect: false, replay: true,
       trustedPrice: row.trusted_price, notionalUsd: row.notional_cents / 100,
     };
+  }
+
+  /** Shape check. Nothing here trusts the order's own claims. Returns the canonical order or a denial. */
+  private check(input: ProposedOrder): Decision | { canonical: { symbol: string; side: string; quantity: number; limitPrice: number }; actionHash: string; sym: { symbol: string } } {
+    if (!input || typeof input !== 'object' || typeof input.clientOrderId !== 'string' || !/^[A-Za-z0-9._:-]{1,96}$/.test(input.clientOrderId)
+      || !Number.isSafeInteger(input.quantity) || input.quantity <= 0
+      || typeof input.limitPrice !== 'number' || !Number.isFinite(input.limitPrice) || input.limitPrice <= 0 || input.limitPrice > 1e12
+      || typeof input.side !== 'string' || input.side.length > 16) {
+      return this.deny('invalid_order');
+    }
+    const sym = normaliseSymbol(input.symbol);
+    if (!sym.ok) return this.deny(sym.code, sym.detail);
+    const side = input.side.trim().toLowerCase();
+    const canonical = { symbol: sym.symbol, side, quantity: input.quantity, limitPrice: input.limitPrice };
+    return { canonical, actionHash: actionHashOf(this.opts.mandateId, canonical), sym };
+  }
+
+  /**
+   * What the ledger already says about this clientOrderId, or null if it is new. Read-only. The bridge asks this
+   * before it consults the anchor so that a retry after a crash or a timeout always sees the original outcome,
+   * even while the issuer is unreachable.
+   */
+  priorDecision(input: ProposedOrder): Decision | null {
+    if (this.opts.mutations?.idempotencyOff) return null;
+    const checked = this.check(input);
+    if ('decision' in checked) return null;
+    const prior = this.findByClientId(input.clientOrderId);
+    if (!prior) return null;
+    return prior.action_hash === checked.actionHash ? this.replayOf(prior) : this.deny('idempotency_conflict');
   }
 
   async propose(input: ProposedOrder): Promise<Decision> {
@@ -279,20 +391,12 @@ export class ReceiverCore {
       await applyLogicalDelay(first.delayTicks!);
     }
 
-    // 1. Shape. Nothing here trusts the order's own claims.
-    if (!input || typeof input !== 'object' || typeof input.clientOrderId !== 'string' || !/^[A-Za-z0-9._:-]{1,96}$/.test(input.clientOrderId)
-      || !Number.isSafeInteger(input.quantity) || input.quantity <= 0
-      || typeof input.limitPrice !== 'number' || !Number.isFinite(input.limitPrice) || input.limitPrice <= 0
-      || typeof input.side !== 'string') {
-      return this.deny('invalid_order');
-    }
-    const sym = normaliseSymbol(input.symbol);
-    if (!sym.ok) return this.deny(sym.code, sym.detail);
-    const side = input.side.trim().toLowerCase();
-    const canonical = { symbol: sym.symbol, side, quantity: input.quantity, limitPrice: input.limitPrice };
-    const actionHash = sha(canonicalAction(this.opts.mandateId, canonical));
-
-    // 2. Idempotency: a delivery of an order we already committed is answered from the ledger.
+    // 1-2. Shape, then idempotency: a delivery of an order we already committed is answered from the ledger.
+    const checked = this.check(input);
+    if ('decision' in checked) return checked;
+    const { canonical, actionHash } = checked;
+    const sym = { symbol: canonical.symbol };
+    const side = canonical.side;
     if (!this.opts.mutations?.idempotencyOff) {
       const prior = this.findByClientId(input.clientOrderId);
       if (prior) return prior.action_hash === actionHash ? this.replayOf(prior) : this.deny('idempotency_conflict');
@@ -301,9 +405,7 @@ export class ReceiverCore {
     // 3. Authority: revocation, expiry, then the issuer's view of the mandate. Fails closed.
     if (this.revoked) return this.deny('mandate_revoked');
     if (this.now() >= this.expiresAtMs) return this.deny('mandate_expired');
-    let active = false;
-    try { active = this.opts.authority ? await this.opts.authority.isActive() : true; } catch { active = false; }
-    if (!active) return this.deny('mandate_revoked', 'issuer reports the mandate is not active');
+    if (!await this.issuerActive()) return this.deny('mandate_revoked', 'issuer reports the mandate is not active');
 
     // 4. Scope, valued at the TRUSTED price.
     const policy = this.opts.signedPolicy ? this.policy() : null;
@@ -349,18 +451,54 @@ export class ReceiverCore {
     return result;
   }
 
-  private today(): string { return new Date(this.now()).toISOString().slice(0, 10); }
+  /**
+   * The UTC day budgets are charged to. A clock that steps backwards (NTP correction, VM restore, tampering) must
+   * not reopen yesterday's or reset today's budget, so the day never moves behind the newest day in the ledger.
+   */
+  private today(): string {
+    const clock = new Date(this.now()).toISOString().slice(0, 10);
+    const newest = this.db.prepare('SELECT MAX(day) AS d FROM orders').get() as { d: string | null };
+    return newest.d && newest.d > clock ? newest.d : clock;
+  }
 
   private dayBudgetUsedCents(): number {
     const r = this.db.prepare("SELECT COALESCE(SUM(notional_cents), 0) AS s FROM orders WHERE status IN ('filled','held') AND day = ?").get(this.today()) as { s: number };
     return r.s;
   }
 
+  /**
+   * The optional portfolio limits, computed from the ledger in integer cents. Must run inside the commit transaction, next to the daily
+   * budget check, so concurrent proposals can never together pass them. Returns a denial, or null when the order fits (or no limit is set).
+   */
+  private portfolioDenial(scope: MandateScope, r: CommitRow): Decision | null {
+    const day = this.today();
+    if (scope.maxOrdersPerDay !== undefined) {
+      const n = (this.db.prepare("SELECT COUNT(*) AS n FROM orders WHERE status IN ('filled','held') AND day = ?").get(day) as { n: number }).n;
+      if (n + 1 > scope.maxOrdersPerDay) return this.deny('order_count_cap');
+    }
+    if (scope.maxSymbolDailyNotionalUsd !== undefined) {
+      const used = (this.db.prepare("SELECT COALESCE(SUM(notional_cents), 0) AS s FROM orders WHERE status IN ('filled','held') AND day = ? AND symbol = ?")
+        .get(day, r.symbol) as { s: number }).s;
+      if (used + r.cents > Math.round(scope.maxSymbolDailyNotionalUsd * 100)) return this.deny('symbol_daily_cap');
+    }
+    if (scope.maxPositionUsd !== undefined) {
+      const q = this.db.prepare(`SELECT
+          COALESCE(SUM(CASE WHEN status = 'filled' THEN (CASE side WHEN 'buy' THEN quantity ELSE -quantity END) END), 0) AS net,
+          COALESCE(SUM(CASE WHEN status = 'held' AND side = 'buy' THEN quantity END), 0) AS hb,
+          COALESCE(SUM(CASE WHEN status = 'held' AND side = 'sell' THEN quantity END), 0) AS hs
+        FROM orders WHERE symbol = ?`).get(r.symbol) as { net: number; hb: number; hs: number };
+      const s = r.side === 'buy' ? r.quantity : -r.quantity;
+      const exposure = Math.max(Math.abs(q.net + q.hb + s), Math.abs(q.net - q.hs + s)); // held orders counted whichever way grows the exposure
+      if (Math.round(exposure * r.trusted * 100) > Math.round(scope.maxPositionUsd * 100)) return this.deny('position_cap');
+    }
+    return null;
+  }
+
   private insertRow(r: CommitRow): Decision {
     const seq = (this.db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS n FROM events').get() as { n: number }).n;
     const orderId = this.opts.mutations?.idempotencyOff
       ? 'og_' + sha(this.opts.mandateId + '|' + r.clientOrderId + '|' + seq).slice(0, 16)
-      : 'og_' + sha(this.opts.mandateId + '|' + r.clientOrderId).slice(0, 16);
+      : orderIdOf(this.opts.mandateId, r.clientOrderId);
     const eventSeq = this.appendEvent(r.status, orderId, { clientOrderId: r.clientOrderId, symbol: r.symbol, side: r.side, quantity: r.quantity, limitPrice: r.limitPrice, trustedPrice: r.trusted, notionalCents: r.cents, revision: r.revision });
     this.db.prepare(`INSERT INTO orders (seq, order_id, client_order_id, action_hash, symbol, side, quantity, limit_price, trusted_price, notional_cents, status, fill_price, day)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(eventSeq, orderId, r.clientOrderId, r.actionHash, r.symbol, r.side, r.quantity, r.limitPrice, r.trusted, r.cents, r.status, r.status === 'filled' ? r.trusted : null, this.today());
@@ -383,6 +521,8 @@ export class ReceiverCore {
       const scope = policy?.scope ?? this.opts.mandate;
       if (this.now() >= Date.parse(scope.expiresAt)) return this.deny('mandate_expired');
       if (this.dayBudgetUsedCents() + r.cents > Math.round(scope.maxDailyNotionalUsd * 100)) return this.deny('daily_cap');
+      const portfolio = this.portfolioDenial(scope, r);
+      if (portfolio) return portfolio;
       return this.insertRow(r);
     });
   }
@@ -426,6 +566,13 @@ export class ReceiverCore {
     this.setMeta('passkey', JSON.stringify(this.passkey));
   }
 
+  /** An approval the ledger already holds (the order is filled), answered as a replay with no new effect. Read-only. */
+  priorApproval(orderId: string, ownerProof?: unknown): Decision | null {
+    try { this.verifyPaperApproval(orderId, ownerProof); } catch { return null; }
+    const row = this.db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId) as LedgerRow | undefined;
+    return row && row.status === 'filled' ? this.replayOf(row) : null;
+  }
+
   /** Issue a single-use challenge bound to one held order. */
   beginApproval(orderId: string, ownerProof?: unknown): { orderId: string; challenge: string; credentialId: string } {
     try { this.verifyPaperApproval(orderId, ownerProof); } catch { throw new ApprovalError('approval_invalid'); }
@@ -442,7 +589,7 @@ export class ReceiverCore {
     const row = this.db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId) as LedgerRow | undefined;
     if (!row) return this.deny('not_held');
     if (row.status === 'filled') return this.replayOf(row);
-    if (row.status === 'cancelled') return this.deny('mandate_revoked');
+    if (row.status === 'cancelled') return this.deny(this.revoked ? 'mandate_revoked' : 'mandate_changed');
     const pend = this.pending.get(orderId);
     this.pending.delete(orderId); // single use, whatever the outcome
     if (!pend || pend.expiresAt <= this.now() || pend.actionHash !== row.action_hash || !this.passkey) return this.deny('approval_invalid', 'no outstanding challenge for this exact order');
@@ -457,10 +604,7 @@ export class ReceiverCore {
       return this.deny('approval_invalid', 'assertion did not verify');
     }
     if (!verified.verified) return this.deny('approval_invalid');
-    if (this.opts.signedPolicy && this.opts.authority) {
-      try { if (!await this.opts.authority.isActive()) return this.deny('mandate_revoked'); }
-      catch { return this.deny('mandate_revoked'); }
-    }
+    if (this.opts.signedPolicy && this.opts.authority && !await this.issuerActive()) return this.deny('mandate_revoked');
     return this.tx(() => {
       this.passkey!.counter = Math.max(this.passkey!.counter, verified.authenticationInfo.newCounter);
       this.setMeta('passkey', JSON.stringify(this.passkey));
@@ -496,24 +640,14 @@ export class ReceiverCore {
 
   revokedSeq(): number | null { const v = this.meta('revoked_seq'); return v === null ? null : Number(v); }
 
-  /** Hash chain intact, every order row agrees with its last event, and the budget is not exceeded. */
-  ledgerIntegrity(): boolean {
-    let prev = GENESIS;
-    const last = new Map<string, string>();
-    for (const e of this.events()) {
-      if (e.prevHash !== prev || e.hash !== sha([prev, e.seq, e.type, e.orderId ?? '', e.payload].join('|'))) return false;
-      prev = e.hash;
-      if (e.orderId) last.set(e.orderId, e.type);
-    }
-    const revoked = this.revokedSeq() !== null;
-    for (const o of this.orders()) {
-      const lastType = last.get(o.orderId);
-      const expected = o.status === 'filled' ? ['filled', 'approved'] : o.status === 'held' ? ['held'] : revoked ? ['held', 'cancelled'] : ['cancelled'];
-      if (!lastType || !expected.includes(lastType)) return false;
-    }
-    const maxDaily = this.db.prepare("SELECT COALESCE(MAX(total), 0) AS cents FROM (SELECT SUM(notional_cents) AS total FROM orders WHERE status IN ('filled','held') GROUP BY day)").get() as { cents: number };
-    return maxDaily.cents <= Math.round((this.opts.signedPolicy?.parent ?? this.opts.mandate).maxDailyNotionalUsd * 100);
+  /** Full verification (see ledger-verify.ts): hash chain, log replay against every row, revocation flag, policy revision, budget. */
+  verifyLedger(expectHead?: LedgerHead): LedgerCheck {
+    return verifyLedgerDb(this.db, { mandateId: this.opts.mandateId,
+      maxDailyCents: Math.round((this.opts.signedPolicy?.parent ?? this.opts.mandate).maxDailyNotionalUsd * 100),
+      skipOrderIdCheck: Boolean(this.opts.mutations?.idempotencyOff), expectHead });
   }
+
+  ledgerIntegrity(): boolean { return this.verifyLedger().ok; }
 
   snapshot(): { orders: LedgerOrder[]; ledgerIntegrity: boolean; revoked: boolean; usedNotionalUsd: number } {
     const orders = this.orders();

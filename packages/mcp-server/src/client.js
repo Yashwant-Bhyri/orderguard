@@ -27,6 +27,23 @@ export class OrderGuardError extends Error {
 }
 
 /**
+ * The receiver could not be reached or did not answer in time. `outcomeUnknown` is true when the request may have been applied
+ * (it was sent and no complete answer came back); check the order status before submitting anything new.
+ */
+export class OrderGuardUnavailable extends Error {
+  constructor(cause, outcomeUnknown) {
+    const kind = cause?.name === "TimeoutError" || cause?.name === "AbortError" ? "did not answer in time" : "could not be reached";
+    super(`OrderGuard receiver ${kind}. ${outcomeUnknown
+      ? "The request may or may not have been applied: check the order status before submitting a new order."
+      : "Nothing was sent. Check that the receiver is running and ORDERGUARD_URL is correct, then try again."}`);
+    this.name = "OrderGuardUnavailable";
+    this.outcomeUnknown = outcomeUnknown;
+  }
+}
+
+const MAX_RESPONSE_BYTES = 1_048_576;
+
+/**
  * Agent-side convenience client. It carries no signing key and is not an
  * authorization boundary: every order is submitted to the mesh receiver.
  */
@@ -62,10 +79,16 @@ export class OrderGuardClient {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (error) {
-      throw new Error(`OrderGuard receiver unavailable: ${error?.name ?? "network error"}`);
+      // A connection refused before sending is certain; anything else (timeout, reset) may have happened after the receiver acted.
+      const refused = error?.cause?.code === "ECONNREFUSED" || error?.cause?.code === "ENOTFOUND";
+      throw new OrderGuardUnavailable(error, method !== "GET" && !refused);
     }
     let payload;
-    try { payload = await response.json(); } catch { payload = { error: "receiver returned invalid JSON" }; }
+    try {
+      const text = await response.text();
+      if (text.length > MAX_RESPONSE_BYTES) throw new Error("too large");
+      payload = JSON.parse(text);
+    } catch { payload = { error: "receiver returned an invalid or oversized reply" }; }
     if (!response.ok) throw new OrderGuardError(response.status, payload);
     return payload && typeof payload === "object" ? payload : { value: payload };
   }
@@ -134,6 +157,15 @@ export class OrderGuardClient {
         idempotentReplay: result.idempotentReplay === true,
       };
     } catch (error) {
+      if (error instanceof OrderGuardUnavailable && error.outcomeUnknown) {
+        // Do NOT build a new proposal: a fresh preview would be a new order. Report that the first one is unresolved.
+        return {
+          state: "unknown",
+          reason: "receiver_did_not_answer",
+          venueDispatchAttempted: "unknown",
+          guidance: "The order may have been placed. Call order_status or inspect the receiver snapshot before proposing again; do not repeat the order until it is resolved.",
+        };
+      }
       if (!(error instanceof OrderGuardError)) throw error;
       return {
         state: "denied",

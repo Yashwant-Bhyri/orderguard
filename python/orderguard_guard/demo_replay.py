@@ -6,6 +6,7 @@ import json
 from . import DATA
 from .agent import run_agent, tools_for_arm
 from .llm import LLM, ReplayMiss, ScriptedLLM
+from .receiver_client import ReceiverError
 
 CASES = (
     ("C0-web", "1. honest trade (full arm)", "full"),
@@ -36,8 +37,13 @@ def check_effects(transcript: dict, receiver, out) -> tuple[int, bool]:
         if call["name"] != "place_order" or gate.get("decision") != "allow" or not call["result"].get("ledger_effect"):
             continue
         args = call["args"]
-        reply = receiver.propose(symbol=gate["checks"]["ticker"]["normalised"], side=args["side"].strip().lower(),
-                                 quantity=int(float(args["quantity"])), limit_price=float(args["limit_price"]))
+        try:
+            reply = receiver.propose(symbol=gate["checks"]["ticker"]["normalised"], side=args["side"].strip().lower(),
+                                     quantity=int(float(args["quantity"])), limit_price=float(args["limit_price"]))
+        except (ReceiverError, ValueError, KeyError, TypeError) as exc:
+            out(f"  paper receiver: could not check this order ({type(exc).__name__}: {exc}). Check that the receiver started and try again.")
+            matched = False
+            continue
         filled = reply.get("decision") == "filled" and reply.get("ledgerEffect") is True
         fills += int(filled)
         expected = gate["checks"]["notional_usd"]

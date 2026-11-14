@@ -41,7 +41,7 @@ def load_data(path=None, cache: bool = True) -> Data:
     import scipy.sparse as sp
     cols, metas = D.load(path) if path else D.load_corpus()
     n = len(cols["run"])
-    cpath = D.DATA_DIR / ".cache" / f"feat-{n}.npz"
+    cpath = D.DATA_DIR / ".cache" / f"feat{F.NF}-{n}.npz"
     if cache and cpath.exists():
         z = np.load(cpath)
         X = z["X"]
@@ -154,3 +154,86 @@ def predict(ft: Fitted, X: np.ndarray, rows) -> np.ndarray:
         return 1.0 / (1.0 + np.exp(-(a * raw + b)))
     z = ft.mlp.logit(ft.prep(Xs))
     return 1.0 / (1.0 + np.exp(-z))
+
+
+# ---- v2: programmed units + learned residual trees ----------------------------------------------------------------------------
+
+BUDGETS = (0.001, 0.0025, 0.005, 0.01)             # honest-hold budgets a review team could be given
+OPERATING_BUDGET = 0.0025                          # the declared operating point of the v2 model
+REFUSE_BUDGET = 0.0005
+# Features in which more can only mean more risk. The trees are constrained to be non-decreasing in them, so an attacker cannot find a
+# pocket where doing MORE of the suspicious thing lowers the score.
+MONO = ("agent_burst", "agent_rate60", "rate_break", "rate_peer", "usd_peer", "usd_day_peer", "agent_day_share", "dup_exact", "dup_run", "dup_recent",
+        "off_cadence", "off_rate", "hot_peers", "sync_size_agents", "abs_dev", "dev_vol", "dup_key")
+V1_COLS = [F.IX[n] for n in F.BEHAV_V1]
+V2_COLS = [F.IX[n] for n in F.BEHAV]
+
+
+@dataclass
+class Fitted2:
+    clf: object
+    cols: list
+    platt: tuple
+    pi: list | None                    # refitted programmed weights (None: no programmed units, a learned-only model)
+    thr: dict                          # honest-hold budget -> threshold, from out-of-fold honest scores
+    t_refuse: float
+    units: list | None = None
+    info: dict = field(default_factory=dict)
+
+    @property
+    def t_hold(self) -> float:
+        return self.thr[OPERATING_BUDGET]
+
+
+def _trees2(X, y, cols, mono: bool, iters: int, seed: int):
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    cst = [1 if (mono and F.NAMES[c] in MONO) else 0 for c in cols]
+    clf = HistGradientBoostingClassifier(max_iter=iters, max_depth=5, learning_rate=0.15, max_leaf_nodes=16, min_samples_leaf=40, l2_regularization=1.0,
+                                         early_stopping=False, random_state=seed, monotonic_cst=cst)
+    return clf.fit(X[:, cols], y, sample_weight=np.where(y == 1, 3.0, 1.0))
+
+
+def combine(p_learned: np.ndarray, U: np.ndarray | None, pi) -> np.ndarray:
+    """Noisy-OR of the learned probability and the programmed units: risk >= pi_k * u_k for every unit."""
+    if pi is None:
+        return p_learned
+    q = 1.0 - p_learned
+    for k, pk in enumerate(pi):
+        q = q * (1.0 - pk * U[:, k])
+    return 1.0 - q
+
+
+def fit2(d: Data, rows: np.ndarray, *, cols=None, units: bool = True, mono: bool = True, exclude_family: str | None = None, folds: int = 4, iters: int = 80,
+         seed: int = 0, unit_specs=None) -> Fitted2:
+    """Fit on the gate-allowed rows of the runs in mask `rows`. Platt scaling and every threshold come from OUT-OF-FOLD scores (folds are
+    whole runs), so no threshold is tuned on data the trees saw; the final trees are refitted on all of `rows`. The programmed weights are
+    refitted with a prior centred on their programmed values (program.refit_pi). `exclude_family` drops a family entirely (leave one out)."""
+    from . import program as G
+    cols = list(V2_COLS if cols is None else cols)
+    keep = rows & d.pop & (np.ones(len(d.y), bool) if exclude_family is None else d.fam != exclude_family)
+    ix = np.flatnonzero(keep)
+    X, y = d.X[ix], d.y[ix]
+    runs = np.unique(d.run[ix])
+    rng = np.random.default_rng(seed)
+    rng.shuffle(runs)
+    raw = np.zeros(len(ix))
+    for k in range(folds):
+        held = np.isin(d.run[ix], runs[k::folds])
+        clf = _trees2(X[~held], y[~held], cols, mono, iters, seed)
+        raw[held] = clf.decision_function(X[held][:, cols])
+    platt = M.fit_platt(raw, y)
+    U = G.units_matrix(X, unit_specs) if units else None
+    pi = G.refit_pi(U, y, unit_specs) if units else None
+    p = combine(1.0 / (1.0 + np.exp(-(platt[0] * raw + platt[1]))), U, pi)
+    hon = p[y == 0]
+    thr = {b: float(np.quantile(hon, 1 - b)) for b in BUDGETS}
+    clf = _trees2(X, y, cols, mono, iters, seed)
+    return Fitted2(clf, cols, platt, pi, thr, float(np.quantile(hon, 1 - REFUSE_BUDGET)), unit_specs,
+                   {"rows": int(len(ix)), "runs": int(len(runs)), "oof_brier": float(np.mean((p - y) ** 2)), "oof_ece": M.ece(p, y)})
+
+
+def predict2(ft: Fitted2, X: np.ndarray) -> np.ndarray:
+    from . import program as G
+    a, b = ft.platt
+    p = 1.0 / (1.0 + np.exp(-(a * ft.clf.decision_function(X[:, ft.cols]) + b)))
+    return combine(p, G.units_matrix(X, ft.units) if ft.pi is not None else None, ft.pi)

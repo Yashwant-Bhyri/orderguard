@@ -134,7 +134,8 @@ def run_arena(cfg: ArenaConfig | None = None, *, feed: MarketFeed | None = None,
         d = Path(out_dir or ARENA_DIR)
         d.mkdir(parents=True, exist_ok=True)
         path = d / f"{name}.jsonl"
-        fh = path.open("w")
+        partial = path.with_name(path.name + ".partial")        # streamed line by line; promoted to its final name only when the run completes
+        fh = partial.open("w")
         fh.write(json.dumps({"type": "meta", "name": name, "config": asdict(cfg) | {"steps": steps_total, "steps_per_day": spd},
                              "symbols": feed.symbols, "agents": len(agents), "envelopes": baseline_spec(book),
                              "note": "simulated agents; every field is synthetic"}, sort_keys=True) + "\n")
@@ -271,7 +272,10 @@ def run_arena(cfg: ArenaConfig | None = None, *, feed: MarketFeed | None = None,
     }
     if fh:
         fh.close()
-        (path.with_suffix(".summary.json")).write_text(json.dumps(summary, indent=1, sort_keys=True))
+        os.replace(partial, path)                                # a crashed run leaves only `.partial`, never a log that looks complete
+        tmp = path.with_suffix(".summary.json.tmp")
+        tmp.write_text(json.dumps(summary, indent=1, sort_keys=True))
+        os.replace(tmp, path.with_suffix(".summary.json"))
     return ArenaResult(summary, events, auth, agents, path)
 
 
@@ -289,15 +293,45 @@ def _fill_price(p: Proposal, tp: float | None, rng: random.Random, slip_bps: flo
     return round(lim, 4) if rng.random() < 0.4 else None
 
 
-def load_stream(path: str | Path) -> tuple[dict, list[dict]]:
-    """(meta, events) from an event log written by run_arena(write=True)."""
+class StreamError(ValueError):
+    """An event log is truncated, corrupt or not an arena log."""
+
+
+def load_stream(path: str | Path, *, allow_partial: bool = False) -> tuple[dict, list[dict]]:
+    """(meta, events) from an event log written by run_arena(write=True).
+
+    Raises StreamError with the line number for a corrupt line, and for a log whose last line is cut off (a run that was killed).
+    `allow_partial=True` instead drops that one cut-off last line and returns the complete prefix (advice from a prefix is labelled as such by the caller).
+    """
+    p = Path(path)
+    try:
+        text = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise StreamError(f"{p.name}: the event log must be UTF-8") from exc
+    lines = text.split("\n")
+    last_n = max((n for n, ln in enumerate(lines, 1) if ln.strip()), default=0)
     meta, events = {}, []
-    for line in Path(path).read_text().splitlines():
+    for n, line in enumerate(lines, 1):
         if not line.strip():
             continue
-        d = json.loads(line)
+        try:
+            d = json.loads(line)
+        except (ValueError, RecursionError) as exc:
+            if n == last_n and not text.endswith("\n"):
+                if allow_partial:
+                    break
+                raise StreamError(f"{p.name}: truncated, line {n} is cut off mid-record (a run that was interrupted?). "
+                                  f"Re-run it, or pass --allow-partial to use the {len(events)} complete events before it") from exc
+            raise StreamError(f"{p.name}: invalid JSON on line {n}") from exc
+        if not isinstance(d, dict):
+            raise StreamError(f"{p.name}: expected a JSON object on line {n}")
         if d.get("type") == "meta":
             meta = d
         else:
+            missing = [k for k in ("step", "label", "order", "key", "risk", "d") if k not in d]
+            if missing:
+                raise StreamError(f"{p.name}: line {n} is not an arena event (missing {', '.join(missing)})")
             events.append(d)
+    if not events:
+        raise StreamError(f"{p.name}: the event log holds no events")
     return meta, events

@@ -56,9 +56,15 @@ EXAMPLES = {
 
 ERRORS = [
     (401, "A bearer token is required (ORDERGUARD_APP_TOKEN is set) and the request had none, or a wrong one.", {"error": "a valid bearer token is required"}),
-    (404, "No such path.", {"detail": "Not Found"}),
-    (405, "The path exists but not for this method.", {"detail": "Method Not Allowed"}),
-    (413, "The request body is over 1,000,000 bytes.", {"error": "request body too large"}),
+    (404, "No such path, or an unknown id (for example a scenario).", {"error": "no such endpoint; the API routes are listed in docs/API.md"}),
+    (405, "The path exists but not for this method.", {"error": "method not allowed for this endpoint; see docs/API.md"}),
+    (413, "The request body is over 1,000,000 bytes (declared or, for a chunked upload, actually received).", {"error": "request body too large (limit 1000000 bytes)"}),
+    (429, "Too many requests of this kind from your address in the last minute. `Retry-After` gives the seconds to wait.",
+     {"error": "too many requests for this route", "hint": "wait 12s and retry; limit is 30/minute per client"}),
+    (503, "The server is already running its maximum number of heavy requests of this kind; retry shortly (`Retry-After: 3`).",
+     {"error": "the server is busy with other requests of this kind", "hint": "retry in a few seconds"}),
+    (504, "A heavy request exceeded its deadline and was abandoned; reduce its size.",
+     {"error": "the request took longer than 30s and was abandoned", "hint": "reduce agents/steps or the input size and try again"}),
     (422, "The body or parameters failed validation. `details` lists each field and the problem; a domain error (for example a rule spec missing a field) has only `error`.",
      {"error": "invalid request", "details": [{"where": "body.kind", "problem": "Input should be 'doc', 'web', 'feed' or 'tool'"}]}),
     (500, "An unexpected failure. The message is generic on purpose; `ref` matches a line in the server log (the exception type only, never request data).",
@@ -233,10 +239,25 @@ def render_markdown(schema: dict, keys: dict[tuple[str, str], list[str] | None])
             L += ["**Response** `200` (JSON object; the app does not declare a response schema)" + (", top-level keys:" if ks else ""), ""]
             L += ([", ".join(f"`{k}`" for k in ks), ""] if ks else ["See the example in the web app (`/`) or call the endpoint.", ""])
         L += ["Errors: see [Errors](#errors).", "", "**Example**", "", curl(m, p, body), ""]
-    L += ["## Errors", "", "Error bodies are JSON. Application errors use `{\"error\": ...}`; unknown paths and methods use the framework's `{\"detail\": ...}`.", "",
+    L += ["## Errors", "", "Error bodies are always JSON with an `error` string; a 422 may add `details` (a list of `{where, problem}`, one per bad field).", "",
           "| Status | When | Body |", "|---|---|---|"]
     L += [f"| {c} | {_cell(w)} | `{json_inline(b)}` |" for c, w, b in ERRORS]
-    L += ["", "Responses under `/api/` carry `Cache-Control: no-store`; every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a strict `Content-Security-Policy`.", ""]
+    L += ["", "Responses under `/api/` carry `Cache-Control: no-store`; every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, "
+          "`X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy: same-origin`, a `Permissions-Policy` that disables camera, microphone, "
+          "geolocation and payment, and a strict `Content-Security-Policy`.", "",
+          "## Limits and cross-origin stance", "",
+          "Limits are per client address and in-process (a single local instance; rate-limit at the proxy as well when you expose it). "
+          "`ORDERGUARD_RATE_LIMIT=0` turns the rate limit off, `ORDERGUARD_RATE_SCALE` and `ORDERGUARD_TIMEOUT_SCALE` multiply the allowances and deadlines.", "",
+          "| Route prefix | Requests per minute | Deadline | Concurrent |", "|---|---|---|---|"]
+    from orderguard_app.guards import DEFAULT, LIMITS
+    L += [f"| `{lim.prefix}` | {lim.per_minute} | {lim.timeout_s:g}s | {lim.concurrent} |" for lim in (*LIMITS, DEFAULT)]
+    L += ["", "A deadline stops the wait, not the computation: the client gets a 504 at once and the abandoned work finishes in the background, while the concurrency cap "
+          "stops abandoned runs from piling up. Request bodies are capped at 1,000,000 bytes; free-form JSON is limited to depth 8 and 200 keys per object, and every "
+          "number must be finite.", "",
+          "**CORS: there is none.** The app sends no `Access-Control-Allow-*` headers, so a browser page on another origin cannot read its responses, and the CSP "
+          "(`connect-src 'self'`) stops the dashboard talking to any other origin. This is deliberate: the dashboard is same-origin, and non-browser clients (curl, scripts, "
+          "the MCP server) are not affected by CORS. If you need a cross-origin front end, put a reverse proxy in front that adds the exact origin you trust, "
+          "and keep `ORDERGUARD_APP_TOKEN` set.", ""]
     if comps:
         L += ["## Models", ""]
         for name in sorted(comps):

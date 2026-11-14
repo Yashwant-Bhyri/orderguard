@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 import os
 import re
 import time
@@ -28,9 +29,9 @@ DEMO_SCENARIOS = {
 class AppError(Exception):
     """An error whose message is safe to show a client."""
 
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, where: str | None = None):
         super().__init__(message)
-        self.status, self.message = status, message
+        self.status, self.message, self.where = status, message, where
 
 
 # ---- state ---------------------------------------------------------------------------------------------------------
@@ -353,11 +354,11 @@ def check_order(state: State, order: dict, upload, prices: dict | None, as_of: s
             try:
                 pub = G.public_key_from_b64(upload.public_key)
             except Exception:
-                raise AppError(422, "public_key is not a valid base64 Ed25519 public key") from None
+                raise AppError(422, "public_key is not a valid base64 Ed25519 public key", "body.mandate.public_key") from None
     try:
         m = G.Mandate.from_dict(mandate)
     except (G.MandateInvalid, TypeError, ValueError):
-        raise AppError(422, "the mandate is missing required fields (symbols, sides, maxOrderNotionalUsd, maxDailyNotionalUsd, priceBandPct, expiresAt)") from None
+        raise AppError(422, "the mandate is missing required fields (symbols, sides, maxOrderNotionalUsd, maxDailyNotionalUsd, priceBandPct, expiresAt)", "body.mandate.mandate") from None
     if not m.signature and source == "uploaded":
         pub = None
     market = SimMarket({k: v for k, v in (prices or demo_prices()).items()}, as_of=f"{as_of}T15:05:00Z")
@@ -481,9 +482,11 @@ def build_rule(spec: dict) -> GR.Rule:
         inputs = [str(i) for i in spec["inputs"]]
         side, notional, threshold = str(spec["side"]).lower(), float(spec["notional"]), float(spec["threshold"])
     except (KeyError, TypeError, ValueError):
-        raise AppError(422, "each rule needs id, kind (pct_change or event), inputs, threshold, notional and side") from None
+        raise AppError(422, "each rule needs id, kind (pct_change or event), inputs, threshold, notional and side", "body.rules") from None
+    if not (math.isfinite(notional) and math.isfinite(threshold)) or notional < 0 or notional > 1e12:
+        raise AppError(422, "a rule's threshold must be a finite number and its notional between 0 and 1e12", "body.rules")
     if not inputs or side not in ("buy", "sell"):
-        raise AppError(422, "a rule needs at least one input and side buy or sell")
+        raise AppError(422, "a rule needs at least one input and side buy or sell", "body.rules")
     text = str(spec.get("text") or rid)
     tickers = [str(t) for t in spec.get("tickers") or []]
     if kind == "pct_change":
@@ -495,10 +498,10 @@ def build_rule(spec: dict) -> GR.Rule:
     if kind == "event":
         needle = str(spec.get("match") or "").lower()
         if not needle:
-            raise AppError(422, "an event rule needs a non-empty match string")
+            raise AppError(422, "an event rule needs a non-empty match string", "body.rules")
         matchers = {i: (lambda e, n=needle: e.get("type") in ("headline", "notice") and n in str(e.get("text", "")).lower()) for i in inputs}
         return GR.Rule(rid, text, inputs, lambda v: all(v[i] >= max(threshold, 1e-9) for i in inputs), notional, side, matchers=matchers, tickers=tickers)
-    raise AppError(422, "kind must be pct_change or event")
+    raise AppError(422, "kind must be pct_change or event", "body.rules")
 
 
 PRESETS = {"honest": GR.honest_events, "single_venue_crash": GR.single_venue_crash_events, "real_crash": GR.real_crash_events,
@@ -570,7 +573,7 @@ def trigger_graph(rules, events, preset, quarantined_sources, blast_source, lies
         naive = GR.TriggerGraph.naive(rule_objs, events)
         blast = g.blast_radius(blast_source or "VenueC", lies)
     except (KeyError, TypeError, ValueError, ZeroDivisionError):
-        raise AppError(422, "the events do not fit the rules (for example a rule input has no matching event shape)") from None
+        raise AppError(422, "the events do not fit the rules (for example a rule input has no matching event shape)", "body.events") from None
     bad = set(quarantined_sources)
     usable = [e for e in events if GR.source_of(e) not in bad]
     return {
@@ -612,7 +615,7 @@ def run_scenario(state: State, scenario: str, arm: str | None) -> dict:
         res = _scripted_demo(state)[int(scenario[-1]) - 1]
         tr = res["transcript"]
         if arm and arm != tr.get("arm"):
-            raise AppError(422, f"the arm of {scenario} is fixed ({tr.get('arm')}); pick a lab case to compare arms")
+            raise AppError(422, f"the arm of {scenario} is fixed ({tr.get('arm')}); pick a lab case to compare arms", "body.arm")
         compact, judged, layers = R.compact(tr), {}, res["layers"]
         meta = {"agent": "scripted stand-in (no model is called)", "arm": tr.get("arm")}
     else:
@@ -620,7 +623,7 @@ def run_scenario(state: State, scenario: str, arm: str | None) -> dict:
         try:
             case = C.get(scenario)
         except KeyError:
-            raise AppError(404, "unknown scenario; GET /api/scenarios lists them") from None
+            raise AppError(404, "unknown scenario; GET /api/scenarios lists them", "body.scenario") from None
         arm = arm or "full"
         rec = R.run_case(case, DEFAULT_MODEL, arm, mode="live")      # the LLM client honours OG_LLM: replay serves recordings only
         compact = rec["transcript"]

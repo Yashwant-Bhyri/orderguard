@@ -173,7 +173,8 @@ class BinancePublicFeed:
     def __init__(self, symbols: list[str], *, interval_s: float = 1.0, duration_s: float | None = 180.0, max_steps: int | None = None,
                  record_path: str | Path | None = None, unit_size: dict | None = None, steps_per_day: int = 60,
                  fetch: Callable[[str, dict], object] | None = None, sleep: Callable[[float], None] = time.sleep,
-                 clock: Callable[[], float] = time.monotonic, base_url: str = BINANCE_PUBLIC_BASE):
+                 clock: Callable[[], float] = time.monotonic, base_url: str = BINANCE_PUBLIC_BASE,
+                 attempts_per_tick: int = 3, max_backoff_s: float = 30.0, max_failed_ticks: int = 5):
         if base_url not in BINANCE_PUBLIC_HOSTS:
             raise FeedError(f"base_url must be one of {BINANCE_PUBLIC_HOSTS}: this feed reads public market data only")
         self.base_url = base_url
@@ -186,6 +187,8 @@ class BinancePublicFeed:
         self._sleep, self._clock = sleep, clock
         self._client = None
         self.errors = 0
+        self.attempts_per_tick, self.max_backoff_s, self.max_failed_ticks = max(int(attempts_per_tick), 1), float(max_backoff_s), max(int(max_failed_ticks), 1)
+        self.backoffs: list[float] = []                # every delay slept after a failed attempt (inspectable in tests and logs)
 
     def _http_fetch(self, path: str, params: dict):
         import httpx
@@ -205,8 +208,42 @@ class BinancePublicFeed:
         for s in self.symbols:
             u = self.unit_size[s]
             bid, ask, px = float(book[s]["bidPrice"]) * u, float(book[s]["askPrice"]) * u, float(last[s]["price"]) * u
+            if not all(math.isfinite(v) and v > 0 for v in (bid, ask, px)):
+                raise ValueError(f"non-positive or non-finite quote for {s}")         # a bad payload is a failed poll, never a recorded tick
             out[s] = {"bid": round(bid, 6), "last": round(px, 6), "ask": round(ask, 6)}
         return out
+
+    @staticmethod
+    def _retry_after(exc: Exception) -> float | None:
+        """Seconds the endpoint asked us to wait (HTTP 429 or 418 with a Retry-After header), else None."""
+        resp = getattr(exc, "response", None)
+        if resp is None or getattr(resp, "status_code", None) not in (418, 429):
+            return None
+        try:
+            return max(float(resp.headers.get("Retry-After", "")), 0.0)
+        except (TypeError, ValueError, AttributeError):
+            return None
+
+    def _delay(self, failures: int, exc: Exception) -> float:
+        """Deterministic exponential backoff (interval x 2^(failures-1), capped); a server-sent Retry-After wins, capped at 60 s."""
+        asked = self._retry_after(exc)
+        d = min(asked, 60.0) if asked is not None else min(self.interval_s * 2 ** (failures - 1), self.max_backoff_s)
+        self.backoffs.append(d)
+        return d
+
+    def _poll_with_retries(self) -> dict[str, dict[str, float]]:
+        """One tick's data: up to `attempts_per_tick` attempts with exponential backoff between them. Raises the last error if all fail."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self.attempts_per_tick + 1):
+            try:
+                return self._poll()
+            except Exception as e:                       # network hiccup, HTTP 429/5xx, malformed payload
+                last_exc = e
+                self.errors += 1
+                if attempt < self.attempts_per_tick:
+                    self._sleep(self._delay(attempt, e))
+        assert last_exc is not None
+        raise last_exc
 
     def __iter__(self) -> Iterator[Snapshot]:
         fh = None
@@ -225,14 +262,14 @@ class BinancePublicFeed:
                 if self.duration_s is not None and self._clock() - t0 >= self.duration_s:
                     break
                 try:
-                    quotes = self._poll()
+                    quotes = self._poll_with_retries()
                     consecutive = 0
-                except Exception as e:                     # network hiccup: skip this tick, stop after 5 in a row
-                    self.errors += 1
+                except Exception as e:                     # every attempt for this tick failed: skip the tick (the recording gets a gap, never a guess)
                     consecutive += 1
-                    if consecutive >= 5:
-                        raise FeedError(f"five consecutive failures reading public data ({type(e).__name__})") from None
-                    self._sleep(self.interval_s)
+                    if consecutive >= self.max_failed_ticks:
+                        raise FeedError(f"{consecutive} consecutive ticks failed after {self.attempts_per_tick} attempts each reading public data "
+                                        f"({type(e).__name__}); the recording so far is valid and ends at step {step}") from None
+                    self._sleep(self._delay(consecutive, e))
                     continue
                 day, sid = divmod(step, self.steps_per_day)
                 ts = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -254,31 +291,42 @@ class RecordedFeed:
 
     def __init__(self, path: str | Path, steps_per_day: int | None = None):
         self.path = Path(path)
-        self.meta, self._ticks = {}, []
+        self.meta, self._ticks, self._lines = {}, [], []
         try:
-            with self.path.open(encoding="utf-8") as recording:
-                for n, line in enumerate(recording, 1):
-                    if not line.strip():
-                        continue
-                    try:
-                        d = json.loads(line)
-                    except (ValueError, RecursionError) as exc:
-                        raise FeedError(f"invalid JSON on line {n}") from exc
-                    if not isinstance(d, dict):
-                        raise FeedError(f"expected a JSON object on line {n}")
-                    if d.get("type") == "meta":
-                        self.meta = d
-                    elif d.get("type") == "tick":
-                        if not isinstance(d.get("ts"), str) or not d["ts"] or not self._valid_quotes(d.get("quotes")):
-                            raise FeedError(f"invalid timestamp or quotes on line {n}")
-                        self._ticks.append(d)
+            text = self.path.read_bytes().decode("utf-8")
         except UnicodeDecodeError as exc:
             raise FeedError("the recording must be UTF-8") from exc
+        lines = text.split("\n")
+        last_n = max((n for n, ln in enumerate(lines, 1) if ln.strip()), default=0)
+        for n, line in enumerate(lines, 1):
+            if not line.strip():
+                continue
+            try:
+                d = json.loads(line)
+            except (ValueError, RecursionError) as exc:
+                if n == last_n and not text.endswith("\n"):
+                    raise FeedError(f"the recording is truncated: line {n} is cut off mid-record (an interrupted recording?). "
+                                    f"Drop that line or re-record; {len(self._ticks)} complete ticks precede it") from exc
+                raise FeedError(f"invalid JSON on line {n}") from exc
+            if not isinstance(d, dict):
+                raise FeedError(f"expected a JSON object on line {n}")
+            if d.get("type") == "meta":
+                self.meta = d
+            elif d.get("type") == "tick":
+                if not isinstance(d.get("ts"), str) or not d["ts"] or not self._valid_quotes(d.get("quotes")):
+                    raise FeedError(f"invalid timestamp or quotes on line {n}")
+                self._ticks.append(d)
+                self._lines.append(n)
         if not self._ticks:
             raise FeedError("the recording holds no ticks")
         symbols = self.meta.get("symbols", list(self._ticks[0]["quotes"]))
         if not isinstance(symbols, list) or not symbols or not all(isinstance(s, str) and s.strip() for s in symbols):
             raise FeedError("symbols must be a nonempty list of ticker names")
+        if "symbols" in self.meta:                     # a tick that lacks a declared symbol would crash agents mid-run: refuse it up front
+            for n, d in zip(self._lines, self._ticks):
+                missing = [x for x in symbols if x not in d["quotes"]]
+                if missing:
+                    raise FeedError(f"line {n}: the tick has no quotes for {', '.join(map(str, missing[:3]))} (declared in the header)")
         self.symbols = symbols
         self.steps_per_day = steps_per_day if steps_per_day is not None else self.meta.get("steps_per_day", 60)
         if type(self.steps_per_day) is not int or self.steps_per_day < 1:

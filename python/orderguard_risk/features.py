@@ -30,18 +30,26 @@ NAMES = [
     "vol_short", "vol_ratio",
     # semantic
     "text_logit", "stated_ratio", "has_stated", "script_dup",
+    # invariants (v2): the inputs of the programmed units. Each is a mandate- or baseline-relative quantity, so one threshold means the
+    # same thing in every envelope and for every agent.
+    "size_jump", "size_vs_max", "rate_break", "agent_rate60", "rate_peer", "usd_peer", "usd_day_peer", "dup_exact", "dup_run",
+    "dev_ratio", "dev_vol", "cross_band", "hot_peers", "sync_size_agents", "abs_dev", "new_ticker",
+    "off_cadence", "cadence_n", "off_rate",
 ]
 IX = {n: i for i, n in enumerate(NAMES)}
 NF = len(NAMES)
 BEHAV = [n for n in NAMES if n not in ("text_logit", "stated_ratio", "has_stated", "script_dup")]
+BEHAV_V1 = BEHAV[:35]                               # the columns of the first shipped model (kept for the comparison)
+W_R, HOT_N = 60, 5                                  # agent/envelope rate window; orders in W_AG steps that make an agent "hot"
 
 
 class _Win:
     """Sliding window of (step, agent, bucket) for one key; distinct-agent and size-bucket counters."""
-    __slots__ = ("w", "q", "ag", "bk")
+    __slots__ = ("w", "q", "ag", "bk", "ba", "bn")
 
     def __init__(self, w: int):
         self.w, self.q, self.ag, self.bk = w, deque(), Counter(), Counter()
+        self.ba, self.bn = {}, {}                    # (bucket, agent) -> count; bucket -> distinct agents
 
     def expire(self, step: int) -> None:
         q, lim = self.q, step - self.w
@@ -53,15 +61,32 @@ class _Win:
             self.bk[b] -= 1
             if not self.bk[b]:
                 del self.bk[b]
+            k = (b, a)
+            c = self.ba[k] - 1
+            if c:
+                self.ba[k] = c
+            else:
+                del self.ba[k]
+                c = self.bn[b] - 1
+                if c:
+                    self.bn[b] = c
+                else:
+                    del self.bn[b]
 
     def add(self, step: int, agent, bucket) -> None:
         self.q.append((step, agent, bucket))
         self.ag[agent] += 1
         self.bk[bucket] += 1
+        k = (bucket, agent)
+        c = self.ba.get(k, 0)
+        self.ba[k] = c + 1
+        if not c:
+            self.bn[bucket] = self.bn.get(bucket, 0) + 1
 
 
 class _Agent:
-    __slots__ = ("n", "mu", "var", "last_step", "last_side", "tick", "recent", "dups", "dupq", "cf", "nc", "keys", "day", "day_usd", "day_n")
+    __slots__ = ("n", "mu", "var", "last_step", "last_side", "tick", "recent", "dups", "dupq", "cf", "nc", "keys", "day", "day_usd", "day_n",
+                 "first", "maxn", "r60", "u60", "u60s", "dx", "sig", "run", "dev", "rmu", "c0", "g", "cn", "offr")
 
     def __init__(self):
         self.n, self.mu, self.var = 0, 0.0, 0.36
@@ -73,6 +98,15 @@ class _Agent:
         self.cf, self.nc = 0.05, 0.0
         self.keys: deque = deque(maxlen=32)
         self.day, self.day_usd, self.day_n = -1, 0.0, 0
+        self.first, self.maxn = -1, 0.0              # first step seen; largest notional so far
+        self.r60: deque = deque()                    # steps of this agent's orders in the last W_R steps
+        self.u60: deque = deque()                    # (step, notional) in the last W_R steps, and their sum
+        self.u60s = 0.0
+        self.dx: Counter = Counter()                 # exact (ticker, side, qty, limit) repeats inside W_DUP
+        self.sig, self.run = None, 0                 # last exact order signature and the length of the run of consecutive repeats
+        self.dev = 0.002                             # EW mean of |limit / trusted - 1|: the agent's usual distance from the price
+        self.rmu = 0.0                               # robust size baseline: like mu, but one outlier moves it by at most 0.05 nats
+        self.c0, self.g, self.cn, self.offr = -1, 0, 0, 0.0   # cadence: first untriggered step, gcd of its gaps, orders folded, EW off-cadence rate
 
 
 class FeatureEngine:
@@ -100,6 +134,9 @@ class FeatureEngine:
         self.script: deque = deque()
         self.script_c: Counter = Counter()
         self.n_seen = 0
+        self.env_w: dict = {}                         # env -> [deque (step, agent, notional), Counter agents, usd sum]
+        self.env_ag: dict = {}                        # env -> [day, set of agents seen today]
+        self.hot: dict = {}                           # env -> {agent: last step it was hot (>= HOT_N orders in W_AG steps)}
 
     # ---- helpers ------------------------------------------------------------------------------------------------
     @staticmethod
@@ -179,8 +216,11 @@ class FeatureEngine:
             lim = step - W_DUP
             dq = a.dupq
             while dq and dq[0][0] <= lim:
-                _, k0 = dq.popleft()
+                _, k0, s0 = dq.popleft()
                 a.dups[k0] -= 1
+                a.dx[s0] -= 1
+                if not a.dx[s0]:
+                    del a.dx[s0]
             f[20] = a.dups.get(dk, 0)
             f[21] = 1.0 if ev.get("key") in a.keys else 0.0
             f[22] = a.cf
@@ -229,6 +269,76 @@ class FeatureEngine:
         if p is not None:
             f[33] = p[1] * 1e4
             f[34] = p[1] / (p[2] + 1e-9)
+        # ---- invariants (v2) ----
+        adev = abs(limit / tp - 1.0) if tp and limit else 0.0
+        ew = self.env_w.get(env)
+        if ew is not None:
+            q, c = ew[0], ew[1]
+            lim = step - W_R
+            while q and q[0][0] <= lim:
+                _, a0, u0 = q.popleft()
+                ew[2] -= u0
+                c[a0] -= 1
+                if not c[a0]:
+                    del c[a0]
+            n_act = len(c) + (0 if agent in c else 1)
+            peer_n, peer_usd = (len(q) + 1.0) / n_act, (ew[2] + notional) / n_act
+        else:
+            peer_n, peer_usd = 1.0, notional
+        ea = self.env_ag.get(env)
+        if a is None:
+            f[42], f[43], f[44], f[45] = 1.0, 1.0 / peer_n, notional / (peer_usd + 1.0), 1.0
+            f[48] = 1.0
+        else:
+            if a.n >= 3:
+                f[39] = ln - a.rmu
+                f[40] = math.log((notional + 1.0) / (a.maxn + 1.0))
+                f[48] = adev / (a.dev + 5e-4)
+            else:
+                f[48] = 1.0
+            q = a.r60
+            lim = step - W_R
+            while q and q[0] <= lim:
+                q.popleft()
+            uq = a.u60
+            while uq and uq[0][0] <= lim:
+                a.u60s -= uq.popleft()[1]
+            n60 = len(q) + 1
+            old_n = a.n - len(a.recent)
+            old_age = step - W_AG - a.first
+            f[41] = f[19] / (W_AG * (old_n + 1.0) / (max(old_age, 0) + 50.0) + 1.0)
+            f[42] = n60
+            f[43] = n60 / peer_n
+            f[44] = (a.u60s + notional) / (peer_usd + 1.0)
+            if ed and ed[0] == day and ea is not None and ea[0] == day:
+                nd = len(ea[1]) + (0 if agent in ea[1] else 1)
+                f[45] = ((a.day_usd if a.day == day else 0.0) + notional) / ((ed[1] + notional) / nd + 1.0)
+            else:
+                f[45] = 1.0
+            sg = (tk, side, ev.get("qty"), limit)
+            f[46] = a.dx.get(sg, 0)
+            f[47] = a.run if a.sig == sg and step - a.last_step <= 2 else 0
+            f[54] = 1.0 if a.n >= 10 and tk not in a.tick else 0.0
+            if tg is None and a.cn >= 4 and a.g >= 5:
+                df = step - a.c0
+                if df % a.g and math.gcd(a.g, df) < max(10, a.g // 4):
+                    f[55] = 1.0                      # the agent has a schedule and this order is off it
+            f[56] = math.log1p(a.cn)
+            f[57] = a.offr
+        f[49] = adev / (p[1] + 1e-3) if p is not None else adev / 1e-3
+        f[50] = f[9] * 100.0 / band
+        f[53] = adev
+        hs = self.hot.get(env)
+        if hs:
+            lim = step - W_R
+            f[51] = sum(1 for b, st in hs.items() if st > lim and b != agent)
+        if wm is not None and ratio >= 0.2:
+            bn = wm.bn
+            k = bn.get(bucket, 0) + bn.get(bucket - 1, 0) + bn.get(bucket + 1, 0)
+            if k:
+                ba = wm.ba
+                k -= (1 if (bucket, agent) in ba else 0) + (1 if (bucket - 1, agent) in ba else 0) + (1 if (bucket + 1, agent) in ba else 0)
+            f[52] = k
         lg, stated, sk = self._text(ev)
         if lg is not None:
             f[35] = lg
@@ -257,6 +367,65 @@ class FeatureEngine:
         if a is None:
             a = self.agents[agent] = _Agent()
         ln = math.log1p(notional)
+        # ---- invariants (v2) state ----
+        if a.first < 0:
+            a.first = step
+        if notional > a.maxn:
+            a.maxn = notional
+        lim = step - W_R
+        q = a.r60
+        while q and q[0] <= lim:
+            q.popleft()
+        q.append(step)
+        uq = a.u60
+        while uq and uq[0][0] <= lim:
+            a.u60s -= uq.popleft()[1]
+        uq.append((step, notional))
+        a.u60s += notional
+        limit = float(ev.get("limit") or 0.0)
+        sg = (tk, side, ev.get("qty"), limit)
+        a.run = a.run + 1 if a.sig == sg and step - a.last_step <= 2 else 1
+        a.sig = sg
+        tp0 = ev.get("tp")
+        if tp0 and limit:
+            a.dev += 0.1 * (min(abs(limit / tp0 - 1.0), 0.05) - a.dev)
+        ew = self.env_w.get(env)
+        if ew is None:
+            ew = self.env_w[env] = [deque(), Counter(), 0.0]
+        ew[0].append((step, agent, notional))
+        ew[1][agent] += 1
+        ew[2] += notional
+        ea = self.env_ag.get(env)
+        if ea is None or ea[0] != day:
+            ea = self.env_ag[env] = [day, set()]
+        ea[1].add(agent)
+        rq = a.recent
+        lim = step - W_AG
+        while rq and rq[0] <= lim:
+            rq.popleft()
+        if len(rq) + 1 >= HOT_N and ev.get("trig") is None:
+            hs = self.hot.get(env)
+            if hs is None:
+                hs = self.hot[env] = {}
+            hs[agent] = step
+            if len(hs) > 48:
+                lim = step - W_R
+                self.hot[env] = {b: st for b, st in hs.items() if st > lim}
+        if ev.get("trig") is None:
+            if a.c0 < 0:
+                a.c0, a.cn = step, 1
+            else:
+                df = step - a.c0
+                g2 = math.gcd(a.g, df)
+                if a.cn >= 4 and a.g >= 5 and df % a.g and g2 < max(10, a.g // 4):
+                    a.offr += 0.2 * (1.0 - a.offr)   # off schedule: remembered, not folded into the schedule
+                else:
+                    a.g, a.cn = g2, a.cn + 1
+                    a.offr -= 0.2 * a.offr
+        if a.n == 0:
+            a.rmu = ln
+        else:
+            a.rmu += 0.1 * max(-0.5, min(0.5, ln - a.rmu))
         a.n += 1
         d = ln - a.mu
         al = 0.1 if a.n > 1 else 1.0
@@ -268,7 +437,8 @@ class FeatureEngine:
         a.recent.append(step)
         dk = (tk, side, ev.get("qty"))
         a.dups[dk] += 1
-        a.dupq.append((step, dk))
+        a.dx[sg] += 1
+        a.dupq.append((step, dk, sg))
         a.keys.append(ev.get("key"))
         a.cf += 0.1 * (ratio - a.cf)
         a.nc += 0.1 * ((1.0 if 0.8 < nr <= 1.0 else 0.0) - a.nc)
@@ -342,49 +512,77 @@ class FeatureEngine:
 
 # ---- explanations ----------------------------------------------------------------------------------------------------------
 
+_EXPLAIN = {
+    "cap_ratio": lambda v: f"the order is {v:.0%} of the per-order cap",
+    "stepup_ratio": lambda v: f"the order is {v:.0%} of the step-up threshold",
+    "log_notional": lambda v: f"a large order (about ${math.expm1(v):,.0f})",
+    "near_cap": lambda v: "its size sits just under the per-order cap",
+    "order_share_daily": lambda v: f"it uses {v:.2%} of the envelope's daily cap",
+    "env_day_demand": lambda v: f"the envelope has already seen {v:.0%} of its daily cap in proposals today",
+    "env_pace": lambda v: f"proposals are arriving at {v:.1f}x the pace that would just exhaust the daily cap",
+    "agent_day_share": lambda v: f"this agent alone has proposed {v:.1f}% of the daily cap today",
+    "agent_day_n": lambda v: f"this agent has placed {v:.0f} orders today",
+    "limit_dev": lambda v: f"the limit is {v:+.1%} through the trusted price",
+    "band_pos": lambda v: f"the limit is {v:.0%} of the way to the price band edge",
+    "listed": lambda v: "the ticker is off the envelope's list",
+    "is_transfer": lambda v: "it is not a trade",
+    "trig": lambda v: "it claims a standing rule",
+    "size_z": lambda v: f"the size is {v:+.1f} standard deviations from this agent's usual",
+    "agent_n": lambda v: "this agent has little history",
+    "agent_ticker_n": lambda v: f"this agent has traded this ticker {v:.0f} times before",
+    "side_flip": lambda v: "the side flipped against this agent's last trade in the ticker",
+    "inter_arrival": lambda v: f"{v:.0f} steps since this agent's last order",
+    "agent_burst": lambda v: f"this agent sent {v:.0f} orders in the last {W_AG} steps",
+    "dup_recent": lambda v: f"{v:.0f} identical orders from this agent in the last {W_DUP} steps",
+    "dup_key": lambda v: "the idempotency key was already used by this agent",
+    "agent_capfrac": lambda v: f"this agent's recent orders average {v:.0%} of the cap",
+    "agent_nearcap_rate": lambda v: f"{v:.0%} of this agent's recent orders sat just under the cap",
+    "xa_short": lambda v: f"{v:.0f} other agents placed the same ticker and side in the last {W_S} steps",
+    "xa_med": lambda v: f"{v:.0f} other agents placed the same ticker and side in the last {W_M} steps",
+    "xa_near_env": lambda v: f"{v:.0f} other agents sent near-cap orders into this envelope in the last {W_L} steps",
+    "sizesim": lambda v: f"{v:.0f} recent orders on the same ticker and side have a near-identical size",
+    "same_step": lambda v: f"{v:.0f} other orders on the same ticker and side in this very step",
+    "strong_nbrs": lambda v: f"it co-moves with {v:.0f} agents it has repeatedly traded alongside",
+    "strong_frac": lambda v: f"{v:.0%} of the agents trading with it are repeat co-movers",
+    "side_pressure": lambda v: f"the flow in this ticker is {v:+.0%} one-sided toward this side",
+    "ticker_flow": lambda v: "unusually heavy flow in this ticker",
+    "vol_short": lambda v: "the market is volatile",
+    "vol_ratio": lambda v: f"volatility is {v:.1f}x its long-run level",
+    "text_logit": lambda v: "the stated rationale reads like known bad scripts",
+    "stated_ratio": lambda v: f"the order is {math.exp(abs(v)):.0f}x {'larger' if v > 0 else 'smaller'} than the size the agent says it intends",
+    "has_stated": lambda v: "the rationale states a size",
+    "script_dup": lambda v: f"the same wording was used {v:.0f} times in the last {W_L} steps",
+    "size_jump": lambda v: f"the order is {math.exp(v):.1f}x this agent's usual size",
+    "size_vs_max": lambda v: f"the order is {math.exp(v):.1f}x the largest this agent has sent before",
+    "rate_break": lambda v: f"this agent is sending orders at {v:.1f}x its own long-run rate",
+    "agent_rate60": lambda v: f"this agent sent {v:.0f} orders in the last {W_R} steps",
+    "rate_peer": lambda v: f"this agent is sending {v:.1f}x as many orders as the average active agent in the envelope",
+    "usd_peer": lambda v: f"this agent moved {v:.1f}x the notional of the average active agent in the last {W_R} steps",
+    "usd_day_peer": lambda v: f"this agent has used {v:.1f}x the average agent's share of today's flow",
+    "dup_exact": lambda v: f"{v:.0f} orders with the same ticker, side, quantity and limit from this agent in the last {W_DUP} steps",
+    "dup_run": lambda v: f"the same order has been re-sent {v:.0f} times in a row",
+    "dev_ratio": lambda v: f"the limit is {v:.1f}x further from the trusted price than this agent's usual",
+    "dev_vol": lambda v: f"the limit is {v:.1f}x further from the trusted price than recent price moves explain",
+    "cross_band": lambda v: f"the limit crosses the trusted price by {v:.0%} of the price band",
+    "hot_peers": lambda v: f"{v:.0f} other agents in this envelope are also sending bursts of orders",
+    "sync_size_agents": lambda v: f"{v:.0f} other agents sent near-identical large sizes on the same ticker and side in the last {W_M} steps",
+    "abs_dev": lambda v: f"the limit is {v:.1%} away from the trusted price",
+    "new_ticker": lambda v: "an established agent is trading a ticker it has never traded",
+    "off_cadence": lambda v: "the order arrives off this agent's established schedule",
+    "cadence_n": lambda v: "this agent has an established schedule",
+    "off_rate": lambda v: f"{v:.0%} of this agent's recent orders were off its schedule",
+}
+
+
 def explain(name: str, v: float) -> str:
-    t = {
-        "cap_ratio": f"the order is {v:.0%} of the per-order cap",
-        "stepup_ratio": f"the order is {v:.0%} of the step-up threshold",
-        "log_notional": f"a large order (about ${math.expm1(v):,.0f})",
-        "near_cap": "its size sits just under the per-order cap",
-        "order_share_daily": f"it uses {v:.2%} of the envelope's daily cap",
-        "env_day_demand": f"the envelope has already seen {v:.0%} of its daily cap in proposals today",
-        "env_pace": f"proposals are arriving at {v:.1f}x the pace that would just exhaust the daily cap",
-        "agent_day_share": f"this agent alone has proposed {v:.1f}% of the daily cap today",
-        "agent_day_n": f"this agent has placed {v:.0f} orders today",
-        "limit_dev": f"the limit is {v:+.1%} through the trusted price",
-        "band_pos": f"the limit is {v:.0%} of the way to the price band edge",
-        "listed": "the ticker is off the envelope's list",
-        "is_transfer": "it is not a trade",
-        "trig": "it claims a standing rule",
-        "size_z": f"the size is {v:+.1f} standard deviations from this agent's usual",
-        "agent_n": "this agent has little history",
-        "agent_ticker_n": f"this agent has traded this ticker {v:.0f} times before",
-        "side_flip": "the side flipped against this agent's last trade in the ticker",
-        "inter_arrival": f"{v:.0f} steps since this agent's last order",
-        "agent_burst": f"this agent sent {v:.0f} orders in the last {W_AG} steps",
-        "dup_recent": f"{v:.0f} identical orders from this agent in the last {W_DUP} steps",
-        "dup_key": "the idempotency key was already used by this agent",
-        "agent_capfrac": f"this agent's recent orders average {v:.0%} of the cap",
-        "agent_nearcap_rate": f"{v:.0%} of this agent's recent orders sat just under the cap",
-        "xa_short": f"{v:.0f} other agents placed the same ticker and side in the last {W_S} steps",
-        "xa_med": f"{v:.0f} other agents placed the same ticker and side in the last {W_M} steps",
-        "xa_near_env": f"{v:.0f} other agents sent near-cap orders into this envelope in the last {W_L} steps",
-        "sizesim": f"{v:.0f} recent orders on the same ticker and side have a near-identical size",
-        "same_step": f"{v:.0f} other orders on the same ticker and side in this very step",
-        "strong_nbrs": f"it co-moves with {v:.0f} agents it has repeatedly traded alongside",
-        "strong_frac": f"{v:.0%} of the agents trading with it are repeat co-movers",
-        "side_pressure": f"the flow in this ticker is {v:+.0%} one-sided toward this side",
-        "ticker_flow": "unusually heavy flow in this ticker",
-        "vol_short": "the market is volatile",
-        "vol_ratio": f"volatility is {v:.1f}x its long-run level",
-        "text_logit": "the stated rationale reads like known bad scripts",
-        "stated_ratio": f"the order is {math.exp(abs(v)):.0f}x {'larger' if v > 0 else 'smaller'} than the size the agent says it intends",
-        "has_stated": "the rationale states a size",
-        "script_dup": f"the same wording was used {v:.0f} times in the last {W_L} steps",
-    }
-    return t.get(name, name)
+    """One feature value in plain English (only the requested entry is formatted)."""
+    fn = _EXPLAIN.get(name)
+    if fn is None:
+        return name
+    try:
+        return fn(v)
+    except (OverflowError, ValueError):
+        return name
 
 
 def build_matrix(cols: dict, texts: list[str] | None, env_specs: dict[int, dict], spd: dict[int, int], text_model=None, idx_runs=None):

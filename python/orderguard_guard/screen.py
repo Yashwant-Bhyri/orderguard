@@ -57,6 +57,11 @@ def content_hash(model: str, kind: str, chunk: str) -> str:
     return hashlib.sha256(f"{model}\x1f{kind}\x1f{chunk}".encode("utf-8")).hexdigest()[:32]
 
 
+def _valid_verdict(v) -> bool:
+    return (isinstance(v, dict) and isinstance(v.get("flag"), bool) and v.get("category") in CATEGORIES + ("error",)
+            and isinstance(v.get("why", ""), str) and (v["flag"] or v["category"] == "clean"))
+
+
 class Screen:
     """`Screen(model).check(chunk, kind)`; model is a name or any object with `.ask_json`/`.chat`."""
 
@@ -101,14 +106,24 @@ class Screen:
             self._clf = _c.get()
         if self.cache_path and self.cache_path.exists():
             try:
-                self.cache = json.loads(self.cache_path.read_text())
-            except ValueError:
-                self.cache = {}
+                loaded = json.loads(self.cache_path.read_text())
+            except (ValueError, OSError):
+                loaded = {}
+            # keep only well-formed verdicts: a hand-edited or truncated cache must never turn into a pass
+            self.cache = {k: v for k, v in (loaded.items() if isinstance(loaded, dict) else ()) if _valid_verdict(v)}
 
     def check(self, chunk: str, kind: str = "tool") -> dict:
         if kind not in KINDS:
             raise ValueError(f"kind must be one of {KINDS}")
-        local = self._clf.score(chunk) if self._clf is not None else None
+        if not isinstance(chunk, str):
+            chunk = chunk.decode("utf-8", "replace") if isinstance(chunk, (bytes, bytearray)) else json.dumps(chunk, ensure_ascii=False, default=str)
+        chunk = chunk.encode("utf-8", "replace").decode("utf-8")        # lone surrogates cannot be hashed or sent
+        try:
+            local = self._clf.score(chunk) if self._clf is not None else None
+        except Exception as e:      # noqa: BLE001  a broken local scorer must quarantine, not crash or pass
+            with self._lock:
+                self.errors += 1
+            return {"flag": True, "category": "error", "why": f"local classifier error ({type(e).__name__}); chunk quarantined as a precaution", "cached": False}
         if self.cascade_mode != "off":
             return self._cascade_check(chunk, kind, local)
         if local is not None and self.classifier_mode == "prefilter" and local["p_attack"] >= self._clf.prefilter_threshold:
@@ -116,7 +131,7 @@ class Screen:
             return self._local_verdict(local)
         h = content_hash(self.model_name, kind, chunk)
         with self._lock:
-            if h in self.cache:
+            if h in self.cache and _valid_verdict(self.cache[h]):
                 return self._merge(dict(self.cache[h], cached=True), local)
         verdict = self._ask(chunk, kind)
         if verdict["category"] != "error":
@@ -128,7 +143,7 @@ class Screen:
     def _main_check(self, chunk: str, kind: str) -> dict:
         h = content_hash(self.model_name, kind, chunk)
         with self._lock:
-            if h in self.cache:
+            if h in self.cache and _valid_verdict(self.cache[h]):
                 return dict(self.cache[h], cached=True)
         verdict = self._ask(chunk, kind)
         if verdict["category"] != "error":
@@ -176,10 +191,28 @@ class Screen:
         return [self.check(c, kind) for c in chunks]
 
     def _ask(self, chunk: str, kind: str) -> dict:
-        user = f"kind: {kind}\n<chunk>\n{chunk[:self.max_chars]}\n</chunk>"
-        h = content_hash(self.model_name, kind, chunk)
+        """Ask the model about the whole chunk. A chunk longer than `max_chars` is read in consecutive windows (the first is exactly the
+        request the screen has always sent), so nothing past the cut-off reaches the agent unread; any flagged window flags the chunk."""
+        step = max(1, self.max_chars)
+        windows = [chunk[i:i + step] for i in range(0, len(chunk), step)] or [""]
+        worst = None
+        for w in windows:
+            v = self._ask_window(w, kind, content_hash(self.model_name, kind, chunk) if len(windows) == 1 else content_hash(self.model_name, kind, w))
+            if v["flag"] and (worst is None or v["category"] == "error"):
+                worst = v
+                if v["category"] == "error":
+                    break
+        if worst is None:
+            return v
+        if len(windows) > 1:
+            worst = dict(worst, why=f"(part of a {len(chunk)}-character chunk) {worst['why']}"[:300])
+        return worst
+
+    def _ask_window(self, chunk: str, kind: str, h: str) -> dict:
+        user = f"kind: {kind}\n<chunk>\n{chunk}\n</chunk>"
         try:
-            self.calls += 1
+            with self._lock:
+                self.calls += 1
             t0 = time.perf_counter()
             if self.profile is None:      # the default screen: exactly the request it has always sent
                 resp = self.llm.chat([{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}], max_tokens=2000,
@@ -188,15 +221,20 @@ class Screen:
                 pr = self.profile
                 msgs = ([{"role": "system", "content": pr["system"]}] if pr.get("system") else []) + [{"role": "user", "content": user}]
                 resp = self.llm.chat(msgs, max_tokens=pr.get("max_tokens", 2000), extra=pr.get("extra"))
-            if not (resp.get("_meta") or {}).get("cached"):      # a replayed recording has no meaningful latency
-                self.latency_ms[h] = (time.perf_counter() - t0) * 1000.0
-            c = float((resp.get("_meta") or {}).get("cost_usd") or 0.0)
-            self.call_cost[h] = c
-            self.cost_usd += c
+            meta = resp.get("_meta") or {}
+            c = float(meta.get("cost_usd") or 0.0)
+            with self._lock:
+                if not meta.get("cached"):      # a replayed recording has no meaningful latency
+                    self.latency_ms[h] = (time.perf_counter() - t0) * 1000.0
+                self.call_cost[h] = c
+                self.cost_usd += c
             text = resp["choices"][0]["message"].get("content") or ""
             d = parse_json(text)
+            if not isinstance(d, dict) or "flag" not in d:
+                raise ValueError("reply has no flag field")
             cat = str(d.get("category", "")).strip().lower()
-            flag = bool(d.get("flag"))
+            raw_flag = d.get("flag")
+            flag = raw_flag if isinstance(raw_flag, bool) else str(raw_flag).strip().lower() in ("true", "1", "yes")
             if cat not in CATEGORIES:
                 cat = "clean" if not flag else "instruction"
             if flag and cat == "clean":
@@ -205,14 +243,17 @@ class Screen:
                 cat = "clean"
             return {"flag": flag, "category": cat, "why": str(d.get("why", ""))[:300]}
         except Exception as e:        # fail closed
-            self.errors += 1
+            with self._lock:
+                self.errors += 1
             return {"flag": True, "category": "error", "why": f"screen error ({type(e).__name__}); chunk quarantined as a precaution"}
 
     def _save(self) -> None:
         if self.cache_path:
             try:
                 self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-                self.cache_path.write_text(json.dumps(self.cache, indent=0, ensure_ascii=False))
+                tmp = self.cache_path.with_name(f".{self.cache_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+                tmp.write_text(json.dumps(self.cache, indent=0, ensure_ascii=False))
+                tmp.replace(self.cache_path)
             except OSError:
                 pass
 

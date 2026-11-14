@@ -57,6 +57,9 @@ def ask_attacker(llm, hist: list, max_tokens: int = 4000):
         try:
             resp = llm.chat(msgs, max_tokens=max_tokens)
         except Exception as e:
+            from .llm_shared import ReplayIncomplete, strict_replay
+            if type(e).__name__ == "ReplayMiss" and strict_replay():
+                raise ReplayIncomplete(f"adaptive attacker turn has no recording and strict replay forbids a live call: {e}") from e
             return None, cost, None, f"attacker error: {type(e).__name__}"
         cost += float((resp.get("_meta") or {}).get("cost_usd") or 0.0)
         last_text = resp["choices"][0]["message"].get("content") or ""

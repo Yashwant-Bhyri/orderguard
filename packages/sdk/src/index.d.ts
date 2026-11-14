@@ -20,6 +20,9 @@ export class OrderGuardError extends Error {
   status: number;
   payload: Record<string, unknown>;
 }
+export class OrderGuardUnavailable extends Error {
+  outcomeUnknown: boolean;
+}
 export class OrderGuardClient {
   constructor(options?: OrderGuardClientOptions);
   getMandate(): Promise<Record<string, unknown>>;

@@ -53,12 +53,18 @@ DEEPSEEK_PEAK_RATES = {"deepseek-flash": (0.30, 1.20), "deepseek-v4-pro": (1.32,
                        "deepseek-v4-flash": (0.30, 1.20), "deepseek-v4-flash-vision-exp": (0.30, 1.20)}
 
 
+# OG_PROVIDER=openai: OpenAI's own API (key OPENAI_API_KEY), for regions where OpenRouter geo-blocks OpenAI models.
+# OpenAI has no balance endpoint, so the hard cap is OG_BUDGET_USD alone; list prices (US$ per million tokens) bound each reservation.
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+OPENAI_RATES = {"gpt-6-luna": (0.10, 0.50), "gpt-5.6-luna": (0.20, 1.20), "gpt-5.4-nano": (0.05, 0.40), "gpt-5.4-mini": (0.25, 2.00)}
+
+
 def provider() -> str:
     return os.getenv("OG_PROVIDER", "deepseek").lower()
 
 
 def key_var() -> str:
-    return "DEEPSEEK_API_KEY" if provider() == "deepseek" else KEY_VAR
+    return {"deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY"}.get(provider(), KEY_VAR)
 
 
 class LLMError(RuntimeError):
@@ -253,16 +259,24 @@ class LLM:
             body.update(extra)
         h = request_hash(body)
         filename = f"{h}.json"
+        unreadable = None
         if self.mode in ("replay", "record"):
             for directory in dict.fromkeys((self.record_dir, self.replay_dir)):
                 path = directory / filename
                 if path.is_file():
-                    rec = json.loads(path.read_text(encoding="utf-8"))
-                    resp = rec["response"]
-                    resp["_meta"] = {"cached": True, "cost_usd": float(rec.get("cost_usd") or 0.0), "hash": h}
+                    try:
+                        rec = json.loads(path.read_text(encoding="utf-8"))
+                        resp = rec["response"]
+                        if not isinstance(resp, dict):
+                            raise TypeError("recorded response is not an object")
+                        resp["_meta"] = {"cached": True, "cost_usd": float(rec.get("cost_usd") or 0.0), "hash": h}
+                    except (ValueError, KeyError, TypeError, OSError):
+                        unreadable = filename      # a truncated or hand-edited recording is a miss, never a traceback
+                        continue
                     return resp
         if self.mode == "replay":
-            raise ReplayMiss(f"OG_LLM=replay and no recorded response for request {h} (model {body['model']})")
+            raise ReplayMiss(f"OG_LLM=replay and no recorded response for request {h} (model {body['model']})"
+                             + (f"; the recording {unreadable} exists but is unreadable, re-record it" if unreadable else ""))
         resp = self._live(body)
         cost = float((resp.get("usage") or {}).get("cost") or 0.0)
         self.record_dir.mkdir(parents=True, exist_ok=True)
@@ -300,6 +314,8 @@ class LLM:
 
     def check_credits(self) -> Decimal:
         """Fetch the provider's remaining USD balance and refuse under the floor."""
+        if provider() == "openai":
+            return Decimal(str(self.spend.budget_usd)) + Decimal(str(CREDIT_FLOOR_USD))   # no balance API: the run budget is the only cap
         if provider() == "deepseek":
             r = self._http().get(DEEPSEEK_BALANCE_URL, headers=self._headers())
             r.raise_for_status()
@@ -338,6 +354,9 @@ class LLM:
                     may_have_billed = not isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
                     last = type(e).__name__
                 else:
+                    if r.status_code in (402, 429) and any(w in r.text for w in ("insufficient_quota", "credit_balance_exhausted", "no credits")):
+                        may_have_billed = False                  # refused before any work: nothing was billed
+                        raise CreditFloor(f"{provider()} account has no credits left (HTTP {r.status_code}); refusing live calls")
                     if r.status_code in (408, 409, 425, 429, 500, 502, 503, 504):
                         may_have_billed = r.status_code not in (409, 425, 429)
                         last = f"HTTP {r.status_code}"
@@ -374,8 +393,9 @@ class LLM:
                 self._release_attempt(reservation, body["model"], reason=last if may_have_billed else None)
 
     def _budgeted_payload(self, wire: dict) -> tuple[bytes, Decimal, tuple[Decimal, Decimal]]:
-        max_tokens = wire.get("max_tokens")
-        if type(max_tokens) is not int or max_tokens <= 0 or "max_completion_tokens" in wire:
+        limits = [k for k in ("max_tokens", "max_completion_tokens") if k in wire]
+        max_tokens = wire.get(limits[0]) if len(limits) == 1 else None    # exactly one output limit (OpenAI names it max_completion_tokens)
+        if type(max_tokens) is not int or max_tokens <= 0:
             raise BudgetExceeded("live requests need a positive integer max_tokens as their only output limit")
         if wire.get("stream") or wire.get("n", 1) != 1:
             raise BudgetExceeded("live reservations require a single non-streamed completion")
@@ -399,6 +419,11 @@ class LLM:
                     raise BudgetExceeded(f"no peak rates configured for DeepSeek model {wire['model']!r}")
                 rate_in = max(rate_in, _nonnegative_decimal(peak[0]))
                 rate_out = max(rate_out, _nonnegative_decimal(peak[1]))
+            elif provider() == "openai":
+                listed = OPENAI_RATES.get(wire["model"])
+                if listed is None:
+                    raise BudgetExceeded(f"no list prices configured for OpenAI model {wire['model']!r}")
+                rate_in, rate_out = _nonnegative_decimal(listed[0]), _nonnegative_decimal(listed[1])
             else:
                 routing = dict(wire.get("provider") or {})
                 ceilings = dict(routing.get("max_price") or {})
@@ -417,9 +442,18 @@ class LLM:
 
     def _wire(self, body: dict) -> tuple[str, dict]:
         """Translate the logical (OpenRouter-shaped) request for the configured provider."""
-        if provider() != "deepseek":
+        if provider() not in ("deepseek", "openai"):
             return API_URL, body
-        wire = {k: v for k, v in body.items() if k not in ("usage", "reasoning")}
+        wire = {k: v for k, v in body.items() if k not in ("usage", "reasoning", "provider")}
+        if provider() == "openai":
+            effort = (body.get("reasoning") or {}).get("effort")
+            if effort:
+                wire["reasoning_effort"] = effort
+            if "max_tokens" in wire:
+                wire["max_completion_tokens"] = wire.pop("max_tokens")
+            wire.pop("temperature", None)                  # reasoning models accept only the default
+            wire["model"] = body["model"].split("/")[-1]
+            return OPENAI_URL, wire
         effort = (body.get("reasoning") or {}).get("effort")
         if effort:
             wire["reasoning_effort"] = effort

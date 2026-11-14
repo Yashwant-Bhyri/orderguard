@@ -22,8 +22,48 @@ from . import gate as G
 from .market import SimMarket
 
 
-def _load_json(arg: str) -> dict:
-    return json.loads(sys.stdin.read() if arg == "-" else Path(arg).read_text())
+class UserError(Exception):
+    """A problem with what the user typed or pointed at; main() prints it as one line plus a hint and exits 2."""
+
+    def __init__(self, message: str, hint: str | None = None):
+        super().__init__(message)
+        self.hint = hint
+
+
+def _load_json(arg: str, what: str = "file") -> dict:
+    """Read a JSON object from a path or `-` (stdin). Every failure is a UserError that says what to do."""
+    try:
+        text = sys.stdin.read() if arg == "-" else Path(arg).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise UserError(f"{what} not found: {arg}", "check the path (relative paths are from the current directory), or pass - to read stdin") from None
+    except IsADirectoryError:
+        raise UserError(f"{what} is a directory, not a file: {arg}") from None
+    except PermissionError:
+        raise UserError(f"cannot read {what}: {arg} (permission denied)") from None
+    except UnicodeDecodeError:
+        raise UserError(f"{what} is not UTF-8 text: {arg}") from None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise UserError(f"{what} is not valid JSON ({arg}): {e.msg} at line {e.lineno}, column {e.colno}", "validate it with `python -m json.tool`") from None
+    if not isinstance(data, dict):
+        raise UserError(f"{what} must hold a JSON object, found {type(data).__name__}: {arg}")
+    return data
+
+
+def _date_arg(value: str) -> str:
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a calendar date; use YYYY-MM-DD") from None
+    return value
+
+
+def _read_key_text(path: Path, what: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        raise UserError(f"cannot read {what} {path}: {e.strerror or type(e).__name__}") from None
 
 
 def _builtin_mandate() -> dict:
@@ -35,31 +75,92 @@ def _builtin_mandate() -> dict:
 
 def cmd_sign_mandate(a) -> int:
     key_path = Path(a.key)
+    body = _load_json(a.mandate, "mandate file")
     if key_path.exists():
-        priv = G.private_key_from_b64(key_path.read_text().strip())
+        try:
+            priv = G.private_key_from_b64(_read_key_text(key_path, "key file"))
+        except UserError:
+            raise
+        except Exception:
+            raise UserError(f"{key_path} is not a valid Ed25519 private key", "use a key made by `orderguard init`, or a new path to generate one") from None
     else:
         priv, _ = G.generate_keypair()
         key_path.write_text(G.private_key_to_b64(priv) + "\n")
         os.chmod(key_path, 0o600)
         print(f"generated a new signing key in {key_path.name}; keep it private", file=sys.stderr)
-    signed = G.sign_mandate(_load_json(a.mandate), priv)
+    try:
+        signed = G.sign_mandate(body, priv)
+    except (TypeError, ValueError, KeyError) as e:
+        raise UserError(f"the mandate cannot be signed: {e}") from None
     out = json.dumps(signed, indent=1)
     if a.out:
-        Path(a.out).write_text(out + "\n")
+        try:
+            Path(a.out).write_text(out + "\n", encoding="utf-8")
+        except OSError as e:
+            raise UserError(f"cannot write {a.out}: {e.strerror or type(e).__name__}") from None
+        print(f"signed mandate written to {a.out}", file=sys.stderr)
+    else:
+        print(out)
+    return 0
+
+
+def cmd_policy(a) -> int:
+    from . import policy_packs as P
+    try:
+        if a.action == "list":
+            for n in P.names():
+                print(P.summary(n))
+            return 0
+        if not a.name:
+            raise UserError(f"policy {a.action} needs a NAME", "run `orderguard policy list`")
+        if a.action == "show":
+            print(json.dumps(P.load(a.name), indent=2))
+            return 0
+        if not a.key:
+            raise UserError("policy sign needs --key KEYFILE (the private key made by `orderguard init`)")
+        if not Path(a.key).exists():
+            raise UserError(f"key file not found: {a.key}", "policy sign never generates a key; run `orderguard init` first")
+        m = P.build_mandate(a.name, a.symbols)
+        try:
+            priv = G.private_key_from_b64(_read_key_text(Path(a.key), "key file"))
+        except UserError:
+            raise
+        except Exception:
+            raise UserError(f"{a.key} is not a valid Ed25519 private key") from None
+        signed = G.sign_mandate(m, priv)
+    except G.MandateInvalid as e:
+        raise UserError(f"policy {a.name!r} was not signed: {e}") from None
+    out = json.dumps(signed, indent=1)
+    if a.out:
+        try:
+            Path(a.out).write_text(out + "\n", encoding="utf-8")
+        except OSError as e:
+            raise UserError(f"cannot write {a.out}: {e.strerror or type(e).__name__}") from None
+        print(f"signed {a.name} (mandate id {G.Mandate.from_dict(signed).id}, expires {signed['expiresAt']}) written to {a.out}", file=sys.stderr)
     else:
         print(out)
     return 0
 
 
 def cmd_verify_mandate(a) -> int:
-    m = G.Mandate.from_dict(_load_json(a.mandate))
-    if a.public_key:
-        pub = G.public_key_from_b64(Path(a.public_key).read_text().strip() if Path(a.public_key).exists() else a.public_key)
-    elif a.key:
-        pub = G.private_key_from_b64(Path(a.key).read_text().strip()).public_key()
-    else:
-        print("note: no --public-key given; checking against the key embedded in the file, which proves integrity but not who signed", file=sys.stderr)
-        pub = G.public_key_from_b64(m.signerPublicKey or "")
+    raw = _load_json(a.mandate, "mandate file")
+    try:
+        m = G.Mandate.from_dict(raw)
+    except (G.MandateInvalid, TypeError, ValueError, KeyError):
+        raise UserError("that file is not a mandate: it lacks required fields (symbols, sides, maxOrderNotionalUsd, maxDailyNotionalUsd, priceBandPct, expiresAt)",
+                        "create one with `orderguard init`, then `orderguard sign-mandate`") from None
+    try:
+        if a.public_key:
+            pub = G.public_key_from_b64(_read_key_text(Path(a.public_key), "public key") if Path(a.public_key).exists() else a.public_key)
+        elif a.key:
+            pub = G.private_key_from_b64(_read_key_text(Path(a.key), "key file")).public_key()
+        else:
+            print("note: no --public-key given; checking against the key embedded in the file, which proves integrity but not who signed", file=sys.stderr)
+            pub = G.public_key_from_b64(m.signerPublicKey or "")
+    except UserError:
+        raise
+    except Exception:
+        raise UserError("the public key is not a valid base64 Ed25519 key", "pass --public-key with the contents of signing.pub, or a path to that file") from None
     revoked = [x for x in (a.revoked or [])]
     try:
         m.verify(pub, now=a.now, revoked=revoked)
@@ -73,9 +174,17 @@ def cmd_verify_mandate(a) -> int:
 # ---- check-order ---------------------------------------------------------------------------------------------------
 
 def cmd_check_order(a) -> int:
-    order = _load_json(a.order)
-    mandate = _load_json(a.mandate) if a.mandate else _builtin_mandate()
-    prices = json.loads(a.prices) if a.prices else mandate.get("referencePrices") or {}
+    order = _load_json(a.order, "order file")
+    mandate = _load_json(a.mandate, "mandate file") if a.mandate else _builtin_mandate()
+    if a.prices:
+        try:
+            prices = json.loads(a.prices)
+        except json.JSONDecodeError:
+            raise UserError("--prices is not valid JSON", 'pass an object, for example --prices \'{"AAPL": 222.7}\'') from None
+        if not isinstance(prices, dict) or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in prices.values()):
+            raise UserError("--prices must be a JSON object of ticker -> positive number", 'for example --prices \'{"AAPL": 222.7}\'')
+    else:
+        prices = mandate.get("referencePrices") or {}
     market = SimMarket(prices, as_of=f"{a.as_of}T15:05:00Z")
     checker = G.default_figure_checker()
     gate = G.OrderGate(mandate, market, checker, require_figures=a.require_figures)
@@ -303,7 +412,7 @@ def main(argv=None) -> int:
     p.add_argument("order", help="order JSON file or - for stdin")
     p.add_argument("--mandate")
     p.add_argument("--prices", help='JSON {"AAPL": 222.7}; default: the mandate referencePrices')
-    p.add_argument("--as-of", default="2024-11-06")
+    p.add_argument("--as-of", default="2024-11-06", type=_date_arg, help="decision date YYYY-MM-DD (default 2024-11-06, the demo date)")
     p.add_argument("--daily-total", type=float, default=0.0)
     p.add_argument("--require-figures", action="store_true")
     p.set_defaults(fn=cmd_check_order)
@@ -318,9 +427,16 @@ def main(argv=None) -> int:
     p.add_argument("mandate")
     p.add_argument("--public-key", help="base64 public key or a file holding it")
     p.add_argument("--key", help="private key file (its public half is used)")
-    p.add_argument("--now")
+    p.add_argument("--now", help="evaluate expiry at this ISO timestamp (default: now)")
     p.add_argument("--revoked", nargs="*", help="revoked mandate ids")
     p.set_defaults(fn=cmd_verify_mandate)
+    p = sub.add_parser("policy", help="policy packs: list | show NAME | sign NAME --key KEYFILE --out FILE [--symbols ...]")
+    p.add_argument("action", choices=["list", "show", "sign"])
+    p.add_argument("name", nargs="?")
+    p.add_argument("--key", help="private key file (sign)")
+    p.add_argument("--out", help="where to write the signed mandate (sign; default stdout)")
+    p.add_argument("--symbols", nargs="+", help="replace the template's allow-list (sign)")
+    p.set_defaults(fn=cmd_policy)
     p = sub.add_parser("serve", help="web app: API + dashboard")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8600)
@@ -328,12 +444,27 @@ def main(argv=None) -> int:
     sub.add_parser("init", help="create config dir, signing key, signed mandate, .env template (see init --help)")
     sub.add_parser("doctor", help="check config, key, mandate signature and receiver (see doctor --help)")
     args = list(sys.argv[1:] if argv is None else argv)
-    if args and args[0] == "init":
-        return _init_cmd().main(args[1:])
-    if args and args[0] == "doctor":
-        return _init_cmd().main(["--check", *args[1:]])
-    a = ap.parse_args(argv)
-    return a.fn(a)
+    try:
+        if args and args[0] == "init":
+            return _init_cmd().main(args[1:])
+        if args and args[0] == "doctor":
+            return _init_cmd().main(["--check", *args[1:]], prog="orderguard doctor")
+        a = ap.parse_args(argv)
+        return a.fn(a)
+    except UserError as e:
+        print(f"orderguard: error: {e}", file=sys.stderr)
+        if e.hint:
+            print(f"hint: {e.hint}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        return 130
+    except (G.MandateInvalid, OSError, ValueError, KeyError, TypeError) as e:
+        if os.getenv("ORDERGUARD_DEBUG"):
+            raise
+        print(f"orderguard: error: {type(e).__name__}: {str(e)[:200]}", file=sys.stderr)
+        print("hint: check the files and options you passed; run the command with --help, or set ORDERGUARD_DEBUG=1 for a traceback", file=sys.stderr)
+        return 2
 
 
 def _init_cmd():

@@ -8,6 +8,8 @@ import sys
 from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 from mcp.types import ToolAnnotations
 
 from . import core
@@ -23,35 +25,34 @@ _READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempoten
 _ORDER = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True)
 
 
+class _Server(FastMCP):
+    """FastMCP with two stricter behaviours an LLM caller benefits from: an argument name the tool does not have is an error (a typo in an
+    optional argument such as `daily_total_usd` must not be silently dropped), and a schema violation is reported as `field: problem`
+    lines instead of a raw pydantic dump."""
+
+    async def call_tool(self, name, arguments):
+        tool = self._tool_manager.get_tool(name)
+        if tool is not None:
+            known = set((tool.parameters or {}).get("properties", {}))
+            extra = sorted(set(arguments or {}) - known)
+            if extra:
+                raise ToolError(f"invalid_input: {name} has no argument {', '.join(repr(x) for x in extra)}; its arguments are: {', '.join(sorted(known)) or '(none)'}")
+        try:
+            return await super().call_tool(name, arguments)
+        except ToolError as e:
+            cause = e.__cause__
+            if isinstance(cause, ValidationError):
+                lines = "; ".join(f"{'.'.join(str(x) for x in d['loc']) or 'arguments'}: {d['msg']}"
+                                  for d in cause.errors(include_url=False, include_input=False, include_context=False)[:10])
+                raise ToolError(f"invalid_input: {lines} (see the tool's inputSchema)") from None
+            raise
+
+
 def build_server() -> FastMCP:
-    mcp = FastMCP("orderguard", instructions=INSTRUCTIONS)
-    for fn in (core.screen_text, core.check_order, core.verify_figures, core.get_reported_figure, core.evaluate_rules, core.get_mandate):
+    mcp = _Server("orderguard", instructions=INSTRUCTIONS)
+    for fn in (core.screen_text, core.check_order, core.verify_figures, core.get_reported_figure, core.evaluate_rules, core.get_mandate, core.review_mandate):
         mcp.tool(annotations=_READ_ONLY)(fn)
     mcp.tool(annotations=_ORDER)(core.submit_order)
-
-    @mcp.tool(annotations=_READ_ONLY)
-    def review_mandate(draft: dict | None = None, source: Literal["demo", "configured"] = "configured",
-                       mode: Literal["fit", "estimate", "simulate", "rank", "search"] = "fit", seed: int = 7, agents: int = 150,
-                       steps: int = 400, regime: Literal["normal", "volatile", "poisoned", "collusion"] = "normal",
-                       limits: dict[str, float] | None = None) -> dict:
-        """Review an unsigned draft. Rank or search generates alternatives. Search confirms matches by simulation."""
-        from orderguard_arena.policy_review import load_parent, parent_for_review, review_policy
-        from orderguard_arena.policy_search import search_policies
-        from orderguard_arena.policy_sim import PolicyScenario
-
-        try:
-            batch = mode in ("rank", "search")
-            if draft is None and not batch:
-                return parent_for_review(source)
-            parent, key, revoked = load_parent(source)
-            scenario = PolicyScenario(seed, agents, steps, regime)
-            if batch:
-                if draft is not None:
-                    raise ValueError("Omit the draft when generating alternatives with rank or search.")
-                return search_policies(parent, key, revoked, scenario, mode="rank" if mode == "rank" else "simulate", limits=limits)
-            return review_policy(parent, key, revoked, draft, scenario, mode=mode, limits=limits)
-        except ValueError as exc:
-            return {"error": str(exc)}
 
     @mcp.resource("orderguard://mandate", name="mandate", description="The active mandate summary and whether its signature verifies.",
                   mime_type="application/json")

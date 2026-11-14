@@ -1,5 +1,5 @@
 """A memo with one false revenue number is blocked with evidence, and unusable input gives a clear escalate, never a trace or a pass."""
-from conftest import scripted
+from vsupport import scripted
 
 from orderguard_verify.core.card import text_card
 from orderguard_verify.core.llm import LLMUnavailable

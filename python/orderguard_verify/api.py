@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable
@@ -32,7 +32,7 @@ SCALES = {"billion": 1e9, "bn": 1e9, "b": 1e9, "million": 1e6, "mm": 1e6, "mn": 
 LABELS = {1e9: "USD billions", 1e6: "USD millions", 1e3: "USD thousands", 1.0: "USD"}
 REL_CAP = 0.02        # whatever the figure's precision, never accept more than 2% off
 SPLIT_NOTE = "a stock split changed the per-share basis"
-VALUE = re.compile(r"^\(?\s*(-)?\s*\$?\s*(-)?\s*([\d,]*\.?\d+)\s*([a-zA-Z]*)\s*\)?$")
+VALUE = re.compile(r"^\(?\s*(-)?\s*\$?\s*(-)?\s*([\d,]*\.?\d+)\s*([a-zA-Z]*)\s*\)?$", re.ASCII)
 
 
 class Bad(ValueError):
@@ -82,6 +82,9 @@ def parse_value(value, metric: str, unit) -> tuple[float, float, str, Decimal]:
             if suffix not in SCALES or metric in PER_SHARE:
                 raise Bad(f"cannot read the value {value!r}")
             scale, label = SCALES[suffix], LABELS[SCALES[suffix]]
+        st = value.strip()
+        if st.startswith("(") != st.endswith(")") or (m.group(1) and m.group(2)):
+            raise Bad(f"cannot read the value {value!r}")
         neg = bool(m.group(1) or m.group(2)) or (value.strip().startswith("(") and value.strip().endswith(")"))
         num = Decimal(m.group(3).replace(",", ""))
         num = -num if neg else num
@@ -221,10 +224,28 @@ def check_figures(ticker: str, as_of: date, figures: list[dict], *, store: Truth
     result out: {"figure": <in>, "status": confirmed|contradicted|stale|not_public_yet|unverifiable, "truth": float|None,
                  "unit": str, "source": {"form","filed","url","accession"}|None, "reason": str}
     `truth` is in the figure's own (normalised) unit. `fetch=False` never touches the network. Never raises on bad input."""
-    if isinstance(as_of, str):
-        as_of = date.fromisoformat(as_of)
-    t = normalise_ticker(ticker)
-    store = store or default_store()
+    if not isinstance(figures, (list, tuple)):
+        return [{"figure": figures, "status": "unverifiable", "truth": None, "unit": "", "source": None,
+                 "reason": "key_figures must be a list of figure objects (metric, fiscal_year, value, unit)"}]
+
+    def all_unverifiable(reason: str) -> list[dict]:
+        return [{"figure": f, "status": "unverifiable", "truth": None, "unit": str(f.get("unit") or "") if isinstance(f, dict) else "",
+                 "source": None, "reason": reason} for f in figures]
+
+    try:
+        if isinstance(as_of, datetime):
+            as_of = as_of.date()
+        elif isinstance(as_of, str):
+            as_of = date.fromisoformat(as_of.strip()[:10])
+        if not isinstance(as_of, date):
+            raise TypeError("as_of is not a date")
+    except (ValueError, TypeError):
+        return all_unverifiable(f"the decision date {as_of!r} is not a valid date (use YYYY-MM-DD), so no figure can be checked against what was public")
+    t = normalise_ticker(ticker) if isinstance(ticker, str) else None
+    try:
+        store = store or default_store()
+    except Exception as e:   # noqa: BLE001  an unusable truth store means nothing can be trusted
+        return all_unverifiable(f"the truth store could not be opened ({type(e).__name__}); set OG_TRUTH_DB to a writable path")
     out = []
     for fig in figures:
         try:
@@ -238,7 +259,7 @@ def check_figures(ticker: str, as_of: date, figures: list[dict], *, store: Truth
                         "source": None, "reason": str(e)})
         except Exception as e:   # noqa: BLE001  a checker must say "could not check", never crash an order flow or pass silently
             out.append({"figure": fig, "status": "unverifiable", "truth": None, "unit": "", "source": None,
-                        "reason": f"could not be checked ({type(e).__name__})"})
+                        "reason": f"could not be checked ({type(e).__name__}); the figure source failed, so nothing can be confirmed. Retry, or load the truth store ahead of time"})
     return out
 
 
@@ -246,7 +267,10 @@ def check_text(text: str, ticker: str, as_of: date, *, store: TruthStore | None 
     """The memo pipeline: a model reads `text` into claims, code checks them against filings public on `as_of`, and the decision is
     pass / revise / block / escalate. Returns {"decision","reasons","claims":[{id,text,type,status,reason,key}],"fix","coverage","error"}."""
     if isinstance(as_of, str):
-        as_of = date.fromisoformat(as_of)
+        try:
+            as_of = date.fromisoformat(as_of)
+        except ValueError:
+            return {"decision": "escalate", "reasons": [f"invalid decision date {as_of!r}; use YYYY-MM-DD"], "claims": [], "fix": [], "coverage": "no checkable claims found", "error": "bad as_of"}
     try:
         memo = Memo(ticker=ticker, as_of=as_of)
     except ValueError as e:

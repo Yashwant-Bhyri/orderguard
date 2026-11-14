@@ -46,7 +46,7 @@ function symbol(value: unknown): value is string {
 
 function parseScope(body: Record<string, unknown>): MandateScope {
   const supported = new Set(['symbols', 'sides', 'maxOrderNotionalUsd', 'maxDailyNotionalUsd', 'priceBandPct',
-    'expiresAt', 'referencePrices', 'stepUpAboveUsd']);
+    'expiresAt', 'referencePrices', 'stepUpAboveUsd', 'maxSymbolDailyNotionalUsd', 'maxPositionUsd', 'maxOrdersPerDay']);
   if (Object.keys(body).some((key) => !supported.has(key))) throw new Error('Unsupported policy field');
   const { symbols, sides, priceBandPct, expiresAt } = body;
   if (!Array.isArray(symbols) || symbols.length < 1 || symbols.length > 100 || !symbols.every(symbol)
@@ -71,8 +71,22 @@ function parseScope(body: Record<string, unknown>): MandateScope {
     referencePrices[ticker] = value;
   }
   const stepUpThresholdUsd = body.stepUpAboveUsd === undefined ? undefined : money(body.stepUpAboveUsd, true);
+  const maxSymbolDailyNotionalUsd = body.maxSymbolDailyNotionalUsd === undefined ? undefined : money(body.maxSymbolDailyNotionalUsd);
+  const maxPositionUsd = body.maxPositionUsd === undefined ? undefined : money(body.maxPositionUsd);
+  const orders = body.maxOrdersPerDay;
+  if (orders !== undefined && (typeof orders !== 'number' || !Number.isSafeInteger(orders) || orders < 1 || orders > 1e9)) {
+    throw new Error('Invalid policy order count');
+  }
   return { symbols, sides, maxOrderNotionalUsd, maxDailyNotionalUsd, priceBandPct, expiresAt, referencePrices,
-    ...(stepUpThresholdUsd === undefined ? {} : { stepUpThresholdUsd }) };
+    ...(stepUpThresholdUsd === undefined ? {} : { stepUpThresholdUsd }),
+    ...(maxSymbolDailyNotionalUsd === undefined ? {} : { maxSymbolDailyNotionalUsd }),
+    ...(maxPositionUsd === undefined ? {} : { maxPositionUsd }),
+    ...(orders === undefined ? {} : { maxOrdersPerDay: orders as number }) };
+}
+
+/** An optional limit in a child: if the parent has one the child must have one too, and no looser. */
+function tighter(child: number | undefined, parent: number | undefined): boolean {
+  return parent === undefined || (child !== undefined && child <= parent);
 }
 
 function automaticCap(scope: MandateScope): number {
@@ -108,7 +122,10 @@ export class SignedPaperPolicy {
     if (Date.parse(candidate.expiresAt) <= now || Date.parse(candidate.expiresAt) > Date.parse(parent.expiresAt)
         || !candidate.symbols.every((s) => parent.symbols.includes(s)) || !candidate.sides.every((s) => parent.sides.includes(s))
         || candidate.maxOrderNotionalUsd > parent.maxOrderNotionalUsd || candidate.maxDailyNotionalUsd > parent.maxDailyNotionalUsd
-        || candidate.priceBandPct > parent.priceBandPct || automaticCap(candidate) > automaticCap(parent)
+        || candidate.priceBandPct > parent.priceBandPct
+        || !tighter(candidate.maxSymbolDailyNotionalUsd, parent.maxSymbolDailyNotionalUsd)
+        || !tighter(candidate.maxPositionUsd, parent.maxPositionUsd)
+        || !tighter(candidate.maxOrdersPerDay, parent.maxOrdersPerDay) || automaticCap(candidate) > automaticCap(parent)
         || !candidate.symbols.every((s) => candidate.referencePrices?.[s] === parent.referencePrices?.[s])) {
       throw new Error('The signed draft does not fit the signed parent policy');
     }

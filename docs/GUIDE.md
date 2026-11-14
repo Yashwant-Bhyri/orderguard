@@ -8,7 +8,7 @@ Contents: [Concepts](#concepts) | [Install](#install) | [Configure keys](#config
 
 **The problem.** An AI trading agent reads web pages, feeds and filings, and some of it is false. Making the model un-foolable does not work well enough, so OrderGuard puts code between the model and the money. Code decides what the agent may do, using numbers the agent cannot touch.
 
-**Mandate.** A small JSON file the human signs with an Ed25519 key. It says which symbols and sides are allowed, the per-order and daily dollar caps, the allowed price band, the order size above which a human must step in, and when it expires. Any edit after signing invalidates the signature, and an unsigned, altered or expired mandate refuses every order. Create one with `orderguard init`; edit it, then `orderguard init --resign`.
+**Mandate.** A small JSON file the human signs with an Ed25519 key. It says which symbols and sides are allowed, the per-order and daily dollar caps, the allowed price band, the order size above which a human must step in, and when it expires. Any edit after signing invalidates the signature, and an unsigned, altered or expired mandate refuses every order. Create one with `orderguard init`; edit it, then `orderguard init --resign`. Three optional signed limits cap the portfolio rather than the order flow: `maxSymbolDailyNotionalUsd` (one symbol's notional per day, allowed and held orders alike, so many agents cannot split one big position on one ticker), `maxPositionUsd` (absolute net position in one symbol after the order, at the trusted price; held orders count in the direction that grows the exposure) and `maxOrdersPerDay` (non-denied orders per day, a backstop against a runaway agent). A missing field means no limit and leaves an old mandate's bytes, signature and id unchanged. The gate takes their state as `symbol_daily_usd`, `positions`, `held_qty` and `orders_today`, and refuses when a limit is set and its state is missing; the receiver computes them from its ledger inside the commit transaction (deny codes `symbol_daily_cap`, `position_cap`, `order_count_cap`). A sub-mandate (draft) can never loosen one of these limits or drop one its parent has.
 
 **Trusted price.** Orders are sized at a price from a source the agent cannot write to (a market quote or the mandate's `referencePrices`), never at the limit price the order carries. A fake "10-for-1 split" that makes 440 shares at "$22.30" look like $9,812 is $97,988 at the trusted $222.70, and is refused.
 
@@ -93,6 +93,18 @@ Live calls default to DeepSeek direct; set `DEEPSEEK_API_KEY` or point `OG_ENV_F
 6. Edit `var/orderguard/mandate.json` to your own limits and symbols, then `orderguard init --resign`. The Overview page shows your configured mandate and whether its signature is valid.
 
 Without a provider key, the model screen (L2) reports *unavailable* instead of an error. L1, L5, L6 and L7 still work, since they are code.
+
+## Policy packs
+
+`policies/` holds four unsigned templates (`conservative-equities`, `balanced-equities`, `active-equities`, `crypto-sleeve`) that use the portfolio limits above. They are starting points, not advice; the numbers are in [policies/README.md](../policies/README.md).
+
+```bash
+orderguard policy list
+orderguard policy show balanced-equities
+orderguard policy sign balanced-equities --key var/orderguard/signing.key --out var/orderguard/mandate.json [--symbols AAPL MSFT]
+```
+
+`sign` resolves `ttlHours` into `expiresAt`, refuses a template whose limits contradict each other (for example a per-order cap above the daily cap), and signs with your key. The templates ship inside the installed package.
 
 ## Using the dashboard
 
@@ -179,7 +191,11 @@ See [OPERATIONS.md](OPERATIONS.md) for Docker, the receiver bridge and hardening
 
 ## Troubleshooting
 
-`orderguard doctor` prints one `problem:` line per issue and exits 1 if there are any. It never prints a key value.
+`orderguard doctor` prints one `problem:` line per broken thing and exits 1 if there are any. A missing provider key or app token is only a `note:` (fine for a first local replay-mode run; exit 0); `orderguard doctor --strict` fails on notes too, which suits CI or a deployment check. It never prints a key value.
+
+Command-line mistakes (missing or malformed JSON file, bad date, bad `--prices`) print one `orderguard: error:` line with a `hint:` and exit 2; set `ORDERGUARD_DEBUG=1` for a traceback. If `orderguard serve` cannot bind its port it says so and suggests `--port`. In the dashboard or API, 429 means slow down (wait the seconds in `Retry-After`), 503 means another heavy run is in progress, 504 means the run was too big: use fewer agents or steps.
+
+`scripts/quickstart.sh` keeps going with the existing install when pip cannot reach the package index (offline, proxy, TLS inspection) and says so.
 
 | Message or symptom | Cause and fix |
 |---|---|

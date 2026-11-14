@@ -2,6 +2,10 @@
 // OrderGuard receiver bridge (CONTRACT 5.1).
 //   node receiver/bridge/serve.mjs [--port P] --mandate mandate.json [--step-up-usd N]
 //                                [--anchor-ttl-sec S] [--anchor-renew-frac F|off]
+//                                [--ledger FILE|:ephemeral]     (or ORDERGUARD_LEDGER)
+//
+// Without --ledger the effect ledger lives in a temp directory removed on exit (demo). With --ledger it is a
+// persistent SQLite file: single writer (lock file), hash-chain verified before serving, refused if tampered.
 //
 // Boots the r5 receiver on a free loopback port with an isolated temp ledger, registers a synthetic
 // owner passkey, authorises ONE human mandate through the same synthetic WebAuthn flow as the
@@ -21,6 +25,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
 import { register } from "tsx/esm/api";
 import { virtualPasskey, registrationResponse, authenticationResponse } from "./synthetic-passkey.mjs";
+import { HttpError, failure, readJsonBody, scrub } from "./http-util.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
@@ -40,7 +45,7 @@ async function jsonFetch(base, path, body) {
     method: body === undefined ? "GET" : "POST",
     headers: { origin: new URL(base).origin, ...(body === undefined ? {} : { "content-type": "application/json" }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.timeout(8_000),
   });
   const payload = await res.json();
   if (!res.ok) throw new Error(`${path} HTTP ${res.status}`);
@@ -75,6 +80,7 @@ async function main() {
   const mandateExpiresMs = Date.parse(mandate.expiresAt);
   if (signedPolicy && Date.now() >= mandateExpiresMs) throw new Error("The signed parent policy is expired");
   let core = null;
+  let authorityImpl = async () => false; // fails closed until r5 is up
   const parentUnrevoked = async () => {
     if (!revocations) return true;
     try {
@@ -86,17 +92,49 @@ async function main() {
     } catch (error) { return error?.code === "ENOENT"; }
   };
   if (!await parentUnrevoked()) throw new Error("The signed parent is revoked or its revocation list is invalid");
+  // ---- the effect ledger: opened and verified first, before any port or child process exists ----
+  const ledgerRaw = arg("--ledger") ?? process.env.ORDERGUARD_LEDGER;
+  const persistent = ledgerRaw !== undefined && ledgerRaw !== "" && ledgerRaw !== ":ephemeral";
+  const scratch = await mkdtemp(join(await realpath(tmpdir()), "orderguard-bridge-"));
+  // Stable across restarts: orders, idempotency keys and order ids are bound to it. (The r5 anchor id changes every start.)
+  const files = await import(pathToFileURL(join(root, "receiver/core/ledger-files.ts")).href);
+  const mandateId = signedPolicy ? signedPolicy.parentId : files.demoMandateId(mandate);
+  let releaseLedger = () => {};
+  let ledgerPath = join(scratch, "receiver-core.sqlite");
+  try {
+    if (persistent) {
+      ledgerPath = files.prepareLedgerPath(ledgerRaw);
+      releaseLedger = files.acquireLedgerLock(ledgerPath);
+    }
+    process.on("exit", () => releaseLedger());
+    core = new ReceiverCore({ ledgerPath, mandateId, mandate, signedPolicy,
+      authority: { isActive: () => authorityImpl() }, webauthn: { origin: "http://127.0.0.1:0", rpId: "127.0.0.1" } });
+  } catch (error) {
+    releaseLedger();
+    await rm(scratch, { recursive: true, force: true });
+    const detail = error?.problems?.length > 1 ? ` (${error.problems.length} problems found; run ledger-tool.mjs verify for the list)` : "";
+    process.stderr.write(`bridge failed: ${scrub(error?.message || error)}${detail}\n`);
+    process.exit(1);
+  }
+  const head = core.verifyLedger();
+  process.stderr.write(`bridge ledger: ${persistent ? "persistent" : "ephemeral"}, ${head.orders} orders, ${head.events} events, ${core.revoked ? "REVOKED (no order can commit; use a new ledger)" : "active"}\n`);
+
   const wanted = arg("--port");
   const port = wanted && wanted !== "0" ? Number(wanted) : await freePort();
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error("--port must be 0..65535");
+  core.setWebauthn({ origin: `http://127.0.0.1:${port}`, rpId: "127.0.0.1" });
 
-  const scratch = await mkdtemp(join(await realpath(tmpdir()), "orderguard-bridge-"));
   let r5 = null;
   let http = null;
   let closing = false;
+  let inflight = 0;
   const shutdown = async (code) => {
     if (closing) return; closing = true;
-    try { http?.close(); } catch {}
+    try { http?.close(); http?.closeIdleConnections?.(); } catch {}
+    // Let requests already inside the core finish (each is one atomic transaction), but not forever.
+    for (let i = 0; inflight > 0 && i < 50; i += 1) await new Promise((ok) => setTimeout(ok, 100));
     try { core?.close(); } catch {}
+    releaseLedger();
     if (r5 && r5.exitCode === null) {
       r5.kill("SIGTERM");
       await new Promise((ok) => { const t = setTimeout(() => { r5.kill("SIGKILL"); ok(); }, 2000); r5.once("exit", () => { clearTimeout(t); ok(); }); });
@@ -150,7 +188,6 @@ async function main() {
       return { id, expiresAt: Number(authorized.mandate.expiresAt), createdAt: Number(authorized.mandate.createdAt) };
     };
     const first = await authorizeAnchor();
-    const mandateId = first.id;
     const anchors = [first]; // every anchor ever authorised; /revoke revokes them all
     let current = first;
     let renewals = 0;
@@ -164,6 +201,7 @@ async function main() {
     };
     const r5MandateActive = () => anchorActiveAt(current.id);
     const parentAuthorityActive = async () => await parentUnrevoked() && await r5MandateActive();
+    authorityImpl = parentAuthorityActive;
 
     const schedule = () => {
       clearTimeout(timer);
@@ -202,43 +240,49 @@ async function main() {
 
     // ---- the receiver core, with the same owner passkey registered for step-up approval ----
     const coreOrigin = `http://127.0.0.1:${port}`;
-    core = new ReceiverCore({
-      ledgerPath: join(scratch, "receiver-core.sqlite"), mandateId, mandate, signedPolicy,
-      authority: { isActive: parentAuthorityActive }, webauthn: { origin: coreOrigin, rpId: "127.0.0.1" },
-    });
     await core.registerOwnerPasskey(registrationResponse(passkey, core.passkeyRegistrationChallenge(), coreOrigin));
 
     schedule();
 
     // ---- HTTP API (loopback only) ----
-    const send = (res, code, body) => { const text = JSON.stringify(body); res.writeHead(code, { "content-type": "application/json", "content-length": Buffer.byteLength(text) }); res.end(text); };
-    const readBody = (req) => new Promise((ok, bad) => {
-      const chunks = []; let n = 0;
-      req.on("data", (c) => { n += c.length; if (n > 65536) { bad(new Error("body too large")); req.destroy(); } else chunks.push(c); });
-      req.on("end", () => { try { ok(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch { bad(new Error("invalid JSON")); } });
-      req.on("error", bad);
-    });
+    const send = (res, code, body) => {
+      if (res.headersSent) return;
+      const text = JSON.stringify(body);
+      res.writeHead(code, { "content-type": "application/json", "content-length": Buffer.byteLength(text), "cache-control": "no-store",
+        ...(code === 413 || code === 408 ? { connection: "close" } : {}) });
+      res.end(text);
+    };
+    const orderFrom = (b) => ({ symbol: b.symbol, side: b.side, quantity: b.quantity, limitPrice: b.limitPrice, clientOrderId: b.clientOrderId });
     let revokeInFlight = null;
     http = createHttpServer(async (req, res) => {
       const host = (req.headers.host || "").toLowerCase();
       if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return send(res, 403, { error: "loopback only" });
-      const path = new URL(req.url || "/", "http://x").pathname;
+      if (closing) return send(res, 503, { error: "shutting_down", detail: "The receiver is stopping. Retry against the restarted receiver with the same clientOrderId." });
+      inflight += 1;
+      res.once("close", () => { inflight -= 1; });
+      let path = "/";
+      try { path = new URL(req.url || "/", "http://x").pathname; } catch { return send(res, 400, { error: "invalid_url" }); }
+      let domainStatus = 500;
       try {
-        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, issuerMandateActive: await parentAuthorityActive().catch(() => false), anchorId: current.id, anchorExpiresAt: new Date(current.expiresAt).toISOString(), anchorRenewals: renewals, anchorRenewalError: renewalError });
+        if (req.method === "GET" && path === "/health") return send(res, 200, { status: "ready", mandateId, revoked: core.revoked, ledger: persistent ? "persistent" : "ephemeral", issuerMandateActive: await parentAuthorityActive().catch(() => false), anchorId: current.id, anchorExpiresAt: new Date(current.expiresAt).toISOString(), anchorRenewals: renewals, anchorRenewalError: renewalError });
         if (req.method === "GET" && path === "/snapshot") { const s = core.snapshot(); return send(res, 200, { orders: s.orders, ledgerIntegrity: s.ledgerIntegrity, revoked: s.revoked, usedNotionalUsd: s.usedNotionalUsd }); }
         if (signedPolicy && req.method === "GET" && path === "/policy") return send(res, 200, core.policy());
         if (signedPolicy && req.method === "POST" && path === "/policy/activate") {
-          const proof = await readBody(req);
+          const proof = await readJsonBody(req);
           const lapsed = await ensureAnchor();
           if (lapsed) return send(res, 409, { error: lapsed });
+          domainStatus = 400; // signature, revision and containment failures are the caller's, with a message that says what to fix
           return send(res, 200, await core.activatePolicy(proof));
         }
         if (req.method === "POST" && path === "/propose") {
-          const b = await readBody(req);
+          const order = orderFrom(await readJsonBody(req));
+          // A retry (after a timeout, a dropped reply or a restart) is answered from the ledger first, so it sees the original
+          // outcome even while the anchor is unavailable, and can never become a second effect.
+          const prior = core.priorDecision(order);
+          if (prior) return send(res, 200, prior);
           const lapsed = await ensureAnchor();
           if (lapsed) return send(res, 200, denyAnchor(lapsed));
-          const d = await core.propose({ symbol: b.symbol, side: b.side, quantity: b.quantity, limitPrice: b.limitPrice, clientOrderId: b.clientOrderId });
-          return send(res, 200, d);
+          return send(res, 200, await core.propose(order));
         }
         if (req.method === "POST" && path === "/revoke") {
           // Local, durable and synchronous first: nothing can commit after this line. Then the owner-passkey revocation at r5.
@@ -258,25 +302,33 @@ async function main() {
           return send(res, 200, { revoked: true });
         }
         if (req.method === "POST" && path === "/approve") {
-          const b = await readBody(req);
-          if (typeof b.orderId !== "string") return send(res, 400, { error: "orderId required" });
+          const b = await readJsonBody(req);
+          if (typeof b.orderId !== "string" || b.orderId.length > 64) return send(res, 400, { error: "orderId_required", detail: "Send {orderId, authorization}." });
+          const done = core.priorApproval(b.orderId, b.authorization);
+          if (done) return send(res, 200, done);
           const lapsed = await ensureAnchor();
           if (lapsed) return send(res, 200, denyAnchor(lapsed));
           let ch;
           try { ch = core.beginApproval(b.orderId, b.authorization); } catch (e) { return send(res, 200, { decision: "denied", reason: e.code || "not_held", reasons: [e.code || "not_held"], ledgerEffect: false }); }
           return send(res, 200, await core.approve(b.orderId, authenticationResponse(passkey, ch.challenge, coreOrigin), b.authorization));
         }
-        return send(res, 404, { error: "not found" });
+        return send(res, 404, { error: "not_found" });
       } catch (e) {
-        return send(res, 400, { error: String(e?.message || e).slice(0, 200) });
+        const [status, body] = failure(e, { domainStatus });
+        if (status >= 500) process.stderr.write(`bridge error on ${req.method} ${path}: ${scrub(e?.stack || e?.message || e).split("\n").slice(0, 3).join(" | ")}\n`);
+        return send(res, status, body);
       }
     });
+    http.headersTimeout = 10_000;
+    http.requestTimeout = 30_000;
+    http.keepAliveTimeout = 5_000;
+    http.maxConnections = 256;
     await new Promise((ok, bad) => { http.once("error", bad); http.listen(port, "127.0.0.1", ok); });
     process.stdout.write(`READY ${port}\n`);
   } catch (error) {
-    process.stderr.write(`bridge failed: ${error?.message || error}\n`);
+    process.stderr.write(`bridge failed: ${scrub(error?.message || error)}\n`);
     await shutdown(1);
   }
 }
 
-main().catch((e) => { process.stderr.write(`bridge failed: ${e?.message || e}\n`); process.exit(1); });
+main().catch((e) => { process.stderr.write(`bridge failed: ${scrub(e?.message || e)}\n`); process.exit(1); });

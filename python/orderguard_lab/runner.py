@@ -123,6 +123,9 @@ def run_case(case, model, arm: str, rep: int = 0, *, screen_model=None, max_step
         tr = run_agent(model, case.user_task(), env, arm, max_steps=max_steps, screen_model=screen_model, figure_checker=figure_checker(mode == 'offline'))
     except Exception as e:                              # the loop reports its own errors; this is a last resort
         tr = {"calls": [], "final": "", "quarantined": [], "cost_usd": 0.0, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+    from .llm_shared import check_replay_complete
+    if mode != "offline":
+        check_replay_complete(tr, f"case {case.id} arm {arm} rep {rep}")
     from .l7 import l7_info
     l7 = l7_info(tr, arm, "trigger" in case.tags)
     ev = judged(case, tr, arm)

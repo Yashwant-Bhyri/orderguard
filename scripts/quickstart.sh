@@ -60,8 +60,15 @@ fi
 if [ ! -x .venv/bin/orderguard ] || { [ -f .venv/.og-installed ] && [ pyproject.toml -nt .venv/.og-installed ]; }; then
   echo "installing OrderGuard (this can take a minute)..."
   .venv/bin/python -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
-  .venv/bin/python -m pip install --quiet -e '.[dev]' \
-    || die "pip install failed." "check your network connection (pip needs to download packages) and re-run this script."
+  if .venv/bin/python -m pip install --quiet -e '.[dev]'; then
+    :
+  elif [ -x .venv/bin/orderguard ] && .venv/bin/python -c 'import orderguard_guard, orderguard_app, fastapi' 2>/dev/null; then
+    # A refresh that cannot reach the package index (offline, proxy, TLS inspection) must not block a working install.
+    echo "WARNING: could not refresh the install (no route to the package index?); continuing with the existing one." >&2
+    echo "         To force a clean reinstall later: rm -rf .venv and re-run this script with network access." >&2
+  else
+    die "pip install failed." "check your network connection (pip needs to download packages; behind a proxy set HTTPS_PROXY, and for TLS errors check your certificates), then re-run this script."
+  fi
   : > .venv/.og-installed
 else
   : > .venv/.og-installed

@@ -75,6 +75,13 @@ def _parse(raw: dict, *, signed: bool) -> tuple[Mandate, dt.datetime]:
     _number(raw.get("priceBandPct"), "priceBandPct", maximum=100, zero=True)
     if raw.get("stepUpAboveUsd") is not None:
         _number(raw["stepUpAboveUsd"], "stepUpAboveUsd", cents=True, zero=True)
+    for name in ("maxSymbolDailyNotionalUsd", "maxPositionUsd"):
+        if raw.get(name) is not None:
+            _number(raw[name], name, cents=True)
+    if raw.get("maxOrdersPerDay") is not None:
+        n = raw["maxOrdersPerDay"]
+        if type(n) is not int or not 1 <= n <= 1_000_000_000:
+            raise PolicyInputError("maxOrdersPerDay", "Use a positive whole number.")
     refs = raw.get("referencePrices", {})
     if not isinstance(refs, dict) or refs.keys() - symbols:
         raise PolicyInputError("referencePrices", "Reference prices must be keyed by an allowed symbol.")
@@ -92,6 +99,11 @@ def _automatic_cap(mandate: Mandate) -> float:
     if mandate.stepUpAboveUsd is None:
         return mandate.maxOrderNotionalUsd
     return min(mandate.maxOrderNotionalUsd, mandate.stepUpAboveUsd)
+
+
+def _tighter(child, parent) -> bool:
+    """An optional limit: the parent has none -> anything goes; the parent has one -> the child must have one and not exceed it."""
+    return parent is None or (child is not None and child <= parent)
 
 
 def check_mandate_fit(parent: dict, draft: dict, trusted_key: Ed25519PublicKey, *, now: dt.datetime | None = None,
@@ -127,6 +139,12 @@ def check_mandate_fit(parent: dict, draft: dict, trusted_key: Ed25519PublicKey, 
         ("daily_cap", "maxDailyNotionalUsd", candidate.maxDailyNotionalUsd <= maximum.maxDailyNotionalUsd, "The draft raises the daily cap."),
         ("price_band", "priceBandPct", candidate.priceBandPct <= maximum.priceBandPct, "The draft widens the price band."),
         ("step_up", "stepUpAboveUsd", _automatic_cap(candidate) <= _automatic_cap(maximum), "The draft permits larger orders without human approval."),
+        ("symbol_daily_cap", "maxSymbolDailyNotionalUsd", _tighter(candidate.maxSymbolDailyNotionalUsd, maximum.maxSymbolDailyNotionalUsd),
+         "The draft raises or drops the parent's per-symbol daily cap."),
+        ("position_cap", "maxPositionUsd", _tighter(candidate.maxPositionUsd, maximum.maxPositionUsd),
+         "The draft raises or drops the parent's position cap."),
+        ("order_count_cap", "maxOrdersPerDay", _tighter(candidate.maxOrdersPerDay, maximum.maxOrdersPerDay),
+         "The draft raises or drops the parent's orders-per-day cap."),
         ("expiry", "expiresAt", now < end <= expires, "The draft must be active and expire no later than the parent."),
         ("reference_prices", "referencePrices",
          candidate.referencePrices == {s: maximum.referencePrices[s] for s in candidate.symbols if s in maximum.referencePrices},

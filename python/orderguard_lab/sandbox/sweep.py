@@ -58,6 +58,7 @@ def who_of(model, policy) -> str:
 
 def run_job(seed: int, name: str, arm: str, *, model=None, policy: str = "mixed", fixed: dict | None = None, rep: int = 0, max_steps: int = 12, llm=None) -> dict:
     from orderguard_guard.agent import run_agent
+    from ..llm_shared import check_replay_complete
     sc = compiler.compile_case(seed, name, fixed=fixed)
     offline = model is None
     agent = PolicyLLM(policy, seed=seed * 7919 + rep) if offline else (llm or model)
@@ -69,6 +70,7 @@ def run_job(seed: int, name: str, arm: str, *, model=None, policy: str = "mixed"
             tr = run_agent(agent, sc.task, env, arm, max_steps=max_steps, figure_checker=checker)
         except Exception as e:
             tr = {"calls": [], "final": "", "quarantined": [], "cost_usd": 0.0, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+        check_replay_complete(tr, f"sweep seed {seed} {name} arm {arm} ({label})")        # strict replay: a missing recording raises, never an excluded error row
         runs[label] = (tr, time.time() - t0, env)
     atr, _, aenv = runs["attack"]
     ttr, _, tenv = runs["twin"]

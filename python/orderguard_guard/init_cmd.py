@@ -103,8 +103,22 @@ def resign(directory: Path) -> None:
     (d / MANDATE_FILE).write_text(json.dumps(sign_mandate(body, priv), indent=2) + "\n")
 
 
+NOTICE_MARKERS = ("is not set (in the environment", "ORDERGUARD_APP_TOKEN is not set")      # fine for a first local run, required later
+
+
 def doctor(directory: Path | None = None, *, check_receiver: bool = True, now=None) -> list[str]:
     """Validate the configuration. Returns problems as plain sentences (empty list = healthy). Never includes a secret."""
+    return _diagnose(directory, check_receiver=check_receiver, now=now)
+
+
+def diagnose(directory: Path | None = None, *, check_receiver: bool = True, now=None) -> tuple[list[str], list[str]]:
+    """(problems, notices). A problem means something is broken or unsafe; a notice is a missing optional setting (a provider key,
+    an app token) that only matters for live model calls or for exposing the app beyond this machine."""
+    problems = _diagnose(directory, check_receiver=check_receiver, now=now)
+    return ([p for p in problems if not any(m in p for m in NOTICE_MARKERS)], [p for p in problems if any(m in p for m in NOTICE_MARKERS)])
+
+
+def _diagnose(directory: Path | None = None, *, check_receiver: bool = True, now=None) -> list[str]:
     d = Path(directory) if directory else default_dir()
     problems: list[str] = []
     if not d.is_dir():
@@ -183,37 +197,58 @@ def _read_env(path: Path) -> dict[str, str]:
     return out
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="orderguard init", description="Create or check the OrderGuard configuration directory.")
+def main(argv: list[str] | None = None, prog: str = "orderguard init") -> int:
+    ap = argparse.ArgumentParser(prog=prog, description="Create or check the OrderGuard configuration directory.")
     ap.add_argument("--dir", default=None, help="config directory (default $ORDERGUARD_HOME or ./var/orderguard)")
     ap.add_argument("--provider", choices=sorted(PROVIDERS), default="deepseek")
     ap.add_argument("--force", action="store_true", help="overwrite existing files (generates a new signing key)")
     ap.add_argument("--resign", action="store_true", help="re-sign an edited mandate.json with the existing key")
     ap.add_argument("--check", action="store_true", help="validate an existing directory instead of creating one")
+    ap.add_argument("--strict", action="store_true", help="with --check: also fail on notices (a missing provider key or app token)")
+    if prog.endswith("doctor"):
+        ap = argparse.ArgumentParser(prog=prog, description="Check the OrderGuard configuration directory: key, signed mandate, permissions, optional settings and the receiver. "
+                                     "Exit 0 when nothing is broken.")
+        ap.add_argument("--dir", default=None, help="config directory (default $ORDERGUARD_HOME or ./var/orderguard)")
+        ap.add_argument("--strict", action="store_true", help="also fail on notices (a missing provider key or app token)")
+        ap.add_argument("--check", action="store_true", default=True, help=argparse.SUPPRESS)
+        ap.set_defaults(provider="deepseek", force=False, resign=False)
     a = ap.parse_args(argv)
     d = Path(a.dir) if a.dir else default_dir()
     if a.resign:
         try:
             resign(d)
-        except (OSError, ValueError) as e:
-            print(f"cannot re-sign: {type(e).__name__}")
+        except FileNotFoundError:
+            print(f"cannot re-sign: {KEY_FILE} or {MANDATE_FILE} is missing in {d}: run `orderguard init` first (or pass --dir)")
             return 1
-        print(f"re-signed {d / MANDATE_FILE}")
+        except json.JSONDecodeError as e:
+            print(f"cannot re-sign: {MANDATE_FILE} is not valid JSON ({e.msg}, line {e.lineno}, column {e.colno}): fix the edit and run `orderguard init --resign` again")
+            return 1
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            print(f"cannot re-sign: {type(e).__name__}: check {KEY_FILE} and {MANDATE_FILE} in {d}")
+            return 1
+        print(f"re-signed {d / MANDATE_FILE}; run `orderguard doctor` to confirm")
         return 0
     if a.check:
-        problems = doctor(d)
-        if not problems:
-            print(f"ok: configuration in {d} is healthy")
-            return 0
-        print(f"{len(problems)} problem{'s' if len(problems) != 1 else ''} found in {d}:")
+        problems, notices = diagnose(d)
         for p in problems:
             print("problem:", p)
+        for n in notices:
+            print("note:", n)
+        bad = problems + (notices if a.strict else [])
+        if not bad:
+            print(f"ok: configuration in {d} is healthy" + (f" ({len(notices)} optional setting{'s' if len(notices) != 1 else ''} not set: fine for local, replay-mode use)" if notices else ""))
+            return 0
+        print(f"{len(problems)} problem{'s' if len(problems) != 1 else ''} found in {d}." if problems else f"{len(notices)} notice(s) treated as failures (--strict).")
         print("fix them, then run `orderguard doctor` again. See docs/GUIDE.md (Troubleshooting) for each message.")
         return 1
     try:
         init(d, a.provider, a.force)
     except FileExistsError as e:
         print(f"refusing: {e}")
+        print("to fix a config problem use `orderguard doctor`; to start over choose another directory with --dir")
+        return 1
+    except OSError as e:
+        print(f"cannot create {d}: {e.strerror or type(e).__name__}: choose a writable location with --dir or ORDERGUARD_HOME")
         return 1
     print(f"created {d}: {KEY_FILE} (mode 600, not shown), {PUB_FILE}, {MANDATE_FILE} (signed), {ENV_FILE} (names only)")
     print("next steps:")

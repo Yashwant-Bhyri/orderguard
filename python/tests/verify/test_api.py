@@ -2,7 +2,7 @@
 from datetime import date
 
 import pytest
-from conftest import D, scripted
+from vsupport import D, scripted
 from facts_fixtures import APPLE, NVIDIA, store_for
 
 from orderguard_verify import api

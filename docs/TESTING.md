@@ -7,13 +7,15 @@ reaching the network. Randomised tests use `random.Random(<fixed seed>)`, so a f
 
 ```
 bash scripts/check_all.sh                      # everything a reviewer needs, one PASS/FAIL table with timings
-OG_LLM=replay .venv/bin/python -m pytest -q    # the Python suite alone (about 56 s; the receiver e2e adds about 4 s when it can run)
+bash scripts/check_all.sh --quick              # local iteration: skips slow and e2e tests, npm, result regeneration and the secret scan
+OG_LLM=replay .venv/bin/python -m pytest -q    # the Python suite alone (about 90 s; the receiver e2e adds about 4 s when it can run)
 OG_LLM=replay .venv/bin/python -m pytest -q python/tests/safety       # the safety suite alone (about 20 s)
 npm run check                                  # TypeScript receiver: unit, quickstart, 1,000-seed invariants, secret scan
 ```
 
-`check_all.sh` runs: pytest (all), `og-lab tables --check`, `og-lab sandbox describe --check`, `npm run check`, the secret scan. It
-exits non-zero if any step fails. `CHECK_ALL_SKIP="npm"` skips steps whose name contains a listed word; `CHECK_ALL_VERBOSE=1` streams output.
+`check_all.sh` runs: pytest (all), `og-lab tables --check`, `og-lab sandbox describe --check`, `og-arena verify` (every number in the README and
+docs against the committed results, then the arena results regenerated from their seeds), `npm run check`, the secret scan. It exits non-zero if
+any step fails, and for each failure prints the step and the exact command to rerun it. `--quick` is for iteration only; the full mode is the reviewer gate. `CHECK_ALL_SKIP="npm"` skips steps whose name contains a listed word; `CHECK_ALL_VERBOSE=1` streams output.
 
 Markers (registered in `python/tests/conftest.py`): `slow` (a few seconds, still offline) and `e2e` (starts the real receiver bridge).
 The e2e tests **skip with a reason** when `node` is missing or the environment forbids binding a loopback port.
@@ -32,13 +34,23 @@ The e2e tests **skip with a reason** when `node` is missing or the environment f
 | `safety/test_attack_corpus.py` (162; marked `slow`, about 12 s) | all | Every one of the lab's cases (A-F plus controls) through the offline credulous agent: **full** arm executes zero harm, zero transfers, no success; **gate_only** never transfers and keeps every executed order on the allow-list within the cap; all clean controls complete in full; the naive arm is hurt (so the corpus is not vacuous). |
 | `safety/test_sandbox_determinism.py` (32) | sandbox | Same seed gives the same world digest, scenario and offline run record (also across thread schedules); benign-twin parity holds for every technique over 8 seeds. |
 | `e2e/test_receiver_e2e.py` (14) | L8 | Against the real TypeScript bridge: allowed fill, duplicate is a replay with no second effect, refused orders (unlisted, fake split price, sell, oversize, zero/negative) leave the ledger untouched, daily cap, oversize body, malformed bodies, router + paper broker through the receiver, after `/revoke` nothing fills and ledger integrity holds, a stopped bridge fails closed. |
+| `guard/test_portfolio_limits.py` (35) | L5 portfolio | The optional signed limits `maxSymbolDailyNotionalUsd`, `maxPositionUsd` and `maxOrdersPerDay`: each allows at its boundary and refuses one cent (or one order) over; missing or invalid state fails closed; held orders count toward the position in the direction that grows it; a mandate without the fields keeps its bytes, id and behaviour; `Envelope.check` matches `OrderGate` on 1,500 random states per limit combination; 12 parallel threads never pass a cap; sub-mandates can only tighten (Python `mandate_fit` and TypeScript `paper-policy`); a mandate signed in Python verifies in TypeScript and the reverse; policy packs sign and validate. |
+| `guard/test_classifier_limits.py` (4) | L2 local | Long lines are read in overlapping windows; text past the classifier's bounds (characters or lines) is never returned as confidently clean, so the cascade escalates it to the model screen; a decoded Unicode-tag payload is always scored. |
+| `risk/` (order-risk layer) | risk | Tighten-only invariant over random inputs, JSON trees equal sklearn exactly, point-in-time features, deterministic shipped model under 5 MB, latency budget, one-shot weight edits hold the labelled pattern without retraining, programmed units cannot be explained away by data, the arena replay only tightens. |
+| `receiver/test/portfolio-limits.test.ts`, `receiver/test/ledger.test.ts` (npm) | L8 | The same portfolio limits inside the receiver's `BEGIN IMMEDIATE` transaction in integer cents, concurrent orders never passing a cap; the hash-chained ledger verifies on open, detects any edited, dropped or reordered row, and keeps idempotency across restarts. |
 | `guard/`, `lab/`, `verify/`, `app/` (pre-existing example tests) | all | Hand-written scenarios: the exact prototype attacks, CLI, init/doctor, classifier, DoS defence, judge, tables, L6 pipeline, web app API. |
 | `receiver/test/*`, `receiver/invariants/` (npm) | L8 | Receiver core and bridge unit tests; 1,000 seeded fault campaigns check the receiver's safety invariants (see `docs/receiver/invariants.md`). |
 
-At the current checkout, pytest collects 744 Python tests; the full offline run completed with 743 passed and 1 skipped. The suite
-has no expected-failure markers; historical regressions that once used strict `xfail` are now covered by ordinary passing tests.
-The receiver checks run through `npm test`, followed by the separate 1,000-seed invariant campaign in `npm run check`. The
-safety suite generates well over 20,000 randomised cases in total.
+The suite has no expected-failure markers; historical regressions that once used strict `xfail` are now covered by ordinary passing tests.
+Test counts change with every commit, so none is quoted here: `pytest --collect-only -q | tail -1` gives the current number and the full run
+prints its own pass, skip and fail totals. The receiver checks run through `npm test`, followed by the separate 1,000-seed invariant campaign in
+`npm run check`.
+
+Reproducibility and robustness suites in this area: `arena/test_reproducibility.py` (documents match results, baseline regenerates byte for byte,
+hash-seed independence, brute-force Pareto check, truncated and corrupt logs and recordings, feed retries and backoff),
+`lab/test_strict_replay_and_parity.py` (a missing recording raises `ReplayIncomplete` under `OG_REPLAY_STRICT=1`, offline sweeps and the corpus
+never call a model, damaged raw results fail `og-lab tables --check`, matched controls for every family, twin parity for every technique over 40 seeds
+and every parameter value).
 
 ## Resolved regression findings
 
@@ -49,7 +61,7 @@ The suite has no expected-failure markers. Regression coverage now verifies nest
 The suites above never spend money and never reach a model. The headline results in `docs/RESULTS.md` come from **live** runs of real models,
 recorded once by the lab (record) and re-judged offline from `results/` by code (replay): `og-lab tables --check` rebuilds the tables from the
 recorded transcripts and fails if the committed file differs, so no number depends on a model being reachable. In replay mode a request with no
-recording raises `ReplayMiss`; re-recording needs an explicit live mode, a key and a budget (`OG_BUDGET_USD`). The offline policy agents
+recording raises `ReplayMiss`, and with `OG_REPLAY_STRICT=1` (set by the lab tests and the lab steps of `check_all.sh`) the lab stops with `ReplayIncomplete` instead of storing an errored row that the tables would exclude; re-recording needs an explicit live mode, a key and a budget (`OG_BUDGET_USD`). The offline policy agents
 (`PolicyLLM`: cautious, credulous, mixed) stand in for a model in the corpus and sweeps: they test the layers, not any model's judgement.
 
 ## What is not tested

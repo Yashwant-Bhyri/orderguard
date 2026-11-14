@@ -136,7 +136,7 @@ def test_router_over_a_receiver_that_is_down_fails_closed_and_places_nothing():
     }
     for name, h in handlers.items():
         for _ in range(100):
-            receiver = Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)))
+            receiver = Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)), retries=0)
             broker = ReceiverPaperBroker(receiver, starting_cash=1000.0)
             router = OrderRouter(broker)
             r = router.route(order(rng), {"decision": "allow"}, f"k{rng.random()}")
@@ -152,7 +152,7 @@ def test_receiver_paper_broker_maps_every_receiver_reply_closed():
     for rep in replies:
         for _ in range(50):
             h = lambda req, rep=rep: httpx.Response(200, json=rep)       # noqa: E731
-            b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h))))
+            b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)), retries=0))
             r = b.submit(order(rng), f"k{rng.random()}")
             assert isinstance(r, Reject), rep
             assert r.held == (rep.get("decision") == "held")
@@ -162,7 +162,7 @@ def test_receiver_paper_broker_rejects_malformed_orders_before_any_request():
     rng = random.Random(8)
     sent = []
     h = lambda req: (sent.append(req), httpx.Response(200, json={"decision": "filled", "orderId": "x"}))[1]       # noqa: E731
-    b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h))))
+    b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)), retries=0))
     bad = [{"side": "hold"}, {"quantity": 0}, {"quantity": -1}, {"quantity": 1.0}, {"quantity": True}, {"quantity": "5"}, {"limit_price": 0}, {"limit_price": -2},
            {"limit_price": "x"}, {"limit_price": True}, {"symbol": ""}, {"symbol": None}]
     for patch in bad:
@@ -177,7 +177,7 @@ def test_the_request_the_broker_sends_is_exactly_the_order_and_its_key():
     def h(req):
         seen.append(json.loads(req.content))
         return httpx.Response(200, json={"decision": "filled", "orderId": "R-1", "trustedPrice": 222.7})
-    b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h))))
+    b = ReceiverPaperBroker(Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)), retries=0))
     r = b.submit({"symbol": "AAPL", "side": "buy", "quantity": 3, "limit_price": 222.7}, "idem-1")
     assert isinstance(r, Fill) and seen == [{"symbol": "AAPL", "side": "buy", "quantity": 3, "limitPrice": 222.7, "clientOrderId": "idem-1"}]
 
@@ -203,7 +203,7 @@ def test_local_ledger_is_idempotent_on_client_order_id_and_honours_revoke():
 
 def test_receiver_errors_are_receiver_errors():
     for h in (lambda req: httpx.Response(500), lambda req: httpx.Response(200, text="x")):
-        r = Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)))
+        r = Receiver("http://127.0.0.1:9", client=httpx.Client(transport=httpx.MockTransport(h)), retries=0)
         for call in (r.health, r.snapshot, r.revoke, lambda: r.propose("AAPL", "buy", 1, 1.0)):
             try:
                 call()

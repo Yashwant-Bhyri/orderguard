@@ -68,6 +68,42 @@ class StealthColluder(Agent):
                         {"ticker": sym, "side": self.rng.choice(("buy", "sell", "buy")), "quantity": qty, "limit_price": round(px * 1.001, 2)}, self._key(step), None, f"group {g['id']}")
 
 
+class AdaptiveColluder(Agent):
+    """A colluder with knobs, for the white-box attacker in `adversary.py` (never used for training). `theta`:
+      period, p     inside the group's window it acts on steps where (step + phase) % period == 0, with probability p
+      lo, hi        order size as a fraction of the cap the colluders know (the step-up threshold)
+      warm          probability per step, OUTSIDE the window, of a tiny order at a random time: it stops the agent from ever having a
+                    schedule or a quiet baseline to break (baseline poisoning)
+      aggr          how far through the trusted price it limits (honest agents use 0.0005 to 0.003)
+      one_ticker    1 = the whole group trades the group's ticker on the buy side (a real position); 0 = random tickers and sides
+    It does not run a base strategy: every order it sends is the attacker's and is labelled collusion_stealth."""
+    theta: dict = {}
+
+    def propose(self, ctx, snap, step):
+        g, th = self.group, self.theta
+        if not g:
+            return []
+        inside = g["start"] <= step < g["start"] + g["window"]
+        if not inside:
+            if self.rng.random() >= th.get("warm", 0.0):
+                return []
+            frac = self.rng.uniform(0.002, 0.01)
+        else:
+            if (step + self.phase) % max(int(th.get("period", 1)), 1) or self.rng.random() > th.get("p", 0.5):
+                return []
+            frac = self.rng.uniform(th.get("lo", 0.05), th.get("hi", 0.55))
+        one = bool(th.get("one_ticker", 0)) and g.get("ticker") in self.symbols
+        sym = g["ticker"] if one else self.symbols[self.rng.randrange(len(self.symbols))]
+        px, cap = ctx.last(sym), ctx.collude_cap.get(sym)
+        if px is None or cap is None:
+            return []
+        qty = max(1, int(cap * frac / px))
+        side = "buy" if one else self.rng.choice(("buy", "sell", "buy"))
+        a = th.get("aggr", 0.001)
+        return [Proposal(step, self.id, self.archetype, self.sleeve, "collusion_stealth",
+                         {"ticker": sym, "side": side, "quantity": qty, "limit_price": round(px * (1 + a if side == "buy" else 1 - a), 2)}, self._key(step), None, f"group {g['id']}")]
+
+
 def stealth_specs(n: int = 8, base_seed: int = 300) -> list[dict]:
     rng = np.random.default_rng(77)
     return [{"seed": base_seed + i, "agents": int(rng.choice([400, 600, 800, 1000])), "steps": 2000, "steps_per_day": 500, "regime": "stealth",
@@ -108,6 +144,8 @@ def run_spec(spec: dict, run_id: int = 0) -> tuple[dict, dict]:
     agents = make_population(pcfg, split_sleeves(feed.symbols), spec["steps"])
     if spec.get("stealth"):
         agents = [_as_stealth(a) for a in agents]
+    if spec.get("adaptive"):
+        agents = [_as_stealth(a, AdaptiveColluder, spec["adaptive"]) for a in agents]
     cfg = ArenaConfig(seed=spec["seed"], agents=spec["agents"], steps=spec["steps"], steps_per_day=spec["steps_per_day"], rates=rates,
                       fail_prob=spec["fail_prob"], keep_events=True)
     res = run_arena(cfg, feed=feed, book=book, agents=agents)
@@ -117,11 +155,14 @@ def run_spec(spec: dict, run_id: int = 0) -> tuple[dict, dict]:
     return events_to_columns(res.events, {a.id: a.archetype for a in res.agents}, run_id, feed.symbols), meta
 
 
-def _as_stealth(a):
+def _as_stealth(a, cls=None, theta=None):
     if a.failure != "colluding":
         return a
-    b = StealthColluder.__new__(StealthColluder)
+    cls = cls or StealthColluder
+    b = cls.__new__(cls)
     b.__dict__.update(a.__dict__)
+    if theta is not None:
+        b.theta = dict(theta)
     return b
 
 

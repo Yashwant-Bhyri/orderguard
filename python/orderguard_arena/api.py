@@ -11,6 +11,7 @@ Everything is simulated and offline; nothing here signs a mandate or talks to a 
 from __future__ import annotations
 
 import random
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -101,10 +102,28 @@ def policy_search(body: PolicySearchRequest) -> dict:
         raise HTTPException(422, str(exc)) from None
 
 
-def _clamp(agents: int, steps: int) -> tuple[int, int]:
-    a = max(5, min(int(agents), MAX_AGENTS))
-    s = max(50, min(int(steps), MAX_STEPS, max(MAX_WORK // a, 50)))   # bound total work so one request stays a few seconds
-    return a, s
+def _int_param(name: str, raw, lo: int, hi: int | None = None) -> int:
+    """A whole number in [lo, hi]. Anything else is a 422 that names the field; nothing is silently corrected."""
+    try:
+        if isinstance(raw, bool) or (isinstance(raw, float) and not raw.is_integer()):
+            raise ValueError
+        text = str(raw).strip()
+        if not re.fullmatch(r"[+-]?\d+", text):
+            raise ValueError
+        v = int(text)
+    except ValueError:
+        raise HTTPException(422, f"{name} must be a whole number" + (f" from {lo:,} to {hi:,}" if hi is not None else f" of at least {lo:,}") + f" (got {str(raw)[:40]!r})") from None
+    if v < lo or (hi is not None and v > hi):
+        raise HTTPException(422, f"{name} must be " + (f"from {lo:,} to {hi:,}" if hi is not None else f"at least {lo:,}") + f" (got {v:,})")
+    return v
+
+
+def _clamp(agents, steps, seed=7) -> tuple[int, int]:
+    """Validate the request, then apply the one documented adjustment: steps are cut so agents x steps stays within MAX_WORK (a few seconds per request)."""
+    _int_param("seed", seed, 0, 2 ** 32 - 1)
+    a = _int_param("agents", agents, 1, MAX_AGENTS)
+    s = _int_param("steps", steps, 1, MAX_STEPS)
+    return a, min(s, max(MAX_WORK // a, 1))
 
 
 def _feed_path(feed: str | None) -> Path | None:
@@ -216,9 +235,10 @@ def downsample(events: list[dict], limit: int = MAX_EVENTS) -> list[dict]:
 
 
 @router.get("/run")
-def arena_run(seed: int = 7, agents: int = 150, steps: int = DEFAULT_STEPS, routing: str = Query("pinned", pattern="^(pinned|tightest_fit)$"),
+def arena_run(seed: str = "7", agents: str = "150", steps: str = str(DEFAULT_STEPS), routing: str = Query("pinned", pattern="^(pinned|tightest_fit)$"),
               agent_share: float | None = Query(None, gt=0, le=1), feed: str | None = None) -> dict:
-    a, s = _clamp(agents, steps)
+    a, s = _clamp(agents, steps, seed)
+    seed = int(seed)
     recording = _recording(feed)
     r = _run(seed, a, len(recording) if recording else s, routing, agent_share, recording)
     summ = {k: v for k, v in r.summary.items() if k != "utilisation_series"}
@@ -227,14 +247,15 @@ def arena_run(seed: int = 7, agents: int = 150, steps: int = DEFAULT_STEPS, rout
             "events_total": len(r.events), "latency_us_samples": latency_samples(r),
             "collusion_markers": collusion_markers(r.events, r.summary.get("envelopes") or [], spd),
             "risk": _risk(r.events, r.summary.get("envelopes") or [], spd),
-            "requested": {"agents": agents, "steps": steps}, "ran": {"agents": a, "steps": int((r.summary.get("config") or {}).get("steps") or s), "feed": feed or "synthetic"},
+            "requested": {"agents": int(agents), "steps": int(steps)}, "ran": {"agents": a, "steps": int((r.summary.get("config") or {}).get("steps") or s), "feed": feed or "synthetic"},
             "note": "simulated agents and fills; events are downsampled (every bad proposal kept first)"}
 
 
 @router.get("/frontier")
-def arena_frontier(seed: int = 7, agents: int = 150, steps: int = DEFAULT_STEPS, samples: int = Query(40, ge=8, le=120), max_leak: float | None = None,
+def arena_frontier(seed: str = "7", agents: str = "150", steps: str = str(DEFAULT_STEPS), samples: int = Query(40, ge=8, le=120), max_leak: float | None = None,
                    max_approvals: float | None = None, max_false_refusal: float | None = 0.05, feed: str | None = None) -> dict:
-    a, s = _clamp(agents, steps)
+    a, s = _clamp(agents, steps, seed)
+    seed = int(seed)
     recording = _recording(feed)
     r = _run(seed, a, len(recording) if recording else s, "pinned", None, recording)
     if not any(e["label"] == "legit" and not e["replay"] and e["risk"] > 0 for e in r.events):
@@ -251,8 +272,8 @@ def arena_frontier(seed: int = 7, agents: int = 150, steps: int = DEFAULT_STEPS,
 
 
 @router.get("/envelopes")
-def arena_envelopes(agents: int = 150, ticker: str | None = None, side: str = "buy", quantity: int = 10, limit_price: float | None = None, price: float | None = None) -> dict:
-    book = default_envelopes(DEFAULT_SYMBOLS, max(5, min(agents, MAX_AGENTS)))
+def arena_envelopes(agents: str = "150", ticker: str | None = None, side: str = "buy", quantity: int = 10, limit_price: float | None = None, price: float | None = None) -> dict:
+    book = default_envelopes(DEFAULT_SYMBOLS, _int_param("agents", agents, 1, MAX_AGENTS))
     out = {"owner": "owner-1", "note": "simulated owner key; signatures are verified once when the envelope is loaded",
            "envelopes": [{"id": e.id, "name": e.name, "purpose": e.purpose, "symbols": sorted(e.allowed), "per_order_usd": e.max_order, "daily_usd": e.budget.cap,
                           "band_pct": e.m.priceBandPct, "step_up_usd": e.stepup, "signed": bool(e.m.signature)} for e in book.envelopes()]}

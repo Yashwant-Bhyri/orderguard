@@ -82,10 +82,12 @@ def ensure(store: TruthStore, ticker: str, force: bool = False) -> None:
         if have:
             return     # a refresh failed; the older data is still the best there is
         raise
-    except (httpx.HTTPError, ValueError, KeyError) as e:
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError, OverflowError, OSError) as e:
+        # network down, a non-JSON or oddly shaped reply, a read-only cache directory: all mean "no trusted data right now"
         if have:
             return
-        raise SourceUnavailable(f"could not fetch {ticker} from SEC EDGAR ({type(e).__name__})") from e
+        raise SourceUnavailable(f"could not fetch {ticker} from SEC EDGAR ({type(e).__name__}); check the network, or load the truth store ahead of time "
+                                "(og ingest) and retry") from e
     if not rows:
         if have:
             return

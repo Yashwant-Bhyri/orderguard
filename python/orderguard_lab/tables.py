@@ -27,7 +27,62 @@ def _jsonl(path: Path) -> list[dict]:
             try:
                 out.append(json.loads(line))
             except ValueError:
-                pass
+                pass                      # tolerated when building (an interrupted run); `corrupt_lines()` reports it and `--check` fails on it
+    return out
+
+
+def raw_dirs() -> list[Path]:
+    return [RUNS, ADAPTIVE, DETECT, SWEEPS]
+
+
+def corrupt_lines() -> list[str]:
+    """`file:line` of every unparsable line in the raw result files (a truncated or damaged recording). Tables skip them; the check refuses them."""
+    bad = []
+    for d in raw_dirs():
+        for p in sorted(d.glob("*.jsonl")) if d.exists() else []:
+            for n, line in enumerate(p.read_text().splitlines(), 1):
+                if line.strip():
+                    try:
+                        json.loads(line)
+                    except ValueError:
+                        bad.append(f"{p.parent.name}/{p.name}:{n}")
+    if SPEND.exists():
+        for n, line in enumerate(SPEND.read_text().splitlines(), 1):
+            if line.strip():
+                try:
+                    json.loads(line)
+                except ValueError:
+                    bad.append(f"{SPEND.name}:{n}")
+    return bad
+
+
+def _has_replay_miss(node) -> bool:
+    """True if any `error` field anywhere in a record names a ReplayMiss (the agent loop stores errors as "<ExceptionName>: ...")."""
+    if isinstance(node, dict):
+        return any((k == "error" and isinstance(v, str) and v.startswith("ReplayMiss")) or _has_replay_miss(v) for k, v in node.items())
+    if isinstance(node, list):
+        return any(_has_replay_miss(v) for v in node)
+    return False
+
+
+def replay_misses() -> list[str]:
+    """Raw records whose run ended in a ReplayMiss: a replay that lacked a recording, which would silently shrink the denominators."""
+    hits = []
+    for d in raw_dirs():
+        for p in sorted(d.glob("*.jsonl")) if d.exists() else []:
+            for n, line in enumerate(p.read_text().splitlines(), 1):
+                if "ReplayMiss" in line:
+                    try:
+                        if _has_replay_miss(json.loads(line)):
+                            hits.append(f"{p.parent.name}/{p.name}:{n}")
+                    except ValueError:
+                        pass
+    return hits
+
+
+def integrity_problems() -> list[str]:
+    out = [f"unparsable line {x}" for x in corrupt_lines()]
+    out += [f"ReplayMiss error recorded at {x}" for x in replay_misses()]
     return out
 
 
@@ -324,4 +379,4 @@ def write(path: Path | None = None) -> Path:
 
 def check(path: Path | None = None) -> bool:
     path = path or RESULTS_MD
-    return path.exists() and path.read_text() == build()
+    return path.exists() and path.read_text() == build() and not integrity_problems()

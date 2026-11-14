@@ -18,6 +18,8 @@ import base64
 import datetime as dt
 import hashlib
 import json
+import math
+import re
 import unicodedata
 from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
@@ -90,6 +92,11 @@ class Mandate:
     expiresAt: str
     referencePrices: dict = field(default_factory=dict)
     stepUpAboveUsd: float | None = None
+    # Optional portfolio-safety limits. Absent (None) means no limit and the field is never serialised, so mandates signed before these
+    # fields existed keep their bytes, signatures and ids.
+    maxSymbolDailyNotionalUsd: float | None = None     # one symbol's notional per day (allowed and held orders), the concentration control
+    maxPositionUsd: float | None = None                # absolute net position in one symbol after the order, at the trusted price
+    maxOrdersPerDay: int | None = None                 # non-denied orders per day, a backstop against a runaway agent
     signature: str | None = None
     signerPublicKey: str | None = None
 
@@ -128,15 +135,65 @@ class Mandate:
             raise MandateInvalid("the mandate is not signed")
         try:
             public_key.verify(base64.b64decode(self.signature), canonical_json(self.to_dict(with_signature=False)))
-        except (InvalidSignature, ValueError):
+        except Exception:       # a bad signature of any shape (not base64, wrong length, not a string) is the same answer
             raise MandateInvalid("the mandate's signature does not match its contents: it was changed after the human signed it") from None
         self.check_live(now=now, revoked=revoked)
+
+    def validate(self) -> None:
+        """Raise MandateInvalid unless every limit is a finite, sensible number and the lists hold strings. A NaN cap would compare False
+        against everything and wave every order through, so a mandate like that is refused outright."""
+        def num(name: str, v, *, positive: bool = True, optional: bool = False) -> None:
+            if v is None and optional:
+                return
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 or (positive and v == 0):
+                raise MandateInvalid(f"the mandate's {name} must be a finite {'positive' if positive else 'non-negative'} number, not {v!r}")
+        for name in ("symbols", "sides"):
+            v = getattr(self, name)
+            if not isinstance(v, (list, tuple)) or not v or not all(isinstance(x, str) and x.strip() for x in v):
+                raise MandateInvalid(f"the mandate's {name} must be a non-empty list of strings")
+        num("maxOrderNotionalUsd", self.maxOrderNotionalUsd)
+        num("maxDailyNotionalUsd", self.maxDailyNotionalUsd)
+        num("priceBandPct", self.priceBandPct, positive=False)
+        num("stepUpAboveUsd", self.stepUpAboveUsd, optional=True)
+        num("maxSymbolDailyNotionalUsd", self.maxSymbolDailyNotionalUsd, optional=True)
+        num("maxPositionUsd", self.maxPositionUsd, optional=True)
+        n = self.maxOrdersPerDay
+        if n is not None and (isinstance(n, bool) or not isinstance(n, int) or n < 1 or n > 10**9):
+            raise MandateInvalid(f"the mandate's maxOrdersPerDay must be a positive whole number, not {n!r}")
+        if not isinstance(self.referencePrices, dict) or not all(isinstance(k, str) for k in self.referencePrices):
+            raise MandateInvalid("the mandate's referencePrices must be a mapping of ticker to price")
+        try:
+            _parse_time(self.expiresAt)
+        except (ValueError, TypeError, OverflowError):
+            raise MandateInvalid(f"the mandate's expiry {self.expiresAt!r} is not a valid date and time") from None
+
+    def check_coherent(self) -> None:
+        """Raise MandateInvalid for limits that contradict each other (used before signing a template; the gate itself only needs validate())."""
+        self.validate()
+        if self.maxOrderNotionalUsd > self.maxDailyNotionalUsd:
+            raise MandateInvalid("the mandate's per-order cap exceeds its daily cap")
+        if self.stepUpAboveUsd is not None and self.stepUpAboveUsd > self.maxOrderNotionalUsd:
+            raise MandateInvalid("the mandate's step-up threshold is above its per-order cap, so it would never trigger")
+        if self.maxSymbolDailyNotionalUsd is not None:
+            if self.maxSymbolDailyNotionalUsd > self.maxDailyNotionalUsd:
+                raise MandateInvalid("the mandate's per-symbol daily cap exceeds its daily cap")
+            if self.maxSymbolDailyNotionalUsd < self.maxOrderNotionalUsd:
+                raise MandateInvalid("the mandate's per-symbol daily cap is below its per-order cap")
+        if self.maxPositionUsd is not None and self.maxPositionUsd < self.maxOrderNotionalUsd:
+            raise MandateInvalid("the mandate's position cap is below its per-order cap")
 
     def check_live(self, *, now=None, revoked: Iterable[str] = ()) -> None:
         if self.id in set(revoked):
             raise MandateInvalid("the mandate has been revoked by the account owner")
-        t = _parse_time(now) if now is not None else dt.datetime.now(dt.timezone.utc)
-        if t >= _parse_time(self.expiresAt):
+        try:
+            t = _parse_time(now) if now is not None else dt.datetime.now(dt.timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            raise MandateInvalid(f"the decision time {now!r} is not a valid date and time, so expiry cannot be checked") from None
+        try:
+            expires = _parse_time(self.expiresAt)
+        except (ValueError, TypeError, OverflowError):
+            raise MandateInvalid(f"the mandate's expiry {self.expiresAt!r} is not a valid date and time") from None
+        if t >= expires:
             raise MandateInvalid(f"the mandate expired at {self.expiresAt}")
 
 
@@ -158,21 +215,105 @@ def sign_mandate(mandate: dict | Mandate, private_key: Ed25519PrivateKey) -> dic
 
 def normalise_ticker(raw) -> tuple[str, str | None]:
     """Return (ticker, problem). NFKC, strip, upper-case. A ticker still holding non-Latin letters (a Cyrillic А) is a problem."""
-    s = unicodedata.normalize("NFKC", str(raw or "")).strip().upper()
+    if raw is not None and not isinstance(raw, str):
+        return str(raw), f"the ticker {str(raw)!r} is not text"
+    s = unicodedata.normalize("NFKC", raw or "").strip()
     odd = non_latin_letters(s)
     if odd:
+        s = s.upper()
         return s, f"the ticker {s!r} contains non-Latin letters and looks like {fold_confusables(s)!r}; an order for a look-alike symbol is refused"
+    if not s.isascii():     # dotless i, sharp s, Kelvin-style forms: upper-casing would turn them into other letters
+        return s.upper(), f"the ticker {s!r} contains non-ASCII characters; an order for a look-alike symbol is refused"
+    s = s.upper()
     if not s or not all(c.isalnum() or c in ".-" for c in s):
         return s, f"the ticker {s!r} is not a valid symbol"
     return s, None
 
 
+_NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+
+
 def _num(x) -> float | None:
-    try:
-        v = float(str(x).replace(",", "").replace("$", ""))
-    except (TypeError, ValueError):
+    """A finite number from an int, a float or a plain ASCII numeric string ("1,000", "$12.50"). Booleans, NaN, infinity, other digit
+    scripts, underscores and anything else are None."""
+    if isinstance(x, bool):
         return None
-    return v if v == v and abs(v) != float("inf") else None
+    if isinstance(x, (int, float)):
+        try:
+            v = float(x)
+        except OverflowError:
+            return None
+    elif isinstance(x, str):
+        t = x.strip().replace(",", "").replace("$", "")
+        if not t.isascii() or not _NUMBER.fullmatch(t):
+            return None
+        try:
+            v = float(t)
+        except (ValueError, OverflowError):
+            return None
+    else:
+        return None
+    return v if math.isfinite(v) else None
+
+
+def portfolio_reasons(m: Mandate, ticker: str, side: str, qty, trusted, state: dict) -> list[str]:
+    """The optional portfolio limits (maxOrdersPerDay, maxSymbolDailyNotionalUsd, maxPositionUsd) as plain-sentence refusal reasons.
+
+    Shared by OrderGate and the arena's Envelope.check so the two cannot drift. Fails closed: a limit that is set and whose state is missing
+    or invalid is a refusal. `qty` and `trusted` are None when the order could not be sized (other reasons already refuse it).
+    state: orders_today int; symbol_daily_usd {SYM: float} (a symbol not listed has placed nothing); positions {SYM: net filled qty, all days}
+    (a symbol not listed is flat); optional held_qty {SYM: {"buy": q, "sell": q}} for held orders, counted in the direction that grows exposure.
+    """
+    reasons: list[str] = []
+    if m.maxOrdersPerDay is not None:
+        n = state.get("orders_today")
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+            reasons.append(f"The count of orders placed today ({n!r}) is missing or not a whole non-negative number, so the cap of "
+                           f"{m.maxOrdersPerDay} orders per day cannot be enforced and the order is refused.")
+        elif n + 1 > m.maxOrdersPerDay:
+            reasons.append(f"{n} orders have already been placed today; one more would pass the cap of {m.maxOrdersPerDay} orders per day.")
+    if qty is None or trusted is None:
+        return reasons
+
+    def table(name: str):
+        t = state.get(name)
+        if not isinstance(t, dict):
+            return None
+        return {str(k).strip().upper(): v for k, v in t.items()}
+
+    cents = round(qty * trusted * 100)
+    if m.maxSymbolDailyNotionalUsd is not None:
+        t = table("symbol_daily_usd")
+        v = None if t is None else _num(t.get(ticker, 0.0))
+        if v is None or v < 0:
+            reasons.append(f"The day's running total for {ticker} is missing or not a finite non-negative number, so the per-symbol daily cap of "
+                           f"${m.maxSymbolDailyNotionalUsd:,.0f} cannot be enforced and the order is refused.")
+        elif round(v * 100) + cents > round(m.maxSymbolDailyNotionalUsd * 100):
+            reasons.append(f"With ${v:,.0f} already placed in {ticker} today this order would bring that symbol's total to "
+                           f"${v + cents / 100:,.0f}, above the per-symbol daily cap of ${m.maxSymbolDailyNotionalUsd:,.0f}.")
+    if m.maxPositionUsd is not None and side in ("buy", "sell"):
+        t = table("positions")
+        net = None if t is None else _num(t.get(ticker, 0.0))
+        hb = hs = 0.0
+        held = state.get("held_qty")
+        if held is not None:
+            h = held.get(ticker) if isinstance(held, dict) else None
+            if h is None and isinstance(held, dict):
+                h = {str(k).strip().upper(): v for k, v in held.items()}.get(ticker, {})
+            hb = _num(h.get("buy", 0)) if isinstance(h, dict) else None
+            hs = _num(h.get("sell", 0)) if isinstance(h, dict) else None
+            if hb is None or hs is None or hb < 0 or hs < 0:
+                net = None
+        if net is None:
+            reasons.append(f"The net position in {ticker} is missing or invalid, so the position cap of ${m.maxPositionUsd:,.0f} cannot be enforced and the order is refused.")
+        else:
+            s = qty if side == "buy" else -qty
+            exposure = max(abs(net + hb + s), abs(net - hs + s))      # held orders counted whichever way grows the exposure
+            after = round(exposure * trusted * 100)
+            if after > round(m.maxPositionUsd * 100):
+                reasons.append(f"After this order the position in {ticker} could reach {exposure:,.0f} shares, ${after / 100:,.0f} at the trusted price of "
+                               f"${trusted:,.2f}, above the position cap of ${m.maxPositionUsd:,.0f}.")
+    return reasons
 
 
 # ---- the gate -------------------------------------------------------------------------------------------------------
@@ -181,7 +322,7 @@ class OrderGate:
     """`OrderGate(mandate, market, figure_checker).evaluate(order, state)`.
 
     order = {"ticker", "side", "quantity", "limit_price", "key_figures": [{metric, fiscal_year, value, unit?}], ...}
-    state = {"daily_total_usd": float, "as_of": date|str (decision date; also the clock for expiry), "revoked": [ids]}
+    state = {"daily_total_usd": float, optional portfolio state (see portfolio_reasons): "symbol_daily_usd", "positions", "held_qty", "orders_today", "as_of": date|str (decision date; also the clock for expiry), "revoked": [ids]}
     """
 
     def __init__(self, mandate: Mandate | dict, market: TrustedMarket, figure_checker: FigureChecker | None = None, *,
@@ -197,14 +338,43 @@ class OrderGate:
         self.revoked.add(self.mandate.id)
 
     def evaluate(self, order: dict, state: dict | None = None) -> dict:
-        state = state or {}
+        """Never raises and never allows on a fault: anything unreadable or unexpected is a refusal with a reason a person can act on."""
+        def refuse(reason: str, **checks) -> dict:
+            return {"decision": "refuse", "reasons": [reason], "checks": checks}
+        if state is None:
+            state = {}
+        if not isinstance(state, dict):
+            return refuse("The decision state (daily total, date, revocations) is not a mapping, so the order cannot be checked; fix the caller and place the order again.", state="invalid")
+        if not isinstance(order, dict):
+            return refuse("The order is not a JSON object with ticker, side, quantity and limit_price, so it cannot be checked.", order="invalid")
+        placed = state.get("daily_total_usd")
+        if placed is not None and (_num(placed) is None or _num(placed) < 0):
+            return refuse(f"The day's running total {placed!r} is not a finite non-negative number, so the daily cap cannot be enforced and the order is refused.", daily_total="invalid")
+        revoked = state.get("revoked")
+        if revoked is not None and (isinstance(revoked, (str, bytes)) or not hasattr(revoked, "__iter__")):
+            return refuse("The list of revoked mandates is not a list, so revocation cannot be checked and the order is refused.", revoked="invalid")
+        try:
+            self.mandate.validate()
+        except MandateInvalid as e:
+            return refuse(str(e)[0].upper() + str(e)[1:] + "; no order can be placed.", mandate="invalid")
+        try:
+            return self._evaluate(order, state)
+        except MandateInvalid as e:
+            return refuse(str(e)[0].upper() + str(e)[1:] + "; no order can be placed.", mandate="invalid")
+        except Exception as e:      # noqa: BLE001  fail closed
+            return refuse(f"The gate could not evaluate this order safely ({type(e).__name__}), so it is refused; check the order and the mandate and try again.", error=type(e).__name__)
+
+    def _evaluate(self, order: dict, state: dict) -> dict:
         m = self.mandate
         reasons: list[str] = []
         holds: list[str] = []
         checks: dict = {}
         as_of = state.get("as_of")
         now = state.get("now") or as_of
-        decision_date = _parse_time(as_of).date() if as_of else dt.date.today()
+        try:
+            decision_date = _parse_time(as_of).date() if as_of else dt.date.today()
+        except (ValueError, TypeError, OverflowError):
+            return {"decision": "refuse", "reasons": [f"The decision date {as_of!r} is not a valid date, so the order cannot be checked."], "checks": {"as_of": "invalid"}}
 
         # 0. the mandate itself
         try:
@@ -279,11 +449,14 @@ class OrderGate:
                 reasons.append(f"The order is worth ${notional:,.0f} at the trusted price of ${trusted:,.2f} "
                                f"({int(qty)} shares), above the per-order cap of ${m.maxOrderNotionalUsd:,.0f}.")
             # 5. running daily total
-            placed = float(state.get("daily_total_usd") or 0.0)
+            placed = _num(state.get("daily_total_usd")) or 0.0
             checks["daily_total_after_usd"] = round(placed + notional, 2)
             if placed + notional > m.maxDailyNotionalUsd:
                 reasons.append(f"With ${placed:,.0f} already placed today this order would bring the day's total to "
                                f"${placed + notional:,.0f}, above the daily cap of ${m.maxDailyNotionalUsd:,.0f}.")
+
+        # 5b. optional portfolio limits (fail closed when their state is missing)
+        reasons.extend(portfolio_reasons(m, ticker, side, qty, trusted, state))
 
         # 6. limit price within the band of the TRUSTED price
         if trusted is not None and limit is not None:
@@ -307,13 +480,18 @@ class OrderGate:
                 holds.append("The cited figures could not be checked because no figure checker is configured.")
         else:
             try:
+                if not isinstance(figs, list):
+                    raise TypeError("key_figures is not a list")
                 results = self.figure_checker(ticker, decision_date, list(figs))
+                if not isinstance(results, list) or len(results) != len(figs) or not all(isinstance(r, dict) for r in results):
+                    raise ValueError("the checker did not return one result per figure")
             except Exception as e:      # fail closed
                 results = []
-                reasons.append(f"The cited figures could not be checked ({type(e).__name__}), so the order is refused.")
+                reasons.append(f"The cited figures could not be checked ({type(e).__name__}: {str(e)[:120]}), so the order is refused. "
+                               "Check key_figures (a list of metric, fiscal_year, value, unit) and the figure source, then place the order again.")
             for r in results:
                 st = r.get("status")
-                f = r.get("figure") or {}
+                f = r.get("figure") if isinstance(r.get("figure"), dict) else {}
                 label = f"{f.get('metric')} FY{f.get('fiscal_year')} = {f.get('value')} {f.get('unit', '')}".strip()
                 checks["figures"].append({"figure": f, "status": st, "truth": r.get("truth")})
                 why = (r.get("reason") or "").strip().rstrip(".")
@@ -324,6 +502,8 @@ class OrderGate:
                     checks["figures"][-1]["note"] = "not required: the order carries out a standing rule that L7 confirmed"
                 elif st == "unverifiable":
                     holds.append(f"The cited figure {label} could not be verified" + (f": {why}." if why else "."))
+                elif st != "confirmed":
+                    reasons.append(f"The cited figure {label} came back with the unrecognised status {st!r}, so it is not treated as confirmed.")
 
         # 8. step-up hold
         if m.stepUpAboveUsd is not None and notional is not None and notional > m.stepUpAboveUsd:

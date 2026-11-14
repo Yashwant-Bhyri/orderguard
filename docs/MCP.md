@@ -58,7 +58,7 @@ After the `orderguard-mcp` console script is added to `pyproject.toml` the comma
 
 ## Tools
 
-Every tool returns a JSON object (also as MCP structured content) with `"ok": true`, or `{"ok": false, "error": {"type", "message"}}`. `error.type` is `invalid_input` (the arguments are wrong; `details` lists each field) or `internal` (the exception type only, never a traceback). A schema violation caught by the MCP SDK before the tool runs comes back as an ordinary MCP tool error with the same kind of message. Dates are `YYYY-MM-DD`.
+Arguments are validated strictly. An argument name a tool does not have, or a value outside its schema, makes the call fail at the protocol level (`isError`) with one line such as `invalid_input: quantity: Input should be greater than or equal to 1` (no stack trace, no echo of your input). Every tool returns a JSON object (also as MCP structured content) with `"ok": true`, or `{"ok": false, "error": {"type", "message"}}`. `error.type` is `invalid_input` (the arguments are wrong; `details` lists each field) or `internal` (the exception type only, never a traceback). A schema violation caught by the MCP SDK before the tool runs comes back as an ordinary MCP tool error with the same kind of message. Dates are `YYYY-MM-DD`.
 
 | Tool | Layers | Arguments | Returns |
 |---|---|---|---|
@@ -73,7 +73,7 @@ Every tool returns a JSON object (also as MCP structured content) with `"ok": tr
 
 A `figure` is `{metric, fiscal_year, value, unit?, period?}`: `metric` is one of revenue, net_income, eps_diluted, eps_basic, operating_income, operating_cash_flow, gross_profit; `value` is a number or text such as `"$94.9B"`; `unit` is `USD`, `USD millions`, `USD billions` or `USD/share` (default: USD/share for EPS, otherwise USD millions); `period` is `FY` (default) or `Q1` to `Q4`. A rule is `{id, kind: pct_change | event, inputs[], threshold, notional, side, text?, match?, tickers?}`; an event is `{type: quote_change | headline | notice, src, ticker?, pct?, text?, origin?}`. The exact JSON Schemas are what `tools/list` returns.
 
-The seven checking and review tools are read-only. `submit_order` is the only tool that can write to the receiver.
+`review_mandate` bounds its simulation (`agents` 1-5,000, `steps` 1-2,000) and reports a bad draft or missing configuration as `{"ok": false, "error": {"type": "invalid_input", ...}}` like every other tool. The seven checking and review tools are read-only. `submit_order` is the only tool that can write to the receiver.
 
 Call `review_mandate` with `mode` set to `rank` or `search` and omit `draft` to generate alternatives. The optional `limits` object accepts `bad_allowed_usd_per_day`, `false_refusal_rate` as a fraction, and `holds_per_day`. The tool returns its review as JSON text. [Mandate review walkthrough](ARENA.md#review-a-draft-against-a-signed-policy)
 

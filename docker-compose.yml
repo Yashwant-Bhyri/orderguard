@@ -15,16 +15,17 @@ services:
   receiver:
     build: .
     image: orderguard:local
-    command: ["orderguard", "paper-receiver", "--dir", "/app/paper-policy"]
+    command: ["orderguard", "paper-receiver", "--dir", "/app/paper-policy", "--ledger", "/app/ledger/paper-ledger.sqlite"]
     init: true
     stop_signal: SIGINT
     ports:
       - "127.0.0.1:8600:8600"      # published here because the app joins this network namespace
     volumes:
       - *paper-policy
+      - ledger:/app/ledger          # persistent, hash-chain-verified at every start; see docs/OPERATIONS.md (ledger)
     read_only: true
     tmpfs:
-      - /tmp                        # the bridge keeps its working ledger in a temp dir; see docs/OPERATIONS.md (backup)
+      - /tmp
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
@@ -58,3 +59,4 @@ services:
 
 volumes:
   app-data:
+  ledger:

@@ -2,7 +2,7 @@
 from orderguard_verify.core.models import Claim
 from orderguard_verify.finance.verifier import verify
 
-from conftest import D, scripted
+from vsupport import D, scripted
 
 NO_LLM = scripted([])
 
@@ -83,7 +83,7 @@ def test_price_claims_use_the_quote_feed(store):
 
 
 def test_a_non_usd_source_is_compared_in_its_own_currency(store):
-    from conftest import snap
+    from vsupport import snap
     store.add(snap("9999.HK", "revenue", "FY2023", 120_000e6, "2024-03-20", period_end="2023-12-31", unit="CNY"))
     ok = claim(subject="9999.HK", period="FY2023", value=120.0e9, unit="CNY")
     assert label(ok, "2024-04-10", store).label == "confirmed"
@@ -101,7 +101,7 @@ def test_tolerance_follows_the_precision_the_memo_states(store):
 
 
 def test_margins_and_free_cash_flow_are_worked_out_in_code_from_stored_figures(store):
-    from conftest import snap
+    from vsupport import snap
     for metric, v in (("gross_profit", 2.0e9), ("operating_cash_flow", 1.5e9), ("capex", 0.3e9)):
         store.add(snap("ACME", metric, "FY2024", v, "2025-02-14", period_end="2024-12-31"))
 

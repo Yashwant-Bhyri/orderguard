@@ -35,10 +35,22 @@ _DIGITS = re.compile(r"\d")
 
 # ---- features (shared by training and inference) ---------------------------------------------------------------------
 
+def _windows(line: str) -> list[str]:
+    """A long line is scored as overlapping windows, so text past MAX_LINE_CHARS is still read (and an n-gram on a cut is not lost)."""
+    if len(line) <= MAX_LINE_CHARS:
+        return [line]
+    step = MAX_LINE_CHARS - 200
+    return [line[i:i + MAX_LINE_CHARS] for i in range(0, len(line) - 200, step)]
+
+
 def analyse(text: str) -> dict:
-    """L1-clean `text`: {"lines": lines to score, "findings": L1 findings, "tag_payload": bool}.
-    Hidden Unicode-tag text, decoded, is added as its own line; look-alike letters inside mixed-script tokens are folded to Latin."""
-    text = (text or "")[:MAX_CHARS]
+    """L1-clean `text`: {"lines": lines to score, "findings": L1 findings, "tag_payload": bool, "truncated": bool}.
+    Hidden Unicode-tag text, decoded, is added as its own line; look-alike letters inside mixed-script tokens are folded to Latin.
+    Work is bounded (MAX_CHARS, MAX_LINES). When a bound cuts text off, `truncated` is True: the unread part was never scored, so the
+    caller must not treat the result as a confident "clean" (Classifier.score enforces that)."""
+    text = text or ""
+    truncated = len(text) > MAX_CHARS
+    text = text[:MAX_CHARS]
     extra = ""
     if any(TAG_LO <= ord(c) <= TAG_HI for c in text):
         extra = "".join(chr(ord(c) - TAG_LO) for c in text if 0x20 <= ord(c) - TAG_LO < 0x7F)
@@ -46,8 +58,14 @@ def analyse(text: str) -> dict:
     for tok, _ in mixed_script_tokens(cleaned):
         cleaned = cleaned.replace(tok, fold_confusables(tok))
     lines = [ln.strip() for ln in cleaned.split("\n")] + ([extra.strip()] if extra.strip() else [])
-    lines = [ln[:MAX_LINE_CHARS] for ln in lines if len(ln) >= MIN_LINE_CHARS][:MAX_LINES]
-    return {"lines": lines, "findings": findings + (["tag characters: hidden payload decoded"] if extra.strip() else []), "tag_payload": bool(extra.strip())}
+    lines = [w for ln in lines if len(ln) >= MIN_LINE_CHARS for w in _windows(ln)]
+    if len(lines) > MAX_LINES:
+        truncated = True
+        lines = lines[:MAX_LINES - 1] + ([extra.strip()] if extra.strip() else lines[MAX_LINES - 1:MAX_LINES])   # the decoded payload is always scored
+    findings = findings + (["tag characters: hidden payload decoded"] if extra.strip() else [])
+    if truncated:
+        findings.append("screen limit: the text is longer than the local classifier reads; the rest goes to the model screen")
+    return {"lines": lines, "findings": findings, "tag_payload": bool(extra.strip()), "truncated": truncated}
 
 
 def prepare_lines(text: str) -> list[str]:
@@ -151,6 +169,9 @@ class Classifier:
             p = self._sigmoid(self.decision.logit(x)) if self.use_decision else p_clf
         else:
             p = p_clf
+        if a["truncated"]:
+            p = max(p, self.clean_below)                     # unread text is never "confidently clean": the cascade escalates it
+            out["truncated"] = True
         feats = [{"feature": g, "weight": round(x, 4)} for x, g in sorted(best_contrib, reverse=True)[:top] if x > 0]
         out.update({"p_attack": p, "label": "attack" if p >= self.threshold else "clean", "top_features": feats, "line": best_line[:200], "findings": a["findings"]})
         return out

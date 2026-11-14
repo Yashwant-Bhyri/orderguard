@@ -187,9 +187,10 @@ class Authority:
         if dead:
             return [dead], [], None
         used = e.budget.used(day)
+        pstate = e.portfolio_state(day) if e.has_portfolio else None
         if not self.strict:
-            return e.check(ticker, problem, side, qty, limit, trusted, used)
-        res = self._gate_for(e).evaluate({**order, "ticker": order.get("ticker")}, {"daily_total_usd": used, "as_of": as_of})
+            return e.check(ticker, problem, side, qty, limit, trusted, used, pstate)
+        res = self._gate_for(e).evaluate({**order, "ticker": order.get("ticker")}, {"daily_total_usd": used, "as_of": as_of, **(pstate or {})})
         n = res["checks"].get("notional_usd")
         if res["decision"] == "allow":
             return [], [], n
@@ -223,8 +224,11 @@ class Authority:
             allows.sort(key=lambda t: (t[0].headroom(t[1], day), t[0].name))      # tightest fit first
             for e, n in allows:
                 cap_a = e.budget.cap * self.agent_share if (self.agent_share is not None and agent is not None) else None
-                if e.budget.reserve(day, n, agent, cap_a):                        # atomic: concurrent agents share one budget
+                ok, why = e.reserve(day, ticker, side, qty, trusted, n, agent, cap_a)     # atomic: concurrent agents share one budget and one portfolio
+                if ok:
                     return Decision("allow", [], e.name, n, trusted, layer="L5")
+                if why:
+                    return Decision("refuse", why, e.name, n, trusted, layer="L5")
             e0 = allows[0][0]
             used = e0.budget.used(day)
             if self.agent_share is not None and agent is not None and used + allows[0][1] <= e0.budget.cap:
@@ -238,7 +242,10 @@ class Authority:
             e, h, n = holds[0]
             # Like the receiver, a held order counts against the day's budget from the moment it is held (approval reserves nothing more).
             cap_a = e.budget.cap * self.agent_share if (self.agent_share is not None and agent is not None) else None
-            if not e.budget.reserve(day, n, agent, cap_a):
+            ok, why = e.reserve(day, ticker, side, qty, trusted, n, agent, cap_a, held=True)
+            if not ok and why:
+                return Decision("refuse", why, e.name, n, trusted, layer="L5")
+            if not ok:
                 used = e.budget.used(day)
                 return Decision("refuse", [f"With ${used:,.0f} already placed today this order would bring the day's total to "
                                            f"${used + n:,.0f}, above the daily cap of ${e.m.maxDailyNotionalUsd:,.0f}."], e.name, n, trusted, layer="L5")
@@ -301,8 +308,16 @@ class Authority:
             return Decision("refuse", ["The envelope is gone or revoked; the held order cannot be approved."], layer="L5")
         if p["layer"] != "L5":                       # an L7 hold reserved nothing: approving it now must fit the budget
             day = step // self.steps_per_day
-            if p["notional"] is None or not e.budget.reserve(day, p["notional"]):
-                return Decision("refuse", ["Approving this order would exceed the envelope's daily cap."], e.name, p["notional"], layer="L5")
+            o = p["order"]
+            t, _ = self._norm_ticker(o.get("ticker"))
+            ok, why = (False, []) if p["notional"] is None else e.reserve(day, t, str(o.get("side", "")).strip().lower(), _f(o.get("quantity")),
+                                                                        self.prices.get(t), p["notional"])
+            if not ok:
+                return Decision("refuse", why or ["Approving this order would exceed the envelope's daily cap."], e.name, p["notional"], layer="L5")
+        else:
+            o = p["order"]
+            t, _ = self._norm_ticker(o.get("ticker"))
+            e.settle_held(t, str(o.get("side", "")).strip().lower(), _f(o.get("quantity")))
         return Decision("allow", [], e.name, p["notional"], layer="L5")           # an L5 hold already reserved its notional
 
     # ---- statistics ---------------------------------------------------------------------------------------------------

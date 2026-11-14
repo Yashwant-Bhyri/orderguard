@@ -467,9 +467,9 @@ def get_reported_figure(
 def evaluate_rules(
     rules: Annotated[list[RuleSpec], Field(min_length=1, max_length=MAX_RULES, description="Standing rules to evaluate.")],
     events: Annotated[list[EventSpec], Field(max_length=MAX_EVENTS, description="Current market events, one per source per ticker (price moves) or headline.")],
-    quarantined_sources: Annotated[list[str], Field(max_length=50, description="Sources an earlier screen quarantined; their events are ignored.")] = [],
+    quarantined_sources: Annotated[list[Annotated[str, Field(max_length=80)]], Field(max_length=50, description="Sources an earlier screen quarantined; their events are ignored.")] = [],
     blast_source: Annotated[Optional[str], Field(max_length=80, description="The one source to imagine lying. Default: the source with the most events.")] = None,
-    lies: Annotated[list[float], Field(max_length=12, description="Percent moves the imagined liar reports for every price input.")] = DEFAULT_LIES,
+    lies: Annotated[list[Annotated[float, Field(ge=-100, le=1000, allow_inf_nan=False)]], Field(max_length=12, description="Percent moves (-100..1000) the imagined liar reports for every price input.")] = DEFAULT_LIES,
     min_sources: Annotated[int, Field(ge=1, le=10, description="Independent sources a rule input needs before the rule may fire.")] = 2,
 ) -> dict[str, Any]:
     """Decide which standing rules may fire on these events, requiring independent confirmation (layer L7).
@@ -510,6 +510,45 @@ def mandate_summary(now: dt.datetime | None = None) -> dict:
         out.update(id=m.id, signed=bool(m.signature), symbols=m.symbols, sides=m.sides, max_order_notional_usd=m.maxOrderNotionalUsd,
                    max_daily_notional_usd=m.maxDailyNotionalUsd, price_band_pct=m.priceBandPct, step_up_above_usd=m.stepUpAboveUsd, expires_at=m.expiresAt)
     return out
+
+
+@tool
+def review_mandate(
+    draft: Annotated[Optional[dict[str, Any]], Field(description="An UNSIGNED draft mandate (the same fields as the signed one, without signature) to check against the signed parent. "
+                                                    "Omit it to get the parent and a suggested draft, or when mode is rank or search.")] = None,
+    source: Annotated[Literal["demo", "configured"], Field(description="Which signed parent policy: the labelled demo one, or your configured mandate.json (needs `orderguard init`).")] = "configured",
+    mode: Annotated[Literal["fit", "estimate", "simulate", "rank", "search"], Field(description="fit: does the draft stay inside the parent. estimate: fit plus a cheap price-based estimate. "
+                                                                                              "simulate: fit plus a simulated swarm run. rank / search (no draft): generate alternatives, ranked by preview or confirmed by simulation.")] = "fit",
+    seed: Annotated[int, Field(ge=0, lt=2**32, description="Simulation seed (same seed, same result).")] = 7,
+    agents: Annotated[int, Field(ge=1, le=5000, description="Simulated agents (1-5000).")] = 150,
+    steps: Annotated[int, Field(ge=1, le=2000, description="Simulated steps (1-2000).")] = 400,
+    regime: Annotated[Literal["normal", "volatile", "poisoned", "collusion"], Field(description="Market regime for the simulation.")] = "normal",
+    limits: Annotated[Optional[dict[Literal["bad_allowed_usd_per_day", "false_refusal_rate", "holds_per_day"], Annotated[float, Field(ge=0, allow_inf_nan=False)]]],
+                      Field(description="Optional targets: bad_allowed_usd_per_day (US$), false_refusal_rate (fraction 0-1), holds_per_day.")] = None,
+) -> dict[str, Any]:
+    """Review a DRAFT mandate against the signed parent, or generate alternatives. Changes nothing and signs nothing; a human signs any mandate.
+
+    With no draft and mode fit, returns the verified parent and a suggested draft. With a draft, fit/estimate/simulate report whether it stays
+    inside the parent's limits and what it would have cost in false refusals. rank/search (omit the draft) generate candidates under the parent;
+    search confirms them by simulation. `error` reports a bad draft or a missing configuration in plain words.
+    """
+    from orderguard_arena.policy_review import load_parent, parent_for_review, review_policy
+    from orderguard_arena.policy_search import search_policies
+    from orderguard_arena.policy_sim import PolicyScenario
+
+    try:
+        batch = mode in ("rank", "search")
+        if draft is None and not batch:
+            return parent_for_review(source)
+        if batch and draft is not None:
+            raise ToolInputError("Omit the draft when generating alternatives with rank or search.")
+        parent, key, revoked = load_parent(source)
+        scenario = PolicyScenario(seed, agents, steps, regime)
+        if batch:
+            return search_policies(parent, key, revoked, scenario, mode="rank" if mode == "rank" else "simulate", limits=limits)
+        return review_policy(parent, key, revoked, draft, scenario, mode=mode, limits=limits)
+    except ValueError as exc:
+        raise ToolInputError(str(exc)) from None
 
 
 @tool

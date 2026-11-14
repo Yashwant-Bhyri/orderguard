@@ -151,9 +151,9 @@ Arena Run
 
 | Name | Type | Required | Notes |
 |---|---|---|---|
-| `seed` | integer | no |  |
-| `agents` | integer | no |  |
-| `steps` | integer | no |  |
+| `seed` | string | no |  |
+| `agents` | string | no |  |
+| `steps` | string | no |  |
 | `routing` | string | no |  |
 | `agent_share` | number or null | no |  |
 | `feed` | string or null | no |  |
@@ -181,9 +181,9 @@ Arena Frontier
 
 | Name | Type | Required | Notes |
 |---|---|---|---|
-| `seed` | integer | no |  |
-| `agents` | integer | no |  |
-| `steps` | integer | no |  |
+| `seed` | string | no |  |
+| `agents` | string | no |  |
+| `steps` | string | no |  |
 | `samples` | integer | no |  |
 | `max_leak` | number or null | no |  |
 | `max_approvals` | number or null | no |  |
@@ -213,7 +213,7 @@ Arena Envelopes
 
 | Name | Type | Required | Notes |
 |---|---|---|---|
-| `agents` | integer | no |  |
+| `agents` | string | no |  |
 | `ticker` | string or null | no |  |
 | `side` | string | no |  |
 | `quantity` | integer | no |  |
@@ -330,7 +330,7 @@ Check one order against a mandate (L5) and its cited figures against SEC filings
 | `mandate` | [MandateUpload](#mandateupload) or null | no |  |  |
 | `prices` | object (string to number) or null | no |  | trusted prices, e.g. {'AAPL': 222.7}; default: the demo market |
 | `as_of` | string | no | `"2024-11-06"` | pattern `^\d{4}-\d{2}-\d{2}$` |
-| `daily_total_usd` | number | no | `0.0` | min 0 |
+| `daily_total_usd` | number | no | `0.0` | min 0; max 1e+12 |
 | `require_figures` | boolean | no | `false` |  |
 
 **Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
@@ -361,7 +361,7 @@ Evaluate standing rules on market events (L7): guarded decisions, the naive base
 | `preset` | one of `"honest"`, `"single_venue_crash"`, `"real_crash"`, `"takeover_echo"` or null | no |  |  |
 | `quarantined_sources` | array of string | no |  | max items 50 |
 | `blast_source` | string or null | no |  | max length 80 |
-| `lies` | array of number | no |  | max items 12 |
+| `lies` | array of number | no |  | percent moves a lying source reports (-100..1000) max items 12 |
 
 **Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
 
@@ -405,7 +405,7 @@ Replay one scenario and return its timeline. Offline: recordings only unless the
 
 | Field | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `scenario` | string | yes |  | max length 80 |
+| `scenario` | string | yes |  | min length 1; max length 80 |
 | `arm` | one of `"naive"`, `"gate_only"`, `"full"` or null | no |  |  |
 
 **Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
@@ -463,18 +463,38 @@ curl -s http://127.0.0.1:8600/api/results \
 
 ## Errors
 
-Error bodies are JSON. Application errors use `{"error": ...}`; unknown paths and methods use the framework's `{"detail": ...}`.
+Error bodies are always JSON with an `error` string; a 422 may add `details` (a list of `{where, problem}`, one per bad field).
 
 | Status | When | Body |
 |---|---|---|
 | 401 | A bearer token is required (ORDERGUARD_APP_TOKEN is set) and the request had none, or a wrong one. | `{"error":"a valid bearer token is required"}` |
-| 404 | No such path. | `{"detail":"Not Found"}` |
-| 405 | The path exists but not for this method. | `{"detail":"Method Not Allowed"}` |
-| 413 | The request body is over 1,000,000 bytes. | `{"error":"request body too large"}` |
+| 404 | No such path, or an unknown id (for example a scenario). | `{"error":"no such endpoint; the API routes are listed in docs/API.md"}` |
+| 405 | The path exists but not for this method. | `{"error":"method not allowed for this endpoint; see docs/API.md"}` |
+| 413 | The request body is over 1,000,000 bytes (declared or, for a chunked upload, actually received). | `{"error":"request body too large (limit 1000000 bytes)"}` |
+| 429 | Too many requests of this kind from your address in the last minute. `Retry-After` gives the seconds to wait. | `{"error":"too many requests for this route","hint":"wait 12s and retry; limit is 30/minute per client"}` |
+| 503 | The server is already running its maximum number of heavy requests of this kind; retry shortly (`Retry-After: 3`). | `{"error":"the server is busy with other requests of this kind","hint":"retry in a few seconds"}` |
+| 504 | A heavy request exceeded its deadline and was abandoned; reduce its size. | `{"error":"the request took longer than 30s and was abandoned","hint":"reduce agents/steps or the input size and try again"}` |
 | 422 | The body or parameters failed validation. `details` lists each field and the problem; a domain error (for example a rule spec missing a field) has only `error`. | `{"details":[{"problem":"Input should be 'doc', 'web', 'feed' or 'tool'","where":"body.kind"}],"error":"invalid request"}` |
 | 500 | An unexpected failure. The message is generic on purpose; `ref` matches a line in the server log (the exception type only, never request data). | `{"error":"internal error","ref":"a1b2c3d4"}` |
 
-Responses under `/api/` carry `Cache-Control: no-store`; every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and a strict `Content-Security-Policy`.
+Responses under `/api/` carry `Cache-Control: no-store`; every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy: same-origin`, a `Permissions-Policy` that disables camera, microphone, geolocation and payment, and a strict `Content-Security-Policy`.
+
+## Limits and cross-origin stance
+
+Limits are per client address and in-process (a single local instance; rate-limit at the proxy as well when you expose it). `ORDERGUARD_RATE_LIMIT=0` turns the rate limit off, `ORDERGUARD_RATE_SCALE` and `ORDERGUARD_TIMEOUT_SCALE` multiply the allowances and deadlines.
+
+| Route prefix | Requests per minute | Deadline | Concurrent |
+|---|---|---|---|
+| `/api/arena/` | 30 | 30s | 2 |
+| `/api/run-scenario` | 20 | 120s | 2 |
+| `/api/screen` | 120 | 60s | 8 |
+| `/api/check-order` | 240 | 60s | 8 |
+| `/api/trigger-graph` | 120 | 30s | 4 |
+| `/api/` | 600 | 30s | 32 |
+
+A deadline stops the wait, not the computation: the client gets a 504 at once and the abandoned work finishes in the background, while the concurrency cap stops abandoned runs from piling up. Request bodies are capped at 1,000,000 bytes; free-form JSON is limited to depth 8 and 200 keys per object, and every number must be finite.
+
+**CORS: there is none.** The app sends no `Access-Control-Allow-*` headers, so a browser page on another origin cannot read its responses, and the CSP (`connect-src 'self'`) stops the dashboard talking to any other origin. This is deliberate: the dashboard is same-origin, and non-browser clients (curl, scripts, the MCP server) are not affected by CORS. If you need a cross-origin front end, put a reverse proxy in front that adds the exact origin you trust, and keep `ORDERGUARD_APP_TOKEN` set.
 
 ## Models
 
@@ -486,7 +506,7 @@ Responses under `/api/` carry `Cache-Control: no-store`; every response carries 
 | `mandate` | [MandateUpload](#mandateupload) or null | no |  |  |
 | `prices` | object (string to number) or null | no |  | trusted prices, e.g. {'AAPL': 222.7}; default: the demo market |
 | `as_of` | string | no | `"2024-11-06"` | pattern `^\d{4}-\d{2}-\d{2}$` |
-| `daily_total_usd` | number | no | `0.0` | min 0 |
+| `daily_total_usd` | number | no | `0.0` | min 0; max 1e+12 |
 | `require_figures` | boolean | no | `false` |  |
 
 ### MandateUpload
@@ -535,7 +555,7 @@ Responses under `/api/` carry `Cache-Control: no-store`; every response carries 
 
 | Field | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `scenario` | string | yes |  | max length 80 |
+| `scenario` | string | yes |  | min length 1; max length 80 |
 | `arm` | one of `"naive"`, `"gate_only"`, `"full"` or null | no |  |  |
 
 ### ScreenRequest
@@ -554,4 +574,4 @@ Responses under `/api/` carry `Cache-Control: no-store`; every response carries 
 | `preset` | one of `"honest"`, `"single_venue_crash"`, `"real_crash"`, `"takeover_echo"` or null | no |  |  |
 | `quarantined_sources` | array of string | no |  | max items 50 |
 | `blast_source` | string or null | no |  | max length 80 |
-| `lies` | array of number | no |  | max items 12 |
+| `lies` | array of number | no |  | percent moves a lying source reports (-100..1000) max items 12 |

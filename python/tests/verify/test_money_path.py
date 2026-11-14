@@ -5,7 +5,7 @@ from datetime import date
 import anyio
 import httpx
 import pytest
-from conftest import D, scripted, snap
+from vsupport import D, scripted, snap
 from fastapi.testclient import TestClient
 from mcp.shared.memory import create_connected_server_and_client_session
 

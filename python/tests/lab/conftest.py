@@ -21,3 +21,9 @@ def res(tmp_path, monkeypatch):
     from orderguard_lab.sandbox import manifest
     monkeypatch.setattr(manifest, "SANDBOX_MD", tmp_path / "SANDBOX.md")
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _strict_replay(monkeypatch):
+    """In the lab suite a missing recording must stop the run, never become an excluded error row."""
+    monkeypatch.setenv("OG_REPLAY_STRICT", "1")

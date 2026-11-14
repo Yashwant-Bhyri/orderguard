@@ -69,3 +69,43 @@ def test_demo_replays_the_bundled_deepseek_cases_and_checks_paper_effects(monkey
     out = capsys.readouterr().out
     assert "L5 refused" in out and "L6 figure check: contradicted" in out
     assert "L2 quarantined (instruction)" in out and "ReplayMiss" not in out
+
+
+# ---- failure paths: one line and a hint, never a traceback ------------------------------------------------------------
+
+def _run_cli(argv, capsys):
+    rc = cli.main(argv)
+    out = capsys.readouterr()
+    return rc, out.out + out.err
+
+
+def test_bad_inputs_are_one_line_errors_with_exit_2(tmp_path, capsys):
+    bad, arr = tmp_path / "bad.json", tmp_path / "arr.json"
+    bad.write_text('{"ticker": "AAPL"')
+    arr.write_text("[]")
+    ok = tmp_path / "ok.json"
+    ok.write_text('{"ticker": "AAPL", "side": "buy", "quantity": 1, "limit_price": 222.7}')
+    cases = [(["check-order", str(tmp_path / "missing.json")], "not found"), (["check-order", str(bad)], "not valid JSON"),
+             (["check-order", str(arr)], "must hold a JSON object"), (["check-order", str(ok), "--prices", "{bad"], "--prices"),
+             (["check-order", str(ok), "--prices", '{"AAPL": -1}'], "positive"), (["verify-mandate", str(tmp_path / "nope")], "not found"),
+             (["sign-mandate", str(tmp_path / "nope"), "--key", str(tmp_path / "k")], "not found")]
+    for argv, text in cases:
+        rc, out = _run_cli(argv, capsys)
+        assert rc == 2 and text in out and "Traceback" not in out, (argv, out)
+        assert out.count("orderguard: error:") == 1
+
+
+def test_bad_date_option_is_an_argparse_error(tmp_path, capsys):
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        cli.main(["check-order", str(tmp_path / "x.json"), "--as-of", "nope"])
+    assert e.value.code == 2 and "YYYY-MM-DD" in capsys.readouterr().err
+
+
+def test_every_subcommand_has_help(capsys):
+    import pytest
+    for cmd in ("demo", "check-order", "graph-demo", "sign-mandate", "verify-mandate", "serve", "init", "doctor"):
+        with pytest.raises(SystemExit) as e:
+            cli.main([cmd, "--help"])
+        assert e.value.code == 0
+        assert "usage: orderguard" in capsys.readouterr().out

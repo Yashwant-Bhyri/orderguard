@@ -16,9 +16,12 @@ function explain(status, data) {
   if (status === 404) return new Fail(sentence(msg || "That item was not found"), "Pick another one from the list.");
   if (status === 413) return new Fail("That input is too large.", "Shorten it to under 100,000 characters and try again.");
   if (status === 422) {
-    const d = data && data.details ? data.details.map((x) => x.where + " " + x.problem).join("; ") : "";
+    const d = data && data.details ? data.details.filter((x) => x.problem !== msg).map((x) => x.where + " " + x.problem).join("; ") : "";
     return new Fail(sentence(msg && msg !== "invalid request" ? msg : "The server could not use that input"), (d ? "Details: " + d + ". " : "") + "Fix the field and try again.");
   }
+  if (status === 429) return new Fail("Too many requests in a short time.", (data && data.hint ? sentence(data.hint.replace(/^wait/, "Wait")) + " " : "") + "Then try again.");
+  if (status === 503) return new Fail("The server is busy with another run of this kind.", "Wait a few seconds and try again.");
+  if (status === 504) return new Fail("That took too long and was stopped.", "Use a smaller run (fewer agents or steps, or shorter input) and try again.");
   if (status === 502) return new Fail(sentence(msg || "The receiver could not be reached"), "Check that the receiver bridge is running and that ORDERGUARD_RECEIVER_URL points at it, then refresh.");
   if (status >= 500) return new Fail("The server hit an internal problem" + (data && data.ref ? " (reference " + data.ref + ")" : "") + ".", "Try again. If it repeats, look for that reference in the server log.");
   return new Fail(sentence(msg || "The request did not go through"), "Check the input and try again.");

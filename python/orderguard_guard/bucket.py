@@ -50,6 +50,8 @@ def numbers_in(text: str) -> list[str]:
                 continue
             if v < 10 and "." not in core:                     # small integers are not distinctive
                 continue
+            if core == tok:                                    # plain number: one spelling per value ('400.00' and '$400' match)
+                tok = format(v, "f").rstrip("0").rstrip(".") if "." in core else str(int(v))
         if tok not in out:
             out.append(tok)
     return out

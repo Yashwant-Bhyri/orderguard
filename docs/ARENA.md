@@ -191,7 +191,19 @@ og-arena record --symbols BTCUSDT,ETHUSDT,SOLUSDT --seconds 180   # read-only pu
 og-arena l8 --seed 23 --agents 1000 --steps 400             # needs node and a loopback port
 ```
 
-Without installing the script: `python -m orderguard_arena.cli ...`. API: mount `orderguard_arena.api.router` (`/api/arena/run`, `/api/arena/frontier`, `/api/arena/envelopes`; synthetic runs are capped at 5,000 agents, 2,000 ticks and 2.5 million agent-ticks. Replay uses the recording length). Tests: `OG_LLM=replay python -m pytest -q python/tests/arena`.
+Without installing the script: `python -m orderguard_arena.cli ...`. API: mount `orderguard_arena.api.router` (`/api/arena/run`, `/api/arena/frontier`, `/api/arena/envelopes`; synthetic runs are capped at 5,000 agents, 2,000 ticks and 2.5 million agent-ticks. Replay uses the recording length). Tests: `OG_LLM=replay python -m pytest -q python/tests/arena`. Check every quoted number: `og-arena verify`.
+
+## Reproducing and checking the numbers
+
+`og-arena verify` rebuilds every figure quoted in `README.md`, this page and `RISK.md` from the committed result files and requires the quoting sentence to match, then regenerates the arena results from their seeds (the 1,000-agent baseline, fair-share, tightest-fit and strict runs, the recorded-feed replay, the benchmark's deterministic columns and the envelope frontier) and requires them to match byte for byte. Timing fields are excluded because they measure a machine. `og-arena verify --quick` does only the first half in about a second; `--skip-frontier` skips the 35-second frontier rebuild. Committed summaries written before `paired_fills` existed are compared with that field at its default, which is what they used.
+
+- Runs are deterministic across Python hash seeds (`PYTHONHASHSEED`), checked by a test that compares two runs, a strict run and a frontier across three seeds.
+- Measured on one Apple-silicon laptop, CPython 3.12: `og-arena run --seed 7 --agents 5000 --steps 2000` makes 102,765 proposals in about 4.5 s wall with a 25.8 MB event log and a peak of about 125 MB resident when the log is streamed to disk (188 MB when events are also kept in memory). Timing and memory are machine-dependent and are not part of any check.
+- The event log is streamed line by line to `<name>.jsonl.partial` and renamed only when the run completes, so a killed run never leaves a log that looks complete. Runs are deterministic and take seconds, so "resuming" means running again with the same seed.
+- `og-arena frontier` refuses a truncated or corrupt log with the line number. `--allow-partial` uses the complete events of a log whose last line was cut off.
+- A recorded feed that is truncated, has a bad line, or lacks a symbol its header declares is refused with the line number. Recording retries each poll up to three times with exponential backoff (the interval doubled each time, at most 30 s; a 429 or 418 `Retry-After` is honoured up to 60 s), never records a non-positive or non-finite quote, and stops with a clear error after five consecutive failed ticks. The recording up to that point stays valid.
+- The Pareto frontier is checked against a brute-force dominance test on 200 random small grids (with ties) and on a real 40-candidate stream.
+- `/api/arena/run`, `/frontier` and `/envelopes` answer 422 and name the field for a seed, `agents` or `steps` that is not a whole number or is outside its limits (agents 1 to 5,000, steps 1 to 2,000). The only adjustment is the documented work bound: steps are cut so that agents x steps stays within 2.5 million.
 
 ## Limitations
 

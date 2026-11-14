@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-from orderguard_guard.gate import (Mandate, MandateInvalid, _parse_time, normalise_ticker, public_key_to_b64, sign_mandate)
+from orderguard_guard.gate import (Mandate, MandateInvalid, _parse_time, normalise_ticker, portfolio_reasons, public_key_to_b64, sign_mandate)
 import unicodedata
 
 FAR_FUTURE = "2099-01-01T00:00:00Z"
@@ -78,6 +78,7 @@ class Envelope:
     m: Mandate = field(init=False)
     id: str = field(init=False)
     budget: DailyBudget = field(init=False)
+    plock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
     revoked: bool = field(default=False, init=False)
 
     def __post_init__(self) -> None:
@@ -91,6 +92,48 @@ class Envelope:
         self.stepup = self.m.stepUpAboveUsd
         self.ref = {k.upper(): float(v) for k, v in (self.m.referencePrices or {}).items()}
         self.expires = _parse_time(self.m.expiresAt)
+        # portfolio state for the optional limits, in the receiver's units: integer cents per (day, symbol), net filled shares, held shares, orders per day
+        self.has_portfolio = any(x is not None for x in (self.m.maxSymbolDailyNotionalUsd, self.m.maxPositionUsd, self.m.maxOrdersPerDay))
+        self._sym_c: dict[tuple, int] = {}
+        self._net: dict[str, float] = {}
+        self._held: dict[str, dict] = {}
+        self._orders: dict[int, int] = {}
+
+    def portfolio_state(self, day: int) -> dict:
+        """The gate-shaped state (symbol_daily_usd, positions, held_qty, orders_today) for one day."""
+        with self.plock:
+            return {"symbol_daily_usd": {sym: c / 100.0 for (d, sym), c in self._sym_c.items() if d == day},
+                    "positions": dict(self._net), "held_qty": {k: dict(v) for k, v in self._held.items()},
+                    "orders_today": self._orders.get(day, 0)}
+
+    def reserve(self, day: int, ticker: str, side: str, qty, trusted, notional: float, agent=None, agent_cap: float | None = None,
+                *, held: bool = False) -> tuple[bool, list]:
+        """Atomically re-check the portfolio limits, reserve the daily budget and record the order. -> (ok, portfolio refusal reasons).
+        One lock covers all three, so concurrent agents can never together pass the per-symbol, position or order-count cap."""
+        with self.plock:
+            if self.has_portfolio:
+                why = portfolio_reasons(self.m, ticker, side, qty, trusted, self.portfolio_state(day))
+                if why:
+                    return False, why
+            if not self.budget.reserve(day, notional, agent, agent_cap):
+                return False, []
+            if self.has_portfolio:
+                self._sym_c[(day, ticker)] = self._sym_c.get((day, ticker), 0) + round(notional * 100)
+                self._orders[day] = self._orders.get(day, 0) + 1
+                if held:
+                    h = self._held.setdefault(ticker, {"buy": 0, "sell": 0})
+                    h[side] += qty
+                else:
+                    self._net[ticker] = self._net.get(ticker, 0) + (qty if side == "buy" else -qty)
+            return True, []
+
+    def settle_held(self, ticker: str, side: str, qty) -> None:
+        """A held order was approved by the human: its shares move from the conservative held tally into the filled position."""
+        with self.plock:
+            if self.has_portfolio:
+                h = self._held.setdefault(ticker, {"buy": 0, "sell": 0})
+                h[side] = max(0, h[side] - qty)
+                self._net[ticker] = self._net.get(ticker, 0) + (qty if side == "buy" else -qty)
 
     def verify(self, public_key: Ed25519PublicKey, now=None) -> None:
         self.m.verify(public_key, now=now)
@@ -107,7 +150,8 @@ class Envelope:
         """Smallest remaining room after this order: min(per-order cap, daily remainder) minus its notional."""
         return min(self.max_order - notional, self.budget.cap - self.budget.used(day) - notional)
 
-    def check(self, ticker: str, problem: str | None, side: str, qty, limit, trusted: float | None, used: float) -> tuple[list, list, float | None]:
+    def check(self, ticker: str, problem: str | None, side: str, qty, limit, trusted: float | None, used: float,
+              state: dict | None = None) -> tuple[list, list, float | None]:
         """The OrderGate rules 2-6 and 8 for one order. Returns (refusal reasons, hold reasons, notional at the trusted price)."""
         m = self.m
         reasons: list[str] = []
@@ -144,6 +188,8 @@ class Envelope:
             if round(used * 100) + cents > round(m.maxDailyNotionalUsd * 100):
                 reasons.append(f"With ${used:,.0f} already placed today this order would bring the day's total to "
                                f"${used + notional:,.0f}, above the daily cap of ${m.maxDailyNotionalUsd:,.0f}.")
+        if self.has_portfolio:       # same function as OrderGate, so the two cannot drift; no state at all fails closed
+            reasons.extend(portfolio_reasons(m, ticker, side, qty, trusted, state if state is not None else {}))
         if trusted is not None and limit is not None:
             off = (limit - trusted) / trusted
             if abs(off) > self.band + 1e-12:
@@ -156,11 +202,18 @@ class Envelope:
 
 def make_envelope(key: Ed25519PrivateKey, *, name: str, owner: str = "owner-1", purpose: str = "", symbols, sides=("buy", "sell"),
                   per_order: float, daily: float, band_pct: float, step_up: float | None = None, expires: str = FAR_FUTURE,
-                  reference_prices: dict | None = None) -> Envelope:
+                  reference_prices: dict | None = None, max_symbol_daily: float | None = None, max_position: float | None = None,
+                  max_orders_per_day: int | None = None) -> Envelope:
     body = {"symbols": list(symbols), "sides": list(sides), "maxOrderNotionalUsd": float(per_order), "maxDailyNotionalUsd": float(daily),
             "priceBandPct": float(band_pct), "expiresAt": expires, "referencePrices": dict(reference_prices or {})}
     if step_up is not None:
         body["stepUpAboveUsd"] = float(step_up)
+    if max_symbol_daily is not None:
+        body["maxSymbolDailyNotionalUsd"] = float(max_symbol_daily)
+    if max_position is not None:
+        body["maxPositionUsd"] = float(max_position)
+    if max_orders_per_day is not None:
+        body["maxOrdersPerDay"] = int(max_orders_per_day)
     env = Envelope(sign_mandate(body, key), name=name, owner=owner, purpose=purpose)
     env.verify(key.public_key())
     return env

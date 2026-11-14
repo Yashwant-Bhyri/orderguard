@@ -6,6 +6,7 @@ one-shot demo.
     og-risk eval                                     every protocol (held-out seeds, regime shift, time split, leave-one-family-out,
                                                      ablations, adaptive colluders, MLP) -> results/risk/eval.json
     og-risk demo-oneshot                             one analyst-labelled stealth order -> how much similar flow is held, at what cost
+    og-risk program | oneshot-eval | attack | drain | latency | arena      see docs/RISK.md
 """
 from __future__ import annotations
 
@@ -55,112 +56,229 @@ def _proto_params(d, cols, train_rows, rng) -> dict:
     return {"mu": [round(float(x), 6) for x in mu], "sd": [round(float(x), 6) for x in sd], "h": round(h, 6), "tau": tau}
 
 
+MODEL_OUT = ROOT / "data" / "models" / "order_risk.json"
+V1_MODEL = ROOT / "data" / "models" / "order_risk_v1.json"
+
+
+def export_model(ft, d, fit_rows) -> dict:
+    """Fitted2 -> the JSON the pure-Python scorer loads (format /2)."""
+    from . import features as F
+    from . import models as M
+    from . import pipeline as P
+    from . import program as G
+    ens = M.TreeEnsemble.from_sklearn(ft.clf, [F.NAMES[c] for c in ft.cols])
+    ens.platt = ft.platt
+    ix = np.flatnonzero(fit_rows & d.pop)
+    rng = np.random.default_rng(0)
+    hon = ix[d.y[ix] == 0]
+    st = G.honest_stats(d.X[rng.choice(hon, size=min(20_000, len(hon)), replace=False)].astype(float).tolist())
+    units = [{"name": u["name"], "family": u["family"], "why": u["why"], "pi": float(pi), "programmed_pi": u["pi"], "terms": [list(t) for t in u["terms"]]}
+             for u, pi in zip(G.UNITS, ft.pi)]
+    return {"format": "orderguard-order-risk/2", "features": "behavioural (no rationale text)", "cols": ft.cols, "feature_names": [F.NAMES[c] for c in ft.cols],
+            "trees": ens.to_json(), "units": units, "combine": "noisy-or: risk = 1 - (1 - learned) * prod(1 - pi_k * u_k)",
+            "monotone_increasing": [n for n in P.MONO],
+            "thresholds": {"hold": ft.t_hold, "refuse": ft.t_refuse, "operating_budget": P.OPERATING_BUDGET, "refuse_budget": P.REFUSE_BUDGET,
+                           "by_honest_hold_budget": {f"{b:.2%}": t for b, t in ft.thr.items()},
+                           "calibrated_on": "out-of-fold scores over whole training runs: the honest quantile at each budget"},
+            "edit": {"med": [round(v, 6) for v in st["med"]], "scale": [round(v, 6) for v in st["scale"]], "scale_dn": [round(v, 6) for v in st["scale_dn"]], "budget": 0.001, "coords": [n for n, _ in G.EDIT_COORDS]},
+            "prototype": _proto_params(d, ft.cols, ix, np.random.default_rng(0)),
+            "training": {"rows": ft.info["rows"], "runs": ft.info["runs"], "corpus_rows": int(len(d.y))}}
+
+
+def _write_model(model: dict, out: Path) -> int:
+    blob = json.dumps(model, separators=(",", ":"), sort_keys=True)
+    out.write_text(blob)
+    out.with_suffix(".sha256").write_text(hashlib.sha256(blob.encode()).hexdigest() + f"  {out.name}\n")
+    return len(blob)
+
+
 def cmd_train(a) -> int:
+    """Fit the v2 model and the v1 architecture the same way, and ship v2 only if it wins at the declared operating budget on held-out seeds
+    AND on the adaptive colluders (recall not lower, honest holds not higher). Otherwise the current model file is left alone."""
     from . import evaluate as E
     from . import pipeline as P
     from . import dataset as D
     d = P.load_data()
     tr, va, te = P.seed_split(d)
-    cols = _behavioural_cols()
-    ft, X = P.fit(d, tr, va, use=cols, iters=a.iters, seed=0)
-    rows = np.flatnonzero(te & d.pop)
-    m = E.metrics(P.predict(ft, X, rows), d, rows, ft.t_hold, ft.t_refuse)
-    ext = None
+    fit_rows = tr | va
+    tei = np.flatnonzero(te & d.pop)
     try:
-        ext = E.external(ft, P.load_data(D.DATA_DIR / "stealth.npz"))
+        ext = P.load_data(D.DATA_DIR / "stealth.npz")
+        ei = np.flatnonzero(ext.pop)
     except FileNotFoundError:
-        pass
-    model = {"format": "orderguard-order-risk/1", "features": "behavioural (no rationale text)", "cols": cols,
-             "feature_names": [P.F.NAMES[c] for c in cols], "trees": ft.ens.to_json(),
-             "thresholds": {"hold": ft.t_hold, "refuse": ft.t_refuse, "calibrated_on": "validation seeds: hold flags 1% of honest allowed orders, refuse 0.05%"},
-             "prototype": _proto_params(d, cols, np.flatnonzero(tr & d.pop), np.random.default_rng(0)),
-             "training": {"rows": int((tr & d.pop).sum()), "runs": int(len(np.unique(d.run[tr]))), "corpus_rows": int(len(d.y))},
-             "metrics_held_out_seeds": {k: m[k] for k in ("pr_auc", "usd_recall_hold_or_refuse", "honest_false_hold_rate", "hold_precision", "ece")},
-             "metrics_adaptive_colluders": None if ext is None else {k: ext[k] for k in ("pr_auc", "usd_recall_hold_or_refuse", "honest_false_hold_rate")}}
-    out = ROOT / "data" / "models" / "order_risk.json"
-    blob = json.dumps(model, separators=(",", ":"), sort_keys=True)
-    out.write_text(blob)
-    (out.with_suffix(".sha256")).write_text(hashlib.sha256(blob.encode()).hexdigest() + "  order_risk.json\n")
+        ext = None
+    new = P.fit2(d, fit_rows, iters=a.iters)
+    old = P.fit2(d, fit_rows, cols=P.V1_COLS, units=False, mono=False, iters=a.iters)
+    rep = {}
+    for name, ft in (("v2_programmed", new), ("v1_architecture", old)):
+        rep[name] = {"held_out_seeds": E.budget_table(P.predict2(ft, d.X[tei]), d, tei, ft.thr, ft.t_refuse),
+                     "adaptive_colluders": None if ext is None else E.budget_table(P.predict2(ft, ext.X[ei]), ext, ei, ft.thr, ft.t_refuse)}
+    key = f"{P.OPERATING_BUDGET:.2%}"
+    wins = {}
+    for part in ("held_out_seeds", "adaptive_colluders"):
+        if rep["v2_programmed"][part] is None:
+            continue
+        n, o = rep["v2_programmed"][part]["budgets"][key], rep["v1_architecture"][part]["budgets"][key]
+        wins[part] = {"v2": [n["usd_recall"], n["honest_hold_rate"]], "v1": [o["usd_recall"], o["honest_hold_rate"]],
+                      "v2_wins": bool(n["usd_recall"] >= o["usd_recall"] and n["honest_hold_rate"] <= o["honest_hold_rate"])}
+    ship = all(w["v2_wins"] for w in wins.values()) and not a.no_ship
+    model = export_model(new, d, fit_rows)
+    model["metrics_held_out_seeds"] = rep["v2_programmed"]["held_out_seeds"]["budgets"][key]
+    model["metrics_adaptive_colluders"] = None if ext is None else rep["v2_programmed"]["adaptive_colluders"]["budgets"][key]
+    out = MODEL_OUT if ship else MODEL_OUT.with_name("order_risk_candidate.json")
+    n = _write_model(model, out)
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / "shipped_model.json").write_text(json.dumps({"held_out_seeds": m, "adaptive_colluders": ext}, indent=1, sort_keys=True, default=float))
-    print(f"wrote {out.relative_to(ROOT)} ({len(blob) / 1e6:.2f} MB, {len(ft.ens.trees)} trees, {len(cols)} behavioural features)")
-    print("held-out seeds:", model["metrics_held_out_seeds"])
-    if ext:
-        print("adaptive colluders (never trained on):", model["metrics_adaptive_colluders"])
+    (RESULTS / "shipped_model.json").write_text(json.dumps({"shipped": "v2_programmed" if ship else "unchanged", "operating_budget": P.OPERATING_BUDGET,
+                                                           "ship_gate": wins, **rep}, indent=1, sort_keys=True, default=float))
+    print(f"wrote {out.relative_to(ROOT)} ({n / 1e6:.2f} MB, {len(model['trees']['trees'])} trees, {len(model['cols'])} features, {len(model['units'])} programmed units)")
+    print("ship gate at", key, json.dumps(wins))
+    print("SHIPPED v2" if ship else "NOT shipped: the current model file is unchanged; candidate written next to it")
     return 0
 
 
 def cmd_eval(a) -> int:
     from . import evaluate as E
     from . import pipeline as P
-    if not a.with_text:
-        E.DEFAULT_USE = _behavioural_cols()
-    res = E.run_all(P.load_data())
-    res["features"] = "all, including synthetic rationale text" if a.with_text else "behavioural (the shipped model's columns)"
+    from . import dataset as D
+    d = P.load_data()
+    try:
+        ext = P.load_data(D.DATA_DIR / "stealth.npz")
+    except FileNotFoundError:
+        ext = None
+    res = E.run_all2(d, ext)
+    res["features"] = "behavioural (no rationale text)"
     RESULTS.mkdir(parents=True, exist_ok=True)
     E.dump(RESULTS / "eval.json", res)
     print(f"wrote {(RESULTS / 'eval.json').relative_to(ROOT)}")
     return 0
 
 
-def oneshot(model: dict, d, seed: int = 0) -> dict:
-    """Score the adaptive-colluder runs with the shipped model; take ONE missed stealth order from one run as an analyst label; measure what
-    the prototype catches in the OTHER runs (dollars of missed stealth flow) and what it costs (honest orders newly held)."""
-    from .models import TreeEnsemble
-    cols = model["cols"]
-    ens = TreeEnsemble.from_json(model["trees"])
-    pr = model["prototype"]
-    mu, sd, h, tau = np.array(pr["mu"]), np.array(pr["sd"]), pr["h"], pr["tau"]
-    rows = np.flatnonzero(d.pop)
-    X = d.X[rows][:, cols].astype(np.float64)
-    p = np.array([ens.prob(ens.raw(x)) for x in X])
-    flagged = p >= model["thresholds"]["hold"]
-    y, fam, run, usd = d.y[rows], d.fam[rows], d.run[rows], d.notional[rows]
-    missed = np.flatnonzero((fam == "stealth") & ~flagged)
-    if not len(missed):
-        return {"note": "the model already holds every stealth order; nothing to demonstrate"}
-    rng = np.random.default_rng(seed)
-    pick = int(rng.choice(missed))
-    other = run != run[pick]
-    E = np.clip((np.sign(X) * np.log1p(np.abs(X)) - mu) / sd, -6, 6)
-    dist = np.sqrt(((E - E[pick]) ** 2).sum(1))
-    # Bandwidth chosen at labelling time from what the analyst can see: the orders of the label's own run that were seen BEFORE it and
-    # not flagged (mostly honest). The prototype may capture at most `budget` of them. No labels from other runs are used.
-    ref = (run == run[pick]) & (d.step[rows] <= d.step[rows][pick]) & ~flagged
-    ref[pick] = False
-    budget = 0.005
-    q = float(np.quantile(dist[ref], budget)) if ref.sum() >= 50 else float(np.quantile(dist, budget))
-    h = q / math.sqrt(2 * math.log(1 / tau))
-    sim = np.exp(-dist ** 2 / (2 * h ** 2))
-    caught = sim >= tau
-    st = (fam == "stealth") & other
-    hon = (y == 0) & other
-    before = float(usd[st & flagged].sum() / usd[st].sum())
-    after = float(usd[st & (flagged | caught)].sum() / usd[st].sum())
-    return {"label": {"run": int(run[pick]), "notional_usd": round(float(usd[pick]), 2), "risk_before": round(float(p[pick]), 5),
-                      "reference_orders": int(ref.sum()), "capture_budget": budget},
-            "stealth_usd_recall_other_runs": {"before": round(before, 4), "after_one_label": round(after, 4)},
-            "missed_stealth_usd_now_held": round(float(usd[st & ~flagged & caught].sum()), 2),
-            "honest_newly_held": int((hon & ~flagged & caught).sum()), "honest_orders": int(hon.sum()),
-            "honest_newly_held_rate": round(float((hon & ~flagged & caught).sum() / max(hon.sum(), 1)), 5)}
+def cmd_program(a) -> int:
+    """The programmed units, their programmed and refitted weights, and how often each fires on honest and on each family (training runs)."""
+    from . import pipeline as P
+    from . import program as G
+    d = P.load_data()
+    tr, va, _te = P.seed_split(d)
+    m = (tr | va) & d.pop
+    U, y, fam, usd = G.units_matrix(d.X[m]), d.y[m], d.fam[m], d.notional[m]
+    pi = G.refit_pi(U, y)
+    rows = []
+    for k, u in enumerate(G.UNITS):
+        f = U[:, k] >= 0.5
+        rows.append({"unit": u["name"], "family": u["family"], "terms": u["terms"], "programmed_pi": u["pi"], "refitted_pi": pi[k],
+                     "honest_fire_rate": round(float(f[y == 0].mean()), 6),
+                     "usd_recall_by_family": {fa: round(float(usd[f & (fam == fa)].sum() / usd[fam == fa].sum()), 3) for fa in ("collusion", "compromised", "fat_finger", "runaway", "stale_price")}})
+    anyf = U.max(1) >= 0.5
+    res = {"units": rows, "any_unit_honest_fire_rate": round(float(anyf[y == 0].mean()), 6), "rows": int(m.sum()), "note": "training and validation runs only"}
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    (RESULTS / "programmed_units.json").write_text(json.dumps(res, indent=1))
+    for r in rows:
+        print(f"{r['unit']:<24} pi {r['programmed_pi']:.2f} -> {r['refitted_pi']:.3f}  honest fire {r['honest_fire_rate']:.4%}  {r['usd_recall_by_family']}")
+    print("any unit, honest:", f"{res['any_unit_honest_fire_rate']:.4%}")
+    return 0
+
+
+def cmd_attack(a) -> int:
+    """White-box adaptive attacker against the v2 model and against the v1 architecture; the winners re-measured on fresh seeds by both."""
+    from . import adversary as A
+    from . import pipeline as P
+    d = P.load_data()
+    tr, va, _te = P.seed_split(d)
+    new = P.fit2(d, tr | va)
+    old = P.fit2(d, tr | va, cols=P.V1_COLS, units=False, mono=False)
+    B = P.OPERATING_BUDGET
+    scorers = {"v2_programmed": (lambda X: P.predict2(new, X), new.thr[B]), "v1_architecture": (lambda X: P.predict2(old, X), old.thr[B]),
+               "v1_architecture_at_1pct": (lambda X: P.predict2(old, X), old.thr[0.01])}
+    res = {"operating_budget": B, "knobs": A.KNOBS, "naive_adaptive_colluder": {"theta": A.NAIVE, "fresh_seeds": A.remeasure(A.NAIVE, scorers)}}
+    for target in ("v2_programmed", "v1_architecture"):
+        fn, t = scorers[target]
+        s = A.search(fn, t, n_random=a.random, log=(lambda *x: print(target, *x, file=sys.stderr)) if a.verbose else None)
+        s["fresh_seeds"] = A.remeasure(s["best_theta"], scorers)
+        res["optimised_against_" + target] = s
+        print(target, json.dumps(s["best_theta"]), json.dumps(s["fresh_seeds"]))
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    (RESULTS / "adversary.json").write_text(json.dumps(res, indent=1, sort_keys=True))
+    print(f"wrote {(RESULTS / 'adversary.json').relative_to(ROOT)}")
+    return 0
+
+
+def cmd_drain(a) -> int:
+    """Paradigm (d) prototype: closed-form forecast that an envelope's shared daily budget runs out today, measured on held-out runs."""
+    from . import dataset as D
+    from . import portfolio as PF
+    cols, metas = D.load_corpus()
+    runs = sorted(m["run"] for m in metas)
+    test = {r for r in runs if r % 4 == 1}
+    res = PF.evaluate(cols, metas, set(runs) - test, test)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    (RESULTS / "drain_forecast.json").write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+    return 0
+
+
+def cmd_latency(a) -> int:
+    """Pure-Python scoring latency (features included) over a recorded arena stream -> results/risk/latency.json."""
+    from .scorer import RiskScorer, arena_event
+    stream = Path(a.stream)
+    rows = [json.loads(l) for l in stream.open()]
+    meta = json.loads(stream.with_suffix(".summary.json").read_text())
+    sc = RiskScorer.load()
+    sc.set_envelopes({e["name"]: {"per_order": e["per_order"], "daily": e["daily"], "step_up": e.get("step_up"), "band_pct": e.get("band_pct")} for e in meta["envelopes"]},
+                     int((meta.get("config") or {}).get("steps_per_day") or 500))
+    lat = []
+    for r in rows:
+        if "order" not in r:
+            continue
+        ev = arena_event(r)
+        lat.append(sc.score(ev)["latency_us"])
+        sc.observe(ev)
+    lat.sort()
+    n = len(lat)
+    res = {"orders": n, "p50_us": lat[n // 2], "p99_us": lat[int(0.99 * n)], "p999_us": lat[int(0.999 * n)], "mean_us": round(sum(lat) / n, 2),
+           "model_mb": round(MODEL_OUT.stat().st_size / 1e6, 3), "stream": stream.name, "note": "score() only: featurize + trees + units + reasons; observe() is separate"}
+    (RESULTS / "latency.json").write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+    return 0
+
+
+def cmd_oneshot_eval(a) -> int:
+    """Leave-one-family-out with zero, one and five labelled examples (weight edits) and the full retrain -> results/risk/oneshot.json."""
+    from . import evaluate as E
+    from . import pipeline as P
+    d = P.load_data()
+    tr, va, te = P.seed_split(d)
+    res = E.lofo(d, tr | va, te)
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    E.dump(RESULTS / "oneshot.json", res)
+    print(f"wrote {(RESULTS / 'oneshot.json').relative_to(ROOT)}")
+    return 0
 
 
 def cmd_demo_oneshot(a) -> int:
+    """ONE analyst label on the adaptive-colluder runs, through the shipped scorer's own code path (program.edit_from_example): label a
+    stealth order the shipped model missed in one run, measure on the other runs."""
+    from . import evaluate as E
     from . import pipeline as P
     from . import dataset as D
-    model = json.loads((ROOT / "data" / "models" / "order_risk.json").read_text())
+    from .models import TreeEnsemble
+    from . import program as G
+    model = json.loads(MODEL_OUT.read_text())
     d = P.load_data(D.DATA_DIR / "stealth.npz")
-    trials = [oneshot(model, d, seed=a.seed + i) for i in range(a.trials)]
-    after = sorted(t["stealth_usd_recall_other_runs"]["after_one_label"] for t in trials)
-    cost = sorted(t["honest_newly_held_rate"] for t in trials)
-    res = {"trials": trials, "summary": {
-        "labels": a.trials, "stealth_usd_recall_before": trials[0]["stealth_usd_recall_other_runs"]["before"],
-        "after_one_label": {"min": after[0], "median": after[len(after) // 2], "max": after[-1]},
-        "honest_newly_held_rate": {"min": cost[0], "median": cost[len(cost) // 2], "max": cost[-1]},
-        "note": "each trial labels ONE missed stealth order chosen at random and measures only on the other runs"}}
+    rows = np.flatnonzero(d.pop)
+    ens = TreeEnsemble.from_json(model["trees"])
+    X = d.X[rows]
+    pl = np.array([ens.prob(ens.raw(x)) for x in X[:, model["cols"]].astype(float)])
+    units = [{**u, "terms": [tuple(t) for t in u["terms"]]} for u in model.get("units", [])]
+    p = P.combine(pl, G.units_matrix(X, units), [u["pi"] for u in units]) if units else pl
+    t = model["thresholds"]["hold"]
+    m = d.fam[rows] == "stealth"
+    res = {"stealth_usd_recall_before": round(float(d.notional[rows][m & (p >= t)].sum() / d.notional[rows][m].sum()), 4),
+           "one_label": E.oneshot_trials(d, rows, p, d, rows, p, "stealth", t, k=1, trials=a.trials, seed=a.seed, same_run_excluded=True, stats=model.get("edit")),
+           "five_labels": E.oneshot_trials(d, rows, p, d, rows, p, "stealth", t, k=5, trials=a.trials, seed=a.seed, same_run_excluded=True, stats=model.get("edit")),
+           "note": "each trial labels missed stealth orders chosen at random from one run and measures only on the other runs"}
     RESULTS.mkdir(parents=True, exist_ok=True)
-    (RESULTS / "oneshot.json").write_text(json.dumps(res, indent=1, sort_keys=True))
-    print(json.dumps(res["summary"], indent=1))
+    (RESULTS / "oneshot_demo.json").write_text(json.dumps(res, indent=1, sort_keys=True))
+    print(json.dumps(res, indent=1))
     return 0
 
 
@@ -240,9 +358,22 @@ def main(argv=None) -> int:
     p = sub.add_parser("train", help="fit, calibrate and export data/models/order_risk.json")
     p.add_argument("--iters", type=int, default=80)
     p.set_defaults(fn=cmd_train)
+    p.add_argument("--no-ship", action="store_true", help="write the candidate next to the shipped model whatever the gate says")
     p = sub.add_parser("eval", help="every evaluation protocol -> results/risk/eval.json")
-    p.add_argument("--with-text", action="store_true", help="include the synthetic-rationale text features (not the shipped model)")
     p.set_defaults(fn=cmd_eval)
+    p = sub.add_parser("program", help="the programmed units: weights, honest firing rate, recall by family")
+    p.set_defaults(fn=cmd_program)
+    p = sub.add_parser("oneshot-eval", help="leave-one-family-out: zero-shot, one-shot and five-shot weight edits, full retrain")
+    p.set_defaults(fn=cmd_oneshot_eval)
+    p = sub.add_parser("drain", help="portfolio-level prototype: forecast that an envelope's daily budget runs out -> results/risk/drain_forecast.json")
+    p.set_defaults(fn=cmd_drain)
+    p = sub.add_parser("latency", help="pure-Python scoring latency over a recorded stream -> results/risk/latency.json")
+    p.add_argument("--stream", default=str(ROOT / "results" / "arena" / "arena-s7-k1000-t2000.jsonl"))
+    p.set_defaults(fn=cmd_latency)
+    p = sub.add_parser("attack", help="white-box adaptive attacker and the cost of evasion -> results/risk/adversary.json")
+    p.add_argument("--random", type=int, default=40)
+    p.add_argument("--verbose", action="store_true")
+    p.set_defaults(fn=cmd_attack)
     p = sub.add_parser("demo-oneshot", help="one analyst label, measured on runs it did not come from")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--trials", type=int, default=10)

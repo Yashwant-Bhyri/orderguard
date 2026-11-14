@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
-import { OrderGuardClient, OrderGuardError } from "../src/client.js";
+import { OrderGuardClient, OrderGuardError, OrderGuardUnavailable } from "../src/client.js";
 
 const PROTOCOL_VERSION = "2025-11-25";
 if (process.argv.includes("--version")) {
@@ -76,7 +76,9 @@ async function dispatch(message) {
     } catch (error) {
       const payload = error instanceof OrderGuardError
         ? { state: "denied", status_code: error.status, reason: error.payload?.error ?? "receiver_denied" }
-        : { state: "error", reason: error instanceof TypeError ? error.message : "receiver_request_failed" };
+        : error instanceof OrderGuardUnavailable
+          ? { state: error.outcomeUnknown ? "unknown" : "error", reason: "receiver_unavailable", detail: error.message }
+          : { state: "error", reason: error instanceof TypeError ? error.message : "receiver_request_failed" };
       return frame(id, payload, true);
     }
   }
@@ -84,12 +86,23 @@ async function dispatch(message) {
 }
 
 for await (const line of rl) {
+  if (!line.trim()) continue;
+  let id = null;
   try {
-    const message = JSON.parse(line);
-    if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+    let message;
+    try { message = JSON.parse(line); } catch {
+      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error: send one JSON object per line" } })}\n`);
+      continue;
+    }
+    if (!message || typeof message !== "object" || Array.isArray(message)) {
+      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid request: expected a JSON-RPC object" } })}\n`);
+      continue;
+    }
+    id = message.id ?? null;
     const response = await dispatch(message);
     if (response !== undefined) process.stdout.write(`${JSON.stringify(response)}\n`);
   } catch (error) {
+    if (id !== null) process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32603, message: "Internal error" } })}\n`);
     // MCP stdout is reserved for JSON-RPC. Never echo request headers or tokens.
     process.stderr.write(`OrderGuard MCP input rejected (${error?.name ?? "Error"}).\n`);
   }

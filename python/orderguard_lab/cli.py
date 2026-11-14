@@ -92,6 +92,12 @@ def cmd_detect(a):
 def cmd_tables(a):
     from . import tables
     if a.check:
+        problems = tables.integrity_problems()
+        for x in problems:
+            print(f"results integrity: {x}", file=sys.stderr)
+        if problems:
+            print("a raw result file is damaged or holds a ReplayMiss; restore it from version control or re-record it. Tables skip such lines silently, so the check refuses.", file=sys.stderr)
+            return 1
         if tables.check():
             print("docs/RESULTS.md is up to date")
             return 0

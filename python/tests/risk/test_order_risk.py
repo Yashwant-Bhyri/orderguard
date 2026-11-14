@@ -82,7 +82,7 @@ def test_shipped_model_loads_and_scores_deterministically():
         rb.append(b.score(e)["risk"]); b.observe(e)
     assert ra == rb and all(0.0 <= p <= 1.0 for p in ra)
     m = json.loads(MODEL_PATH.read_text())
-    assert m["format"] == "orderguard-order-risk/1" and "text" not in m["feature_names"][0]
+    assert m["format"] == "orderguard-order-risk/2" and "text" not in m["feature_names"][0]
     assert not any(n in m["feature_names"] for n in ("text_logit", "stated_ratio", "has_stated", "script_dup"))   # shipped model is behavioural
 
 

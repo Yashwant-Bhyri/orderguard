@@ -33,9 +33,13 @@ Tool pages show example actions, loading states and field errors. Press `Ctrl K`
 
 Screenshots: none are checked in. To capture them, run `orderguard serve`, open each page at 1280px and 360px in light and dark, and use the example buttons so each page shows a result (the fake split order, the hidden instruction text and the injected-transfer scenario are the clearest).
 
+## Limits and security
+
+Authentication runs before anything is read or parsed, so an unauthenticated caller learns nothing. Request bodies are capped at 1,000,000 bytes (chunked uploads too). Heavy routes (arena runs, scenarios, screening) have a per-client rate limit, a concurrency cap and a deadline (429, 503 and 504 respectively); the table, the environment switches and the deliberate absence of CORS are in [API.md](API.md#limits-and-cross-origin-stance). Every response carries `nosniff`, `X-Frame-Options: DENY`, a strict CSP and a no-camera/microphone/geolocation `Permissions-Policy`. The dashboard maps 429, 503 and 504 to plain instructions.
+
 ## Endpoints
 
-All JSON, under `/api`. Errors are `{"error": "..."}` with a proper status (401, 404, 413, 422, 502, 500); a 500 carries only a short reference, never a stack trace.
+All JSON, under `/api`. Errors are `{"error": "..."}` with a proper status (401, 404, 405, 413, 422, 429, 502, 503, 504, 500); a 422 adds `details` naming each bad field; a 500 carries only a short reference, never a stack trace.
 
 | Method and path | What it does |
 |---|---|

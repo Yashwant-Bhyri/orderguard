@@ -63,7 +63,7 @@ def test_there_is_no_real_money_path_in_the_source():
 
 def test_stale_data_is_refreshed_and_rechecked_once(store):
     """The newest filing in the store is old, so a 'latest quarter' claim is stale -> refresh -> the re-check sees the new filing."""
-    from conftest import scripted, snap
+    from vsupport import scripted, snap
     from orderguard_verify.core.gateway import Gateway
     from orderguard_verify.finance.pack import FinancePack
 
@@ -82,7 +82,7 @@ def test_stale_data_is_refreshed_and_rechecked_once(store):
 
 
 def test_a_failing_refresh_never_crashes_a_request(store):
-    from conftest import scripted, snap
+    from vsupport import scripted, snap
     from orderguard_verify.core.gateway import Gateway
     from orderguard_verify.finance.pack import FinancePack
 
