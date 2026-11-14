@@ -32,6 +32,7 @@ class Limit:
 LIMITS = (
     Limit("/api/arena/", 30, 30.0, 2),
     Limit("/api/run-scenario", 20, 120.0, 2),      # live mode can include model calls
+    Limit("/api/review/", 60, 30.0, 4),            # one decision-model call each (about a second live)
     Limit("/api/screen", 120, 60.0, 8),
     Limit("/api/check-order", 240, 60.0, 8),
     Limit("/api/trigger-graph", 120, 30.0, 4),

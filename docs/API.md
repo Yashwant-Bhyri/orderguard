@@ -29,6 +29,8 @@ export ORDERGUARD_APP_TOKEN=...   # the same value the server was started with
 | GET | [`/api/mandate`](#get-apimandate) | The demo mandate, signed at startup with an in-memory key, and its public key. |
 | POST | [`/api/check-order`](#post-apicheck-order) | Check one order against a mandate (L5) and its cited figures against SEC filings (L6). Places nothing. |
 | POST | [`/api/trigger-graph`](#post-apitrigger-graph) | Evaluate standing rules on market events (L7): guarded decisions, the naive baseline and the blast radius of one lying source. |
+| POST | [`/api/review/triage`](#post-apireviewtriage) | Triage one held order: probability it is bad, likely pattern, urgency and a queue key (expected bad dollars). Advice only; never approves or releases anything. |
+| POST | [`/api/review/draft`](#post-apireviewdraft) | Mandate copilot: code checks that an unsigned draft stays inside the signed parent, then advice on whether a contained draft fits its stated purpose. Signs nothing. |
 | GET | [`/api/scenarios`](#get-apiscenarios) | List the scripted demos and recorded lab cases that can be run. |
 | POST | [`/api/run-scenario`](#post-apirun-scenario) | Replay one scenario and return its timeline. Offline: recordings only unless the operator enabled recording. |
 | GET | [`/api/ledger`](#get-apiledger) | The L8 receiver's paper ledger, or a message that no receiver is connected. |
@@ -378,6 +380,60 @@ curl -s http://127.0.0.1:8600/api/trigger-graph \
   -d '{"preset":"single_venue_crash"}'
 ```
 
+### POST /api/review/triage
+
+Triage one held order: probability it is bad, likely pattern, urgency and a queue key (expected bad dollars). Advice only; never approves or releases anything.
+
+**Request body** (JSON, model [TriageRequest](#triagerequest); unknown fields are rejected)
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `held_order` | [OrderLine](#orderline) | yes |  |  |
+| `context` | [ReviewContext](#reviewcontext) or null | no |  |  |
+| `risk` | [RiskInput](#riskinput) or null | no |  | the risk model's result for this order, merged into p_bad by noisy-OR |
+
+**Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
+
+`advice`, `model_action`, `note`, `notional_usd`, `p_bad`, `p_jev`, `p_model`, `queue_rank_key`, `typed_reasons`
+
+Errors: see [Errors](#errors).
+
+**Example**
+
+```sh
+curl -s http://127.0.0.1:8600/api/review/triage \
+  -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"context":{"agent_recent":[{"agent":359,"limit_price":430.14,"quantity":2,"side":"buy","step":1015,"ticker":"JPM"}],"envelope":{"band_pct":1.0,"daily":8000000,"name":"core","per_order":25000,"step_up":20000}},"held_order":{"agent":359,"limit_price":49.99,"quantity":17,"side":"buy","step":1048,"ticker":"SPY","trusted_price":50.198},"risk":{"action":"none","risk":0.0004}}'
+```
+
+### POST /api/review/draft
+
+Mandate copilot: code checks that an unsigned draft stays inside the signed parent, then advice on whether a contained draft fits its stated purpose. Signs nothing.
+
+**Request body** (JSON, model [DraftReviewRequest](#draftreviewrequest); unknown fields are rejected)
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `source` | one of `"demo"`, `"configured"` | no | `"demo"` |  |
+| `draft` | object | yes |  |  |
+| `purpose` | string | yes |  | what the draft is for, in the author's words min length 1; max length 2000 |
+
+**Response** `200` (JSON object; the app does not declare a response schema), top-level keys:
+
+`advice`, `appropriateness`, `concerns`, `draft`, `fits`, `note`, `parent_id`, `requires_human_signature`, `scope_match`, `signed`, `violations`
+
+Errors: see [Errors](#errors).
+
+**Example**
+
+```sh
+curl -s http://127.0.0.1:8600/api/review/draft \
+  -H "Authorization: Bearer $ORDERGUARD_APP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"draft":{"expiresAt":"2098-12-31T00:00:00Z","maxDailyNotionalUsd":25000,"maxOrderNotionalUsd":10000,"priceBandPct":1,"sides":["buy"],"stepUpAboveUsd":8000,"symbols":["SPY","QQQ","TSLA"]},"purpose":"Rebalance into index ETFs: buy SPY and QQQ monthly, about $20k a month.","source":"demo"}'
+```
+
 ### GET /api/scenarios
 
 List the scripted demos and recorded lab cases that can be run.
@@ -487,6 +543,7 @@ Limits are per client address and in-process (a single local instance; rate-limi
 |---|---|---|---|
 | `/api/arena/` | 30 | 30s | 2 |
 | `/api/run-scenario` | 20 | 120s | 2 |
+| `/api/review/` | 60 | 30s | 4 |
 | `/api/screen` | 120 | 60s | 8 |
 | `/api/check-order` | 240 | 60s | 8 |
 | `/api/trigger-graph` | 120 | 30s | 4 |
@@ -509,12 +566,33 @@ A deadline stops the wait, not the computation: the client gets a 504 at once an
 | `daily_total_usd` | number | no | `0.0` | min 0; max 1e+12 |
 | `require_figures` | boolean | no | `false` |  |
 
+### DraftReviewRequest
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `source` | one of `"demo"`, `"configured"` | no | `"demo"` |  |
+| `draft` | object | yes |  |  |
+| `purpose` | string | yes |  | what the draft is for, in the author's words min length 1; max length 2000 |
+
 ### MandateUpload
 
 | Field | Type | Required | Default | Notes |
 |---|---|---|---|---|
 | `mandate` | object | yes |  |  |
 | `public_key` | string or null | no |  | base64 Ed25519 public key; without it only integrity is checked max length 256 |
+
+### OrderLine
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `step` | integer or null | no |  | min 0; max 1e+09 |
+| `agent` | string or integer or null | no |  | max length 40; pattern `^[A-Za-z0-9._-]+$` |
+| `ticker` | string | yes |  | min length 1; max length 16; pattern `^[A-Za-z0-9._-]+$` |
+| `side` | one of `"buy"`, `"sell"` | yes |  |  |
+| `quantity` | number | yes |  | above 0 |
+| `limit_price` | number | yes |  | above 0 |
+| `notional_usd` | number or null | no |  | order value at the trusted price; default quantity x trusted price (or limit price) min 0; max 1e+12 |
+| `trusted_price` | number or null | no |  | above 0 |
 
 ### PolicyLimits
 
@@ -551,6 +629,32 @@ A deadline stops the wait, not the computation: the client gets a 504 at once an
 | `limits` | [PolicyLimits](#policylimits) or null | no |  |  |
 | `mode` | one of `"rank"`, `"simulate"` | no | `"simulate"` |  |
 
+### ReviewContext
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `envelope` | [ReviewEnvelope](#reviewenvelope) or null | no |  |  |
+| `agent_recent` | array of [OrderLine](#orderline) | no |  | this agent's most recent orders, oldest first max items 20 |
+| `tape` | array of [OrderLine](#orderline) | no |  | recent orders by all agents on the same ticker, oldest first max items 50 |
+
+### ReviewEnvelope
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `name` | string or null | no |  | max length 40; pattern `^[A-Za-z0-9 ._-]+$` |
+| `per_order` | number or null | no |  | min 0; max 1e+12 |
+| `step_up` | number or null | no |  | min 0; max 1e+12 |
+| `daily` | number or null | no |  | min 0; max 1e+12 |
+| `band_pct` | number or null | no |  | min 0; max 100 |
+
+### RiskInput
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `risk` | number | yes |  | the order-risk model's probability that the order is bad min 0; max 1 |
+| `action` | one of `"none"`, `"hold"`, `"refuse"` or null | no |  |  |
+| `reasons` | array of string | no |  | max items 10 |
+
 ### ScenarioRequest
 
 | Field | Type | Required | Default | Notes |
@@ -564,6 +668,14 @@ A deadline stops the wait, not the computation: the client gets a 504 at once an
 |---|---|---|---|---|
 | `text` | string | yes |  | max length 100000 |
 | `kind` | one of `"doc"`, `"web"`, `"feed"`, `"tool"` | no | `"tool"` |  |
+
+### TriageRequest
+
+| Field | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `held_order` | [OrderLine](#orderline) | yes |  |  |
+| `context` | [ReviewContext](#reviewcontext) or null | no |  |  |
+| `risk` | [RiskInput](#riskinput) or null | no |  | the risk model's result for this order, merged into p_bad by noisy-OR |
 
 ### TriggerGraphRequest
 

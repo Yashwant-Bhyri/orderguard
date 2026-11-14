@@ -13,7 +13,8 @@ from orderguard_mcp import core
 from orderguard_mcp.server import build_server
 
 APPLE_REV = {"metric": "revenue", "fiscal_year": 2024, "value": 391035, "unit": "USD millions"}
-TOOLS = {"screen_text", "check_order", "verify_figures", "get_reported_figure", "evaluate_rules", "get_mandate", "submit_order", "review_mandate"}
+TOOLS = {"screen_text", "check_order", "verify_figures", "get_reported_figure", "evaluate_rules", "get_mandate", "submit_order", "review_mandate",
+         "review_held_order", "review_mandate_draft"}
 D = "2024-11-06"
 
 

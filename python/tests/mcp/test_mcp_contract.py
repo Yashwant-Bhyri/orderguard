@@ -29,6 +29,10 @@ CASES = {
     "submit_order": ({"ticker": "AAPL", "side": "buy", "quantity": 1, "limit_price": 222.7, "idempotency_key": "contract-key-0001"},
                      {"ticker": "AAPL", "side": "buy", "quantity": 1, "limit_price": 222.7, "idempotency_key": "x"}, "idempotency_key"),
     "review_mandate": ({"source": "demo"}, {"source": "demo", "agents": 10**9}, "agents"),
+    "review_held_order": ({"held_order": {"ticker": "SPY", "side": "buy", "quantity": 20, "limit_price": 500.0}},
+                          {"held_order": {"ticker": "SPY", "side": "buy", "quantity": 0, "limit_price": 500.0}}, "quantity"),
+    "review_mandate_draft": ({"source": "demo", "draft": {"symbols": ["SPY"]}, "purpose": "rebalance into index ETFs"},
+                             {"source": "demo", "draft": {"symbols": ["SPY"]}, "purpose": ""}, "purpose"),
 }
 
 

@@ -97,3 +97,7 @@ class TriggerGraphRequest(_Strict):
 class ScenarioRequest(_Strict):
     scenario: str = Field(min_length=1, max_length=80)
     arm: Optional[Literal["naive", "gate_only", "full"]] = None
+
+
+# ---- escalation lane: the request models live with the package so the MCP tools use the same ones ------------------------------------
+from orderguard_review.schemas import DraftReviewRequest, OrderLine, ReviewContext, ReviewEnvelope, RiskInput, TriageRequest  # noqa: E402,F401

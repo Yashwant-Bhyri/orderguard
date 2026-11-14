@@ -50,7 +50,8 @@ class _Server(FastMCP):
 
 def build_server() -> FastMCP:
     mcp = _Server("orderguard", instructions=INSTRUCTIONS)
-    for fn in (core.screen_text, core.check_order, core.verify_figures, core.get_reported_figure, core.evaluate_rules, core.get_mandate, core.review_mandate):
+    for fn in (core.screen_text, core.check_order, core.verify_figures, core.get_reported_figure, core.evaluate_rules, core.get_mandate, core.review_mandate,
+               core.review_held_order, core.review_mandate_draft):
         mcp.tool(annotations=_READ_ONLY)(fn)
     mcp.tool(annotations=_ORDER)(core.submit_order)
 

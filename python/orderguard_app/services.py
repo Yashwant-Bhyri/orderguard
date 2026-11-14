@@ -874,3 +874,20 @@ def results() -> dict:
     charts = results_charts(sections)
     return {"source": "docs/RESULTS.md", "sections": sections, "charts": charts, "headline": results_headline(charts, sections),
             "run_files": len(list(runs.glob("*.jsonl"))) if runs.exists() else 0}
+
+
+# ---- escalation lane -------------------------------------------------------------------------------------------------
+
+def review_triage(req) -> dict:
+    from orderguard_review.requests import triage_request
+    return triage_request(req)
+
+
+def review_draft(req) -> dict:
+    from orderguard_review.requests import ParentUnavailable, draft_request
+    try:
+        return draft_request(req.source, req.draft, req.purpose)
+    except ParentUnavailable as exc:
+        raise AppError(409, str(exc)) from None
+    except ValueError as exc:
+        raise AppError(422, str(exc), "body.purpose") from None

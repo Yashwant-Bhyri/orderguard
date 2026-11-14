@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import services as S
 from .guards import MAX_BODY, Guards
-from .models import CheckOrderRequest, ScenarioRequest, ScreenRequest, TriggerGraphRequest
+from .models import CheckOrderRequest, DraftReviewRequest, ScenarioRequest, ScreenRequest, TriageRequest, TriggerGraphRequest
 
 STATIC = Path(__file__).parent / "static"
 log = logging.getLogger("orderguard.app")
@@ -109,6 +109,14 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.post("/api/trigger-graph", dependencies=api)
     def trigger_graph(req: TriggerGraphRequest):
         return S.trigger_graph(req.rules, req.events, req.preset, req.quarantined_sources, req.blast_source, req.lies)
+
+    @app.post("/api/review/triage", dependencies=api)
+    def review_triage(req: TriageRequest):
+        return S.review_triage(req)
+
+    @app.post("/api/review/draft", dependencies=api)
+    def review_draft(req: DraftReviewRequest):
+        return S.review_draft(req)
 
     @app.get("/api/scenarios", dependencies=api)
     def scenarios():

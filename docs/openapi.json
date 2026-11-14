@@ -65,6 +65,38 @@
         "title": "CheckOrderRequest",
         "type": "object"
       },
+      "DraftReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "draft": {
+            "additionalProperties": true,
+            "title": "Draft",
+            "type": "object"
+          },
+          "purpose": {
+            "description": "what the draft is for, in the author's words",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Purpose",
+            "type": "string"
+          },
+          "source": {
+            "default": "demo",
+            "enum": [
+              "demo",
+              "configured"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft",
+          "purpose"
+        ],
+        "title": "DraftReviewRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -104,6 +136,102 @@
           "mandate"
         ],
         "title": "MandateUpload",
+        "type": "object"
+      },
+      "OrderLine": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9._-]+$",
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent"
+          },
+          "limit_price": {
+            "exclusiveMaximum": 1000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Limit Price",
+            "type": "number"
+          },
+          "notional_usd": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "order value at the trusted price; default quantity x trusted price (or limit price)",
+            "title": "Notional Usd"
+          },
+          "quantity": {
+            "exclusiveMaximum": 1000000000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Quantity",
+            "type": "number"
+          },
+          "side": {
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "title": "Side",
+            "type": "string"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "ticker": {
+            "maxLength": 16,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Ticker",
+            "type": "string"
+          },
+          "trusted_price": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1000000000.0,
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trusted Price"
+          }
+        },
+        "required": [
+          "ticker",
+          "side",
+          "quantity",
+          "limit_price"
+        ],
+        "title": "OrderLine",
         "type": "object"
       },
       "PolicyLimits": {
@@ -317,6 +445,155 @@
         "title": "PolicySearchRequest",
         "type": "object"
       },
+      "ReviewContext": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_recent": {
+            "description": "this agent's most recent orders, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            },
+            "maxItems": 20,
+            "title": "Agent Recent",
+            "type": "array"
+          },
+          "envelope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewEnvelope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tape": {
+            "description": "recent orders by all agents on the same ticker, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/OrderLine"
+            },
+            "maxItems": 50,
+            "title": "Tape",
+            "type": "array"
+          }
+        },
+        "title": "ReviewContext",
+        "type": "object"
+      },
+      "ReviewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "band_pct": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band Pct"
+          },
+          "daily": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "pattern": "^[A-Za-z0-9 ._-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "per_order": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per Order"
+          },
+          "step_up": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Up"
+          }
+        },
+        "title": "ReviewEnvelope",
+        "type": "object"
+      },
+      "RiskInput": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "hold",
+                  "refuse"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "reasons": {
+            "items": {
+              "maxLength": 500,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Reasons",
+            "type": "array"
+          },
+          "risk": {
+            "description": "the order-risk model's probability that the order is bad",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Risk",
+            "type": "number"
+          }
+        },
+        "required": [
+          "risk"
+        ],
+        "title": "RiskInput",
+        "type": "object"
+      },
       "ScenarioRequest": {
         "additionalProperties": false,
         "properties": {
@@ -373,6 +650,40 @@
           "text"
         ],
         "title": "ScreenRequest",
+        "type": "object"
+      },
+      "TriageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "held_order": {
+            "$ref": "#/components/schemas/OrderLine"
+          },
+          "risk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RiskInput"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "the risk model's result for this order, merged into p_bad by noisy-OR"
+          }
+        },
+        "required": [
+          "held_order"
+        ],
+        "title": "TriageRequest",
         "type": "object"
       },
       "TriggerGraphRequest": {
@@ -1150,6 +1461,78 @@
           }
         },
         "summary": "Results"
+      }
+    },
+    "/api/review/draft": {
+      "post": {
+        "operationId": "review_draft_api_review_draft_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Draft"
+      }
+    },
+    "/api/review/triage": {
+      "post": {
+        "operationId": "review_triage_api_review_triage_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Review Triage"
       }
     },
     "/api/run-scenario": {
