@@ -25,6 +25,10 @@ def test_readme_and_arena_and_lab_numbers_match_the_committed_results():
     assert not _failures(claims.check_texts(claims.arena_expectations(), "arena") + claims.check_texts(claims.lab_expectations(), "lab"))
 
 
+def test_review_lane_numbers_quoted_in_the_readme_and_product_brief_match_results_review():
+    assert not _failures(claims.check_texts(claims.review_expectations(), "review"))
+
+
 def test_risk_numbers_quoted_in_the_docs_match_results_risk():
     checks = claims.risk_checks()
     if any(c.name == "risk: results/risk/*.json layout" for c in checks):

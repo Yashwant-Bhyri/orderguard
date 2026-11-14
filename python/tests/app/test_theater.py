@@ -219,13 +219,13 @@ def test_source_endpoint_is_an_allow_list_of_exact_ids(client):
 def test_theater_routes_need_the_token_and_the_page_stays_public(monkeypatch):
     from fastapi.testclient import TestClient
     from orderguard_app.app import create_app
-    monkeypatch.setenv("ORDERGUARD_APP_TOKEN", "theater-token")
+    monkeypatch.setenv("ORDERGUARD_APP_TOKEN", "tok")
     c = TestClient(create_app())
     for path in ("/api/theater/timeline", "/api/theater/bench", "/api/theater/source?id=summary", "/api/theater/source?id=stream"):
         r = c.get(path)
         assert r.status_code == 401 and r.headers["www-authenticate"] == "Bearer", path
         assert c.get(path, headers={"Authorization": "Bearer wrong"}).status_code == 401
-    assert c.get("/api/theater/timeline", headers={"Authorization": "Bearer theater-token"}).status_code == 200
+    assert c.get("/api/theater/timeline", headers={"Authorization": "Bearer tok"}).status_code == 200
     assert c.get("/theater").status_code == 200, "the page itself is public so it can explain the token"
 
 

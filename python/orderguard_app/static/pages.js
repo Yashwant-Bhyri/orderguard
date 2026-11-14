@@ -108,9 +108,17 @@ OG.pages.overview = {
     }
   },
   start() {
-    OG.api("/api/results").then((d) => OG.renderTiles && OG.renderTiles(d.headline || {}, "ov-proof"))
-      .catch(() => show("ov-proof", h("p", { class: "hint" }, "No recorded live results on this server yet. Run og-lab to create them.")));
-    show("ov-start", h("span", { class: "lbl" }, "Try an example"),
+    /* The proof strip is static and checked against the result files by og-arena verify. Once the bench has written
+       results/bench/summary.json, its headline replaces the speed tile, with that file as the source. */
+    OG.api("/api/theater/bench").then((b) => {
+      const v = Object.fromEntries((b && b.present && b.rows) || []), n = (x) => Number(x).toLocaleString("en-US");
+      if (v.decisions_per_s == null || v.p99_us == null) return;
+      show("ov-speed", h("span", { class: "pv" }, v.p99_us + " µs p99"),
+        h("span", { class: "pl" }, n(v.decisions_per_s) + " decisions a second" + (v.agents != null ? " for " + n(v.agents) + " agents" : "") +
+          (v.breaches != null ? ", " + n(v.breaches) + " cap breaches" : "") + ", in the exchange-scale bench."),
+        h("a", { class: "src", href: "/api/theater/source?id=bench" }, "Source file"));
+    }).catch(() => {});
+    show("ov-start",
       ["Check: fake split order", "Screen: hidden instruction", "Scenario: injected transfer"].map((label) => {
         const p = OG.presets.find((x) => x.label === label);
         return h("button", { type: "button", class: "ghost", on: { click: () => OG.runPreset(p) } }, label);

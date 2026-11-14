@@ -1,8 +1,8 @@
 # OrderGuard architecture
 
-> AI trading agents will believe fake information. OrderGuard decides what they may do using numbers they can't touch, and checks the facts their orders rely on.
+> Let AI agents trade, inside limits a human signed and code enforces. This page is for engineers and reviewers; the product overview is in the [README](../README.md) and [PRODUCT.md](PRODUCT.md).
 
-The binding interfaces are in `CONTRACT.md`. This page says what each layer is, what it guarantees, what it does not, and why it is built that way. "README" below means `lab/legacy/attack-lab-2026-11-06/README.md`, the measured prototype.
+The binding interfaces are in `CONTRACT.md`. This page says what each layer is, what it guarantees, what it does not, and why it is built that way. "README" below (unless linked) means `lab/legacy/attack-lab-2026-11-06/README.md`, the first measured prototype.
 
 ## Layers and data flow
 

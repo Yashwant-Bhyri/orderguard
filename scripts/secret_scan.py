@@ -141,11 +141,39 @@ def is_base64_prose(token: str) -> bool:
     return len(text) >= 24 and all(32 <= ord(c) < 127 for c in text) and len(words) >= 0.6 * len(text.split())
 
 
-OPENROUTER_GENERATION_ID_RE = re.compile(r'"id": "gen-\d{10}-[A-Za-z0-9]{20}",')
+OPENROUTER_GENERATION_ID_RE = re.compile(r'"id": "gen-(?:dec-)?\d{10}-[A-Za-z0-9]{20}",')
+
+# Packed binary buffers in generated, committed data files: (path suffix, JSON field). Each is base64 of an integer array the
+# app decodes; tests rebuild the file from committed sources, so a real secret could not hide in it unnoticed.
+PACKED_BUFFER_FIELDS = {("results/theater/timeline.json", "events")}
+
+
+def is_packed_buffer(path: Path, field: str, value: str) -> bool:
+    import base64
+    if not any(path.as_posix().endswith(sfx) and field.rsplit(".", 1)[-1] == f for sfx, f in PACKED_BUFFER_FIELDS):
+        return False
+    try:
+        base64.b64decode(value, validate=True)
+    except Exception:
+        return False
+    return True
 
 
 def high_entropy_hits(path: Path, line: str) -> bool:
     """Return whether a line has a high-entropy candidate outside documented data fields."""
+    if path.suffix.lower() == ".json" and any(path.as_posix().endswith(sfx) for sfx, _ in PACKED_BUFFER_FIELDS):
+        try:
+            parsed = json.loads(line)
+        except json.JSONDecodeError:
+            parsed = None
+        if parsed is not None:
+            for field, value in string_values(parsed):
+                if is_packed_buffer(path, field, value) or is_json_digest_field(field, value):
+                    continue
+                for match in TOKEN_RE.finditer(value):
+                    if shannon_entropy(match.group(0)) >= HIGH_ENTROPY_MIN_BITS_PER_CHAR and not is_base64_prose(match.group(0)):
+                        return True
+            return False
     if path.suffix.lower() == ".jsonl":
         try:
             parsed = json.loads(line)

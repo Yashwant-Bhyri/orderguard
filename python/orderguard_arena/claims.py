@@ -26,6 +26,7 @@ BASE = "arena-s7-k1000-t2000"
 BINANCE = "replay-binance-public-20261111T000117Z-k1000"
 FEED = ROOT / "data" / "arena" / "feeds" / "binance-public-20261111T000117Z.jsonl"
 FLASH = "deepseek/deepseek-v4.1-flash-1017"
+HOME = "python/orderguard_app/static/index.html"      # the dashboard home's proof strip quotes results too
 
 # Frontier parameters the committed .frontier.json was produced with (the og-arena frontier flags in docs/ARENA.md).
 FRONTIER_ARGS = dict(samples=240, seed=0, max_leak_per_day=250000.0, max_approvals_per_day=60.0, max_false_refusal=0.05)
@@ -86,6 +87,9 @@ def arena_expectations() -> list[tuple[str, str, str]]:
     def R(label, text):
         out.append(("README.md", label, text))
 
+    def E(label, text):                           # the detailed figures the README used to carry now live in docs/EVIDENCE.md
+        out.append(("docs/EVIDENCE.md", label, text))
+
     fresh = {d: sum(1 for e in ev if e["d"] == d and not e["replay"]) for d in ("allow", "hold", "refuse")}
     dup = {d: sum(1 for e in ev if e["d"] == d and e["replay"]) for d in ("allow", "hold")}
     n_dup = sum(dup.values())
@@ -131,7 +135,9 @@ def arena_expectations() -> list[tuple[str, str, str]]:
         A(f"bench row {r['agents']}", f"| {r['agents']:,} | {r['proposals']:,} | {r['authority_inline_decisions_per_s']:,} | {r['authority_replay_pass_orders_per_s']:,} | "
                                       f"{hu(lat['p50'])} / {hu(lat['p95'])} / {hu(lat['p99'])} | {r['strict_orderGate_orders_per_s']:,} | {r['arena_end_to_end_proposals_per_s']:,} |")
     one = next(r for r in bench if r["agents"] == 1000)
-    R("bench headline", f"the strict path processed **{one['strict_orderGate_orders_per_s']:,} decisions/s** on a {one['strict_sample']:,}-proposal sample. The inline path had a "
+    R("bench proof", f"**{one['strict_orderGate_orders_per_s']:,} decisions/s** on the strict path and **{hu(one['inline_latency_us']['p99'], 2)} µs p99** inline, "
+                     f"for {one['agents']:,} agents in one process.")
+    E("bench headline", f"the strict path processed **{one['strict_orderGate_orders_per_s']:,} decisions/s** on a {one['strict_sample']:,}-proposal sample. The inline path had a "
                         f"**{one['inline_latency_us']['p99']} µs p99**, and the end-to-end run processed **{one['arena_end_to_end_proposals_per_s']:,} proposals/s**.")
     # frontier
     base, rec = fr["baseline"], fr["recommendation"]["candidate"]
@@ -144,7 +150,7 @@ def arena_expectations() -> list[tuple[str, str, str]]:
                               f"a step-up above ${rec['step_up']:,.0f} and a {100 * rec['agent_share']:.1f}% per-agent share. On replay it would have allowed "
                               f"${rec['utility_per_day_usd']:,.0f}/day in legitimate notional ({100 * rec['utility_share']:.1f}%), refused {100 * rec['false_refusal_rate']:.2f}% of "
                               f"legitimate proposals, leaked ${rec['leaked_per_day_usd']:,.0f}/day and recorded {rec['approvals_per_day']:.0f} holds/day.")
-    R("frontier readme", f"The recommended envelope would have authorized {100 * rec['utility_share']:.1f}% of legitimate notional, leaked ${rec['leaked_per_day_usd']:,.0f} per simulated day "
+    E("frontier readme", f"The recommended envelope would have authorized {100 * rec['utility_share']:.1f}% of legitimate notional, leaked ${rec['leaked_per_day_usd']:,.0f} per simulated day "
                          f"and refused {100 * rec['false_refusal_rate']:.2f}% of legitimate proposals.")
     mono = fr["monotonicity"]
     sh = mono["agent_share"]["violations"][0]
@@ -156,8 +162,8 @@ def arena_expectations() -> list[tuple[str, str, str]]:
     A("binance replay", f"Of {rp['proposals']:,} proposals, {d['allow']:,} were allowed, {d['hold']} held and {d['refuse']} refused. The run blocked "
                         f"{100 * rp['bad']['blocked_share']:.2f}% of labeled bad notional and refused {100 * rp['legit']['false_refusal_rate']:.2f}% of legitimate proposals.")
     # README arena paragraph
-    R("readme arena", f"It held {l7_holds} uncorroborated news proposals.")
-    R("readme baseline", f"The baseline authorized ${b['leaked_usd'] / 1e6:.2f}M of bad notional, including ${bl['collusion']['allow_usd'] / 1e6:.2f}M from one colluding group. "
+    E("readme arena", f"It held {l7_holds} uncorroborated news proposals.")
+    E("readme baseline", f"The baseline authorized ${b['leaked_usd'] / 1e6:.2f}M of bad notional, including ${bl['collusion']['allow_usd'] / 1e6:.2f}M from one colluding group. "
                          f"The daily cap accounted for {legit_codes['daily']:,} of the {L['refused']:,} legitimate refusals. A separate run with the same seed and a 1% per-agent share authorized "
                          f"${fs['bad']['leaked_usd'] / 1e6:.2f}M of bad notional and refused {100 * fs['legit']['false_refusal_rate']:.2f}% of legitimate proposals.")
     # L8
@@ -165,7 +171,7 @@ def arena_expectations() -> list[tuple[str, str, str]]:
     j = json.loads(l8[: l8.rindex("}") + 1])
     ag = j["l8"]
     A("l8", f"All **{ag['agree']:,} of {ag['sampled']:,}** eligible comparisons agreed, with zero unreachable requests. The arena processed {sum(j['decisions'].values()):,} proposals in total.")
-    R("l8 readme", f"**{ag['agree']:,} of {ag['sampled']:,}** eligible decisions agreed with the TypeScript receiver.")
+    E("l8 readme", f"**{ag['agree']:,} of {ag['sampled']:,}** eligible decisions agreed with the TypeScript receiver.")
     return out
 
 
@@ -195,6 +201,9 @@ def lab_expectations() -> list[tuple[str, str, str]]:
     def R(label, text):
         out.append(("README.md", label, text))
 
+    def E(label, text):
+        out.append(("docs/EVIDENCE.md", label, text))
+
     fixed = _md_rows(res, f"### {FLASH} (live)")
     def tot(arm, col):
         k = n = 0
@@ -206,14 +215,14 @@ def lab_expectations() -> list[tuple[str, str, str]]:
     succ = {a: tot(a, 6) for a in ("naive", "full")}
     exe = {a: tot(a, 4) for a in ("naive", "full")}
     bel = {a: tot(a, 5) for a in ("naive", "full")}
-    R("A-D success", f"| Attack goals achieved (families A–D) | {succ['naive'][0]} of {succ['naive'][1]} | **{succ['full'][0]} of {succ['full'][1]}** |")
-    R("A-D executed", f"| Attacker actions executed (same A–D trials) | {exe['naive'][0]} of {exe['naive'][1]} | {exe['full'][0]} of {exe['full'][1]} |")
-    R("belief", f"| Planted claims repeated without a matching doubt term (belief-targeted A–D trials) | {bel['naive'][0]} of {bel['naive'][1]} | **{bel['full'][0]} of {bel['full'][1]}** |")
+    E("A-D success", f"| Attack goals achieved (families A–D) | {succ['naive'][0]} of {succ['naive'][1]} | **{succ['full'][0]} of {succ['full'][1]}** |")
+    E("A-D executed", f"| Attacker actions executed (same A–D trials) | {exe['naive'][0]} of {exe['naive'][1]} | {exe['full'][0]} of {exe['full'][1]} |")
+    E("belief", f"| Planted claims repeated without a matching doubt term (belief-targeted A–D trials) | {bel['naive'][0]} of {bel['naive'][1]} | **{bel['full'][0]} of {bel['full'][1]}** |")
     e = {r[1]: _kn(r[6]) for r in fixed if r[0].startswith("E ")}
-    R("E dropped", f"| Legitimate trades dropped (family E denial-of-service trials) | {e['naive'][0]} of {e['naive'][1]} | **{e['full'][0]} of {e['full'][1]}** |")
+    E("E dropped", f"| Legitimate trades dropped (family E denial-of-service trials) | {e['naive'][0]} of {e['naive'][1]} | **{e['full'][0]} of {e['full'][1]}** |")
     ctl_rows = _md_rows(res[res.index(f"### {FLASH} (live)"):], "Utility on clean controls")
     c = {r[0]: _kn(r[2]) for r in ctl_rows}
-    R("controls", f"| Clean controls completed | {c['naive'][0]} of {c['naive'][1]} | {c['full'][0]} of {c['full'][1]} |")
+    E("controls", f"| Clean controls completed | {c['naive'][0]} of {c['naive'][1]} | {c['full'][0]} of {c['full'][1]} |")
 
     sweeps = tables.load_dir(tables.SWEEPS)
     last = {(r["seed"], r["case_id"], r["arm"], r["who"], r.get("rep", 0)): r for r in sweeps}
@@ -225,11 +234,17 @@ def lab_expectations() -> list[tuple[str, str, str]]:
     harm = {a: sum(r["attack"].get("harm_usd") or 0 for r in att[a]) for a in att}
     nt = len({r["technique"] for r in jobs})
     seeds = len({r["seed"] for r in jobs})
-    R("sandbox attacks", f"| Sandbox attack goals achieved ({nt} techniques × {seeds} seeds) | {sk['naive'][0]} of {sk['naive'][1]} evaluable trials, ${harm['naive']:,.2f} executed notional | "
+    E("sandbox attacks", f"| Sandbox attack goals achieved ({nt} techniques × {seeds} seeds) | {sk['naive'][0]} of {sk['naive'][1]} evaluable trials, ${harm['naive']:,.2f} executed notional | "
                          f"**{sk['full'][0]} of {sk['full'][1]}**, ${harm['full']:,.0f} executed notional |")
     tw = {a: [r for r in scen if r["arm"] == a and not r["twin"].get("error")] for a in ("naive", "full")}
     tu = {a: (sum(bool(r["twin"]["utility"]) for r in tw[a]), len(tw[a])) for a in tw}
-    R("sandbox twins", f"| Sandbox benign-twin tasks completed | {tu['naive'][0]} of {tu['naive'][1]} | **{tu['full'][0]} of {tu['full'][1]}** |")
+    E("sandbox twins", f"| Sandbox benign-twin tasks completed | {tu['naive'][0]} of {tu['naive'][1]} | **{tu['full'][0]} of {tu['full'][1]}** |")
+    # the README's Proof section and the dashboard home quote the same two headline rows in plain words
+    sa, sf = succ["naive"], succ["full"]
+    R("proof attacks", f"**{sf[0]} of {sf[1]}** attack goals were achieved, against {sa[0]} of {sa[1]} for the bare model.")
+    R("proof honest", f"guarded agents completed **{tu['full'][0]} of {tu['full'][1]}** honest tasks, against {tu['naive'][0]} of {tu['naive'][1]} for the bare model.")
+    out.append((HOME, "home attacks", f'<span class="pv">{sf[0]} of {sf[1]}</span><span class="pl">attack goals reached by a live model agent behind OrderGuard. Bare model: {sa[0]} of {sa[1]}.</span>'))
+    out.append((HOME, "home honest", f'<span class="pv">{tu["full"][0]} of {tu["full"][1]}</span><span class="pl">honest sandbox tasks completed with the guard. Bare model: {tu["naive"][0]} of {tu["naive"][1]}.</span>'))
     # error and composition statements
     flash_runs = [r for r in tables.load_runs() if r.get("model") == FLASH and r.get("mode", "live") == "live"]
     ctl_err = sum(1 for r in flash_runs if r["family"] == "control" and r["arm"] == "naive" and r.get("error"))
@@ -237,20 +252,20 @@ def lab_expectations() -> list[tuple[str, str, str]]:
     nat = sum(1 for r in scen if r["arm"] == "naive" and r["family"] == "F")
     trig = sum(1 for r in scen if r["arm"] == "naive" and r["trigger_world"])
     word = {1: "One", 2: "two", 6: "six", 18: "18"}
-    R("errors", f"{word[ctl_err]} bare-model clean control and {word[atk_err]} bare-model sandbox attack trials ended in errors. Benign-twin utility includes "
+    E("errors", f"{word[ctl_err]} bare-model clean control and {word[atk_err]} bare-model sandbox attack trials ended in errors. Benign-twin utility includes "
                 f"{word[nat]} natural-error scenarios and correct abstention in {word[trig]} trigger scenarios per arm.")
     # adaptive
     ad = [json.loads(x) for x in _read(ROOT / "results" / "adaptive" / "20261110T232836.jsonl").splitlines() if x.strip()]
     goals, wins = len(ad), sum(1 for r in ad if r.get("success_round"))
     early = [r for r in ad if r.get("incomplete")]
     assert wins == 0 and len(early) == 1 and goals == 5 and max(len(r["rounds"]) for r in ad) == 5, "adaptive claim no longer holds"
-    R("adaptive", f"An adaptive attacker recorded **0 observed successes** across five goals with up to five rounds each. One campaign stopped after "
+    E("adaptive", f"An adaptive attacker recorded **0 observed successes** across five goals with up to five rounds each. One campaign stopped after "
                   f"{'two' if sum('target_actions' in x for x in early[0]['rounds']) == 2 else sum('target_actions' in x for x in early[0]['rounds'])} evaluated rounds when the attacker produced unusable output.")
     # detectors
     det = {r[0]: r for r in _md_rows(res, "## Detectors")}
     fl, lo = det["deepseek/deepseek-v4.1-flash"], det["cascade: local only"]
-    R("detector flash", f"The recorded earlier DeepSeek Flash detector flagged {_kn(fl[3])[0]} of {_kn(fl[3])[1]} false-data chunks in the lab.")
-    R("detector local", f"On the mixed lab chunk set, the local classifier flagged {_kn(lo[4])[0]} of {_kn(lo[4])[1]} attacks and {_kn(lo[5])[0]} of {_kn(lo[5])[1]} clean chunks. "
+    E("detector flash", f"The recorded earlier DeepSeek Flash detector flagged {_kn(fl[3])[0]} of {_kn(fl[3])[1]} false-data chunks in the lab.")
+    E("detector local", f"On the mixed lab chunk set, the local classifier flagged {_kn(lo[4])[0]} of {_kn(lo[4])[1]} attacks and {_kn(lo[5])[0]} of {_kn(lo[5])[1]} clean chunks. "
                         f"The earlier DeepSeek Flash detector flagged {_kn(fl[4])[0]} attacks and {_kn(fl[5])[0]} clean chunks.")
     return out
 
@@ -267,7 +282,10 @@ def risk_expectations() -> list[tuple[str, str, str]]:
     def K(label, text):
         out.append(("docs/RISK.md", label, text))
 
-    def Rd(label, text):
+    def Rd(label, text):                          # the detail the README used to carry, now in docs/EVIDENCE.md
+        out.append(("docs/EVIDENCE.md", label, text))
+
+    def R(label, text):
         out.append(("README.md", label, text))
 
     def pc(x, nd=1):
@@ -316,9 +334,20 @@ def risk_expectations() -> list[tuple[str, str, str]]:
     a7, bn = reps["synthetic"], reps["binance"]
     Rd("risk arena", f"inline replay held or refused all ${a7['bad_allowed_usd'] / 1e6:.2f}M of bad notional the gate allowed, and sent {pc(a7['honest_tightened_rate'], 2)} of allowed honest orders to a human. "
                      f"On the recorded Binance-price stream: ${bn['bad_allowed_usd'] / 1e6:.2f}M to $0, {pc(bn['honest_tightened_rate'], 2)} of honest orders.")
+    col = _json(RES / f"{BASE}.summary.json")["by_label"]["collusion"]["allow_usd"]
+    most = "most of it from one colluding group" if col > a7["bad_allowed_usd"] / 2 else "THE COLLUDING GROUP IS NO LONGER MOST OF IT"
+    R("proof swarm", f"the mandate check alone let through **${a7['bad_allowed_usd'] / 1e6:.2f}M** of bad orders that each fit the signed limits, {most}. "
+                     f"The risk layer held or refused all of it, sending **{pc(a7['honest_tightened_rate'], 2)}** of honest orders to a human.")
+    sm = _json(RES / f"{BASE}.summary.json")
+    out.append((HOME, "home swarm", f'<span class="pv">${a7["bad_allowed_usd"] / 1e6:.2f}M to $0</span><span class="pl">bad orders that fit the mandate, after the risk layer, '
+                                    f'in a {sm["config"]["agents"]:,}-agent run. {pc(a7["honest_tightened_rate"], 2)} of honest orders went to a human.</span>'))
+    tm = sm["timing"]
+    out.append((HOME, "home speed", f'<span class="pv">{tm["latency_us"]["p99"]} µs p99</span><span class="pl">per decision, {tm["authority_decisions_per_s"]:,} decisions a second '
+                                    f'in one process, in the same run.</span>'))
     lat = _json(RK / "latency.json")
     Rd("latency", f"scored in pure Python ({lat['p50_us']:.0f} µs median, {lat['p99_us']:.0f} µs p99, features included)")
     K("latency", f"**{lat['p50_us']:.0f} µs median, {lat['p99_us']:.0f} µs p99**")
+    out.append(("docs/PRODUCT.md", "risk latency", f"about {lat['p50_us']:.0f} µs median and {lat['p99_us']:.0f} µs at p99 in pure Python"))
     z = np.load(ROOT / "data" / "risk" / "corpus.npz", allow_pickle=True)
     n_runs = len(set(z["run"].tolist()))
     Rd("corpus size", f"fitted on {len(z['run']):,} labelled proposals from {n_runs} simulated swarms")
@@ -327,6 +356,23 @@ def risk_expectations() -> list[tuple[str, str, str]]:
     size_mb = (ROOT / "data" / "models" / "order_risk.json").stat().st_size / 1e6
     Rd("model size", f"exported to {size_mb:.2f} MB of JSON")
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------- review lane claims
+def review_expectations() -> list[tuple[str, str, str]]:
+    """The README, docs/EVIDENCE.md and docs/PRODUCT.md quote the held-order triage study (results/review/triage.json)."""
+    t = _json(ROOT / "results" / "review" / "triage.json")
+    q = t["queues"]["model_flagged"]
+    rc = q["reviews_to_catch"]
+    fifo, model, jev = rc["fifo"]["90%"], rc["model"]["90%"], rc["jev+model"]["90%"]
+    cost = t["jev_cost"]["cost_per_1000_usd"]
+    return [
+        ("README.md", "proof review", f"On a queue of {q['orders']:,} flagged orders, ranking by expected bad dollars reaches 90% of them in **{model}** reviews instead of **{fifo}** first-in-first-out."),
+        ("docs/EVIDENCE.md", "review lane", f"On the {q['orders']:,}-order flagged queue it needs {jev} reviews to open 90% of bad dollars, against {fifo} first-in-first-out, "
+                                            f"but the risk model's own ordering needs {model}, so it does not beat the model."),
+        ("docs/PRODUCT.md", "review cost", f"about US${cost:.3f} per 1,000 triage calls"),
+        ("docs/PRODUCT.md", "review queue", f"{model} reviews instead of {fifo}"),
+    ]
 
 
 def check_texts(expect: list[tuple[str, str, str]], label: str) -> list[Check]:
@@ -353,7 +399,7 @@ def risk_checks() -> list[Check]:
 
 
 def doc_claims(*, risk: bool = True) -> list[Check]:
-    checks = check_texts(arena_expectations(), "arena") + check_texts(lab_expectations(), "lab")
+    checks = check_texts(arena_expectations(), "arena") + check_texts(lab_expectations(), "lab") + check_texts(review_expectations(), "review")
     if risk:
         checks += risk_checks()
     return checks

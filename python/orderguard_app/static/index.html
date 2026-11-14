@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OrderGuard</title>
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Pre-trade guard for AI trading agents: local dashboard.">
+<meta name="description" content="Pre-trade guard for AI trading agents: a human-signed mandate enforced in code at trusted prices. Local dashboard.">
 <script src="/static/theme.js"></script>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -59,17 +59,37 @@
 
   <!-- ===================== Overview ===================== -->
   <section id="overview" class="view" aria-labelledby="h-overview">
-    <header>
-      <h1 id="h-overview" class="hero" tabindex="-1">AI agents will believe fake information</h1>
-      <p>OrderGuard decides what an agent may do using numbers the agent cannot touch, and checks the facts an order relies on. Every decision names the layer that made it and gives its reasons.</p>
-      <p class="cta"><a class="btn" href="/theater">Watch a swarm get caught</a><span class="hint">Ninety seconds, replayed from a recorded run of 1,000 agents.</span></p>
-      <p class="notice">Research prototype. Simulated markets only: no real orders and no broker connection.</p>
+    <header class="home-head">
+      <p class="kicker">Pre-trade guard for AI trading agents</p>
+      <h1 id="h-overview" class="hero" tabindex="-1">Let AI agents trade, inside limits a human signed and code enforces</h1>
+      <p class="lead">Agents act on what they read, and some of it is fake. They run in swarms, so one fooled decision repeats across hundreds of agents. OrderGuard checks every order against a mandate a human signed, at prices the agents cannot touch, and says why in plain words.</p>
+      <p class="cta"><a class="btn" href="/theater">Watch a swarm get caught</a><a class="btn ghost" href="#order">Check an order</a><span class="hint">A 90-second replay of a recorded run of 1,000 simulated agents.</span></p>
     </header>
     <section class="sect" aria-labelledby="h-proof">
-      <h3 id="h-proof">What the live runs show</h3>
-      <div id="ov-proof" aria-live="polite"><p class="hint">Loading the recorded live results…</p></div>
+      <h2 id="h-proof" class="sh">What the recorded runs show</h2>
+      <ul class="proof" id="ov-proof">
+        <li><span class="pv">0 of 180</span><span class="pl">attack goals reached by a live model agent behind OrderGuard. Bare model: 7 of 180.</span><a class="src" href="#results">Results</a></li>
+        <li><span class="pv">132 of 138</span><span class="pl">honest sandbox tasks completed with the guard. Bare model: 113 of 138.</span><a class="src" href="#results">Results</a></li>
+        <li><span class="pv">$7.97M to $0</span><span class="pl">bad orders that fit the mandate, after the risk layer, in a 1,000-agent run. 0.11% of honest orders went to a human.</span><a class="src" href="/api/theater/source?id=risk">Source file</a></li>
+        <li id="ov-speed"><span class="pv">25.29 µs p99</span><span class="pl">per decision, 149,975 decisions a second in one process, in the same run.</span><a class="src" href="/api/theater/source?id=summary">Source file</a></li>
+      </ul>
+      <p class="notice mt8">Simulated markets, agents and fills on paper ledgers. No real orders and no broker connection.</p>
+    </section>
+    <section class="sect" aria-labelledby="h-what">
+      <h2 id="h-what" class="sh">What it does</h2>
+      <ul class="caps">
+        <li class="card"><h3>A mandate code enforces</h3><p>A human signs the symbols, caps, price band and approval threshold. Every order is sized at a trusted price, never the price the agent claims.</p><p class="go"><a href="#order">Check an order</a></p></li>
+        <li class="card"><h3>Portfolio limits and policy packs</h3><p>Signed caps per symbol, position and day stop agents from splitting one big position. Review a draft against the signed policy before anyone signs it.</p><p class="go"><a href="#arena">Review a mandate</a></p></li>
+        <li class="card"><h3>Screening of what agents read</h3><p>Hidden instructions, look-alike tickers and planted claims are caught before the agent acts. A standing rule fires only when two independent sources agree.</p><p class="go"><a href="#screen">Screen text</a> <a href="#graph">Test a rule</a></p></li>
+        <li class="card"><h3>A risk layer that only tightens</h3><p>A model watches the swarm for splitting, bursts and runaway loops. It can hold or refuse, never approve. Held orders go to a ranked human queue.</p><p class="go"><a href="/theater#beat=4">See the review queue</a></p></li>
+      </ul>
     </section>
     <div class="card sect">
+      <h2 class="sh">Try an example</h2>
+      <div class="presets" id="ov-start"></div>
+    </div>
+    <h2 class="sh sect">This server</h2>
+    <div class="card mt12">
       <h3>The pipeline on this server</h3>
       <p class="hint">Reads from this server. Hover or focus a station for what the layer checks.</p>
       <div class="rail-wrap" id="ov-rail" aria-live="polite"></div>
@@ -82,10 +102,6 @@
     <div class="cols sect">
       <div class="card"><h3>Model and budget</h3><div id="model-box" aria-live="polite"></div></div>
       <div class="card"><h3>Receiver (L8)</h3><div id="recv-box" aria-live="polite"></div></div>
-    </div>
-    <div class="card sect">
-      <h3>Where to start</h3>
-      <div class="presets" id="ov-start"></div>
     </div>
   </section>
 

@@ -9,6 +9,7 @@
   og-lab doubt | review                  print and hand-review the belief judge
   og-lab sandbox describe [--check]      what a world contains, every knob; writes docs/SANDBOX.md
   og-lab sweep --seeds N --families B,C,D --arms ... --concurrency K [--model M | --policy P] [--resume FILE]
+  og-lab redteam run|report|repro        adaptive LLM attackers against L1-L8; results/redteam/campaign.json and docs/REDTEAM.md
 """
 from __future__ import annotations
 
@@ -217,6 +218,8 @@ def main(argv=None) -> int:
     p.add_argument("--resume", default=None)
     p.add_argument("--estimate-only", action="store_true")
     p.add_argument("--verbose", action="store_true")
+    from .redteam.cli import add_parser as _redteam
+    _redteam(sub)
     a = ap.parse_args(argv)
     rc = a.fn(a)
     return rc or 0

@@ -1,125 +1,92 @@
 # OrderGuard
 
-**AI trading agents will believe fake information. OrderGuard decides what they may do using numbers they can't touch, checks the facts their orders rely on, and holds a whole swarm of agents inside the envelope a human signed.**
+**Let AI agents trade, inside limits a human signed and code enforces.**
 
-OrderGuard is a pre-trade authorisation layer that sits between AI agents (any model, any tools) and the ledger. Refusals and holds include plain-language reasons. The research prototype uses simulated fills and paper ledgers, with optional testnet and simulated broker adapters. OrderGuard has no affiliation with any brokerage or exchange.
+AI trading agents read news, feeds and web pages, and some of what they read is fake: a forged split notice, a hidden instruction, a planted rumour. Agents also run in swarms, so one fooled decision can repeat across hundreds of agents in seconds. Making the model un-foolable does not work well enough, so OrderGuard puts code between the agents and the money.
 
-## What the evidence shows
+## What it does
 
-The fixed-case live comparisons below use DeepSeek V4.1 Flash 1017. The separate sandbox rows use scripted agents in simulation. The report also covers an earlier Flash variant, other scripted controls and detector experiments. [Results report](docs/RESULTS.md) · [Fixed-case runs](results/runs/20261110T230149.jsonl) · [Sandbox runs](results/sweeps/20261110T230155.jsonl)
+- **A mandate a human signs, enforced by code.** Symbols, sides, per-order and daily caps, a price band and a "get a human above this size" threshold, signed with the owner's key. Every order is sized at a trusted market price, never at the price the agent claims. No model can loosen it.
+- **Portfolio limits and policy packs.** Optional signed caps per symbol, per position and per day stop many agents from splitting one big position. Four ready-made packs give a desk a starting point to sign.
+- **Screening of what agents read.** Hidden characters, look-alike tickers and manipulative text are caught before the agent sees them; figures an order cites are checked against SEC filings; a "sell if it crashes" rule fires only when two independent sources agree.
+- **A risk layer that can only tighten, and a review lane for humans.** A behavioural model watches the whole swarm for splitting, bursts and runaway loops. It can turn an allow into a hold or a refusal, never the other way. Held orders go to a ranked human queue.
 
-| Simulated outcomes | Bare model | Full guard |
-|---|---|---|
-| Attack goals achieved (families A–D) | 7 of 180 | **0 of 180** |
-| Attacker actions executed (same A–D trials) | 0 of 180 | 0 of 180 |
-| Planted claims repeated without a matching doubt term (belief-targeted A–D trials) | 7 of 48 | **0 of 48** |
-| Legitimate trades dropped (family E denial-of-service trials) | 15 of 21 | **1 of 21** |
-| Clean controls completed | 17 of 20 | 18 of 21 |
-| Sandbox attack goals achieved (22 techniques × 6 seeds) | 14 of 130 evaluable trials, $9,762.50 executed notional | **0 of 132**, $0 executed notional |
-| Sandbox benign-twin tasks completed | 113 of 138 | **132 of 138** |
-
-One bare-model clean control and two bare-model sandbox attack trials ended in errors. Benign-twin utility includes six natural-error scenarios and correct abstention in 18 trigger scenarios per arm. [Clean-control and sandbox breakdowns](docs/RESULTS.md)
-
-- An adaptive attacker recorded **0 observed successes** across five goals with up to five rounds each. One campaign stopped after two evaluated rounds when the attacker produced unusable output. [Adaptive runs](results/adaptive/20261110T232836.jsonl)
-- In the 1,000-agent synthetic benchmark, the strict path processed **58,314 decisions/s** on a 5,000-proposal sample. The inline path had a **9.25 µs p99**, and the end-to-end run processed **28,771 proposals/s**. [Benchmark results](results/arena/bench.json)
-- In a one-envelope, one-day paper-ledger check at shared static prices, **2,372 of 2,372** eligible decisions agreed with the TypeScript receiver. [L8 comparison](results/arena/l8-agreement-s23-k1000.txt)
-
-## How it works
-
-```
-agent tool output → L1 normalise → L2 model screen → L3 risk bucket → L4 data marking
-agent order       → L5 order gate (signed mandate, trusted price) → L6 figure check (SEC filings)
-standing rules    → L7 trigger graph (≥ 2 independent sources, blast radius)
-allowed order     → TypeScript L8 receiver when configured, otherwise local paper ledger
+```mermaid
+flowchart LR
+  A["AI agents<br/>any model, any tools"] -->|"news, feeds, pages"| S["Screen inputs"]
+  S --> A
+  A -->|"proposed order"| G["Mandate check<br/>signed limits, trusted price"]
+  G -->|"refuse, with reasons"| X["Refused"]
+  G -->|"allow"| R["Risk layer<br/>can only tighten"]
+  R -->|"allow"| L[("Ledger<br/>receiver")]
+  G -->|"hold"| H["Human review queue"]
+  R -->|"hold"| H
 ```
 
-- **Code decides about money.** The order gate sizes every order at the *trusted* price, never the agent's own limit price, against an Ed25519-signed mandate with caps, a price band, an allow-list and a step-up threshold. The gate enforces the signed limits even when a model is fooled. Harmful orders can still fit inside a signed mandate.
-- **Facts are checked, not believed.** Figures an order cites are checked against SEC EDGAR as of the decision date: confirmed, contradicted, stale, not public yet or unverifiable. Guarded agents can look figures up from the same trusted source.
-- **Inputs are cleaned and screened.** Hidden Unicode, look-alike tickers and encoded payloads are exposed in code; a model screen quarantines manipulative text; repeats of a quarantined claim are quarantined too.
-- **Standing rules need corroboration.** A "sell if it crashes" rule fires only when at least two independent, unquarantined sources agree.
-- **The receiver enforces the mandate at commit time.** Its invariant campaign checks five properties over 1,000 fault seeds and checks two intentionally weakened configurations. [Receiver campaign](receiver/invariants/run.ts)
+Every refusal and hold comes with plain-language reasons, for example: "440 shares at the trusted $222.70 is $97,988, over the $10,000 per-order cap."
 
-Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Threat model: [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md).
+## Proof
 
-## Use it
+All runs are simulated (paper ledgers, synthetic or recorded market data). Each number below is rebuilt from the committed results by `og-arena verify`; the full tables and caveats are in [docs/EVIDENCE.md](docs/EVIDENCE.md).
 
-Install from a clone (the code reads its data, recordings and model files from the checkout):
+- **Attacks blocked.** With a live model agent behind OrderGuard, **0 of 180** attack goals were achieved, against 7 of 180 for the bare model. [Runs](results/runs/20261110T230149.jsonl) · [Report](docs/RESULTS.md)
+- **Honest work preserved.** In the seeded sandbox, guarded agents completed **132 of 138** honest tasks, against 113 of 138 for the bare model. [Runs](results/sweeps/20261110T230155.jsonl)
+- **Swarm-scale bad flow stopped.** In a 1,000-agent run, the mandate check alone let through **$7.97M** of bad orders that each fit the signed limits, most of it from one colluding group. The risk layer held or refused all of it, sending **0.11%** of honest orders to a human. [Replay](results/risk/arena-replay-arena-s7-k1000-t2000.json)
+- **Fast enough for the order path.** **58,314 decisions/s** on the strict path and **9.25 µs p99** inline, for 1,000 agents in one process. [Benchmark](results/arena/bench.json)
+- **Holds at exchange scale.** 100,000 agents, 1,200 signed mandates and 1.09M orders: an independent auditor, rebuilding every limit from the raw logs, found **0 cap breaches** and **0 double executions**, with identical decisions on 1 to 8 processes and **140,302 decisions/s** on one laptop. It also caught **7 of 7** deliberately broken builds. [Bench](docs/BENCH.md) · [Report](results/bench/report.html)
+- **Humans review what matters first.** On a queue of 1,002 flagged orders, ranking by expected bad dollars reaches 90% of them in **470** reviews instead of **719** first-in-first-out. Model advice in this lane can add a hold, never approve. [Review lane](docs/REVIEW.md)
+- **AI attackers that read the docs.** Adaptive DeepSeek and Qwen attackers, given the threat model, tried every channel from fake news to receiver replays: **0 hard breaches** in 10 usable rounds. That campaign is small (one round per attack family), and the report says what a bigger one should test. [Red team](docs/REDTEAM.md)
+
+## Watch it
+
+The Swarm Theater is a 90-second guided replay of one recorded run: 1,000 agents, an attack, the guard, the human queue and the proof, every number linked to its file.
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]' && npm ci
+.venv/bin/orderguard serve        # then open http://127.0.0.1:8600/theater
 ```
 
-Or let the quickstart do everything (checks Python 3.11+ and Node 22, installs, creates a signed mandate, runs the offline tests, starts the app):
+## Try it in 2 minutes
+
+Needs Python 3.11+ and Node 22.13+. No API key: everything runs offline from recordings.
 
 ```bash
-sh scripts/quickstart.sh
+sh scripts/quickstart.sh          # venv, install, signing key and mandate, doctor, offline tests, dashboard on :8600
 ```
 
-| surface | how | docs |
-|---|---|---|
-| **Dashboard** | `orderguard serve`, then open http://127.0.0.1:8600 | [APP](docs/APP.md), [design language](docs/DESIGN.md) |
-| **HTTP API** | the same server; bearer token whenever `ORDERGUARD_APP_TOKEN` is set | [API](docs/API.md) |
-| **MCP server** | `orderguard-mcp` (stdio): any MCP client can screen text, check orders and figures, evaluate rules, and submit only through the guard | [MCP](docs/MCP.md) |
-| **Swarm arena** | `og-arena run`, `og-arena policy`, `og-arena frontier`, `og-arena replay --feed …` | [ARENA](docs/ARENA.md) |
-| **Agents in Python** | `orderguard_guard.agent.run_agent(...)` with any OpenAI-style model | [GUIDE](docs/GUIDE.md) |
-| **Containers** | Publish the signed policy files, then run `docker compose up --build` | [Container setup](docs/OPERATIONS.md#install) |
-
-Create your own signing key and mandate, then check the setup (secrets are never printed):
+Then sign a policy pack as your mandate and check the setup:
 
 ```bash
-.venv/bin/orderguard init --dir var/orderguard
-```
-
-```bash
+.venv/bin/orderguard policy list
+.venv/bin/orderguard policy sign balanced-equities --key var/orderguard/signing.key --out var/orderguard/mandate.json
 .venv/bin/orderguard doctor --dir var/orderguard
 ```
 
-Or start from a policy pack: `orderguard policy list`, then `orderguard policy sign balanced-equities --key var/orderguard/signing.key --out var/orderguard/mandate.json`. The packs also use three optional signed portfolio limits (per-symbol daily cap, net position cap, orders per day). See [policies/](policies/README.md) and the [guide](docs/GUIDE.md#policy-packs).
+In the dashboard, open **Check order** and try "Fake 10-for-1 split" to see an order refused at the trusted price. Packs and their limits: [policies/](policies/README.md).
 
-Recorded scenarios replay offline. A new model request needs a matching recording or live access. Live calls default to DeepSeek V4.1 Flash 1017 through the direct DeepSeek API. Put `DEEPSEEK_API_KEY` in the environment (or set `OG_ENV_FILE` to a protected dotenv file containing it), set `OG_LLM=record` and a small `OG_BUDGET_USD`, and run `og-lab estimate` first. Every process enforces a spend cap and refuses calls when the available balance is too close to the configured floor.
+## Integrate it
 
-## Agent swarms and the envelope lab
+| Surface | Use it for | Start here |
+|---|---|---|
+| HTTP API | Check an order or screen text from any stack | `orderguard serve`, then `POST /api/check-order` · [API](docs/API.md) |
+| MCP server | Give any MCP client (Claude, other agent frameworks) guarded tools | `python -m orderguard_mcp` · [MCP](docs/MCP.md) |
+| Python | Wrap your own agent loop | `orderguard_guard.agent.run_agent(...)` · [Guide](docs/GUIDE.md#integrating-your-own-agent) |
+| Receiver and Node SDK | The final authority before the ledger: re-checks the signed mandate, keeps a hash-chained paper ledger | `node receiver/bridge/serve.mjs`, `packages/sdk` · [Operations](docs/OPERATIONS.md) |
 
-One person signs a few envelopes; hundreds or thousands of agents trade inside them. The arena ([docs/ARENA.md](docs/ARENA.md)) runs such a swarm against synthetic or recorded real market data (a public Binance feed is included) and authorises every proposal in code.
+Whichever surface you use, give the agent no money-movement tool and make the receiver the only path to the ledger.
 
-- **Mandate review** checks an unsigned draft against the signed parent and compares both policies in the same paper market. The preview can warn that a draft is likely to exceed a risk limit in a supported synthetic scenario. [Mandate review walkthrough](docs/ARENA.md#review-a-draft-against-a-signed-policy)
-- In the seeded 1,000-agent run, the arena authorized zero transfers, off-list or look-alike symbols, fake-reference oversize orders, stale-limit proposals or uncorroborated news orders. It held 163 uncorroborated news proposals. [Arena baseline](results/arena/arena-s7-k1000-t2000.summary.json)
-- The baseline authorized $7.97M of bad notional, including $7.43M from one colluding group. The daily cap accounted for 1,068 of the 1,158 legitimate refusals. A separate run with the same seed and a 1% per-agent share authorized $0.91M of bad notional and refused 2.36% of legitimate proposals. [Baseline event log](results/arena/arena-s7-k1000-t2000.jsonl) · [Fair-share run](results/arena/arena-s7-k1000-t2000-fairshare.summary.json)
-- **The envelope lab** replays the recorded proposals through hundreds of candidate envelopes. The recommended envelope would have authorized 95.9% of legitimate notional, leaked $219,347 per simulated day and refused 2.43% of legitimate proposals. The human reviews and signs the envelope. [Frontier](results/arena/arena-s7-k1000-t2000.frontier.json)
+## Honest limits
 
-## The order-risk layer
+- **Prototype.** Simulated markets, simulated fills, synthetic agents and paper ledgers. Nothing here is evidence about real-money performance, and no real broker adapter ships.
+- **Who tested it.** The people who built the defences also wrote the attacks. Live model trials cover one model family with few repeats. Details: [EVIDENCE.md](docs/EVIDENCE.md#detector-and-model-limits), [THREAT-MODEL.md](docs/THREAT-MODEL.md).
+- **Inside the envelope.** A harmful order that fits a signed mandate is allowed by the mandate check; the risk layer and portfolio limits narrow that gap but do not close it.
+- **No affiliation.** OrderGuard has no affiliation with any brokerage or exchange.
 
-Rules see one order at a time; coordination only shows across agents and time. `orderguard_risk` scores every order the gate allowed with **programmed and learned weights**: seven hand-written units state the mandate's semantics and the known attack signatures (splitting under the step-up threshold, coordinated bursts, runaway loops, size discontinuities, limits far from the trusted price, schedule breaks), and gradient-boosted trees fitted on 592,988 labelled proposals from 48 simulated swarms learn the rest. The two combine by noisy-OR, so data can add risk on top of a programmed unit but cannot explain it away. Features are point-in-time and cost O(1) per order. The model is exported to 0.15 MB of JSON and scored in pure Python (40 µs median, 142 µs p99, features included). [Risk model](docs/RISK.md)
+## Learn more
 
-- **It can only tighten.** Allow can become hold (a human decides) or refuse. Nothing the signed mandate forbids can be allowed; a property test checks this over 5,000 random decisions.
-- **On the baseline arena stream above,** inline replay held or refused all $7.97M of bad notional the gate allowed, and sent 0.11% of allowed honest orders to a human. On the recorded Binance-price stream: $5.03M to $0, 1.03% of honest orders. Budget a refused colluder would have freed is not re-simulated. [Replay](results/risk/arena-replay-arena-s7-k1000-t2000.json)
-- **On held-out seeds, at a review budget of 0.25% of honest orders,** 99.78% of bad dollars are held or refused with 0.26% of honest orders held (the first model's architecture at the same budget: 99.68% with 0.41%). **On adaptive colluders it never trained on: 99.32% with 0.28% held** (first architecture: 92.17% with 0.37%). [Evaluation](results/risk/eval.json)
-- **Unseen attack families:** with a family left out of training entirely, the programmed units still stop 82.5% of fat-finger dollars and 96.9% of stale-price dollars (trees alone: 11.1% and 0.0%); compromised agents remain the weak family at 70.5%. [Leave one family out](results/risk/oneshot.json)
-- **One analyst label, no retraining.** `label_attack(event)` writes a new unit from one example against honest statistics, sized to capture at most 0.1% of recent unflagged flow: one labelled fat-finger order took a model that had never seen the family from 11.1% to a median of 69.6% of that family's dollars (quartiles 25.6% to 75.3%). It does little for attacks that sit inside honest flow.
-- **Its limits are measured too.** A white-box attacker that knows the model and imitates busy honest agents gets $1.14M a day past the new model, against $0.55M a day for the attacker tuned on the first model against the first model. Signed per-symbol and position limits in the mandate bound that attacker by rule. [Attacker](results/risk/adversary.json) · [Which decision paradigm, where](docs/RISK.md#which-decision-paradigm-where)
-- **After a hold: a typed review lane.** TypeSafe's Jev decision model (via OpenRouter) checks mandate drafts against their stated purpose (95% on held-out drafts, every bad draft flagged) and checks orders against declared intent, at about US$0.05 per 1,000 calls. On ordering the review queue it saves 26% of reviews against first-in-first-out but does not beat the risk model's own ordering, and the page says so. It can only advise or add a hold, never release one. [Review lane](docs/REVIEW.md)
-- The shipped model uses no rationale text: the simulator writes rationales from each order's label, so text features would flatter the scores.
+- [Product brief](docs/PRODUCT.md): who it is for, rollout, FAQ
+- [Documentation index](docs/README.md): guides for product, integrators and reviewers
+- [Evidence](docs/EVIDENCE.md), [Bench](docs/BENCH.md), [Red team](docs/REDTEAM.md), [Architecture](docs/ARCHITECTURE.md)
+- [Release notes](RELEASE.md)
+- Everything a reviewer needs, offline, in one command: `scripts/check_all.sh` ([Testing](docs/TESTING.md))
 
-## Testing
-
-- **Python:** unit, property and safety suites (thousands of generated mandates and orders against an independent oracle, Unicode fuzzing of L1, trigger-graph and broker invariants, the full attack corpus through scripted agents), end-to-end tests against the real receiver, MCP and API contract tests. Offline, under a minute.
-- **Receiver:** TypeScript tests, the 1,000-seed invariants and mutation checks (`npm run check`).
-- **Everything a reviewer needs, one command:** `scripts/check_all.sh`. See [docs/TESTING.md](docs/TESTING.md).
-
-## Limits
-
-- Simulated markets, simulated fills and synthetic agents. Nothing here is evidence about real-money performance.
-- Live fixed-case trials cover two variants of one DeepSeek Flash family, with up to three repeats per case and arm. [Results and intervals](docs/RESULTS.md)
-- The people who built the defences wrote the cases and techniques. The adaptive campaigns cover a small set of goals and rounds.
-- The recorded earlier DeepSeek Flash detector flagged 35 of 52 false-data chunks in the lab. [Detector results](docs/RESULTS.md#detectors)
-- The agent dropped a legitimate trade after a forged owner note in one of 21 DeepSeek Flash 1017 denial-of-service trials with the full guard. [Recorded run](results/runs/20261110T230149.jsonl#L649)
-- On the mixed lab chunk set, the local classifier flagged 56 of 99 attacks and 9 of 174 clean chunks. The earlier DeepSeek Flash detector flagged 82 attacks and 4 clean chunks. The classifier ships off by default. [Classifier evaluation](docs/CLASSIFIER.md)
-- Coordinated agents inside the envelope are only partly addressed (see above).
-
-## Layout
-
-`python/orderguard_guard` (L1–L5, L7, agent, classifier, broker router and adapters, `orderguard` CLI) · `python/orderguard_verify` (L6) · `python/orderguard_app` (API and dashboard) · `python/orderguard_mcp` (MCP server) · `python/orderguard_arena` (swarm arena, envelope lab) · `python/orderguard_risk` (order-risk model, `og-risk`) · `python/orderguard_lab` (attack lab, sandbox, `og-lab`) · `receiver/` (TypeScript L8 and bridge) · `packages/` (receiver SDK and MCP server) · `results/` (raw runs) · `docs/` ([index](docs/README.md)) · `lab/legacy` (earlier experiments).
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
+MIT licence. See [LICENSE](LICENSE).
