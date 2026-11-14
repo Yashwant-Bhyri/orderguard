@@ -79,7 +79,7 @@ Keys are read from the environment or from a `0600` env file; they are never ret
 | `ORDERGUARD_HOME` | config directory (default `./var/orderguard`) |
 | `OG_ENV_FILE` | path to an env file kept outside the repository |
 
-`orderguard init` writes `var/orderguard/.env` with these names and empty values. Fill in a value there, or export it in your shell. Never commit a key; `npm run scan` and `bash scripts/scan_committable.sh` look for them.
+`orderguard init` writes `var/orderguard/.env` with these names and empty values. Fill in a value there and run with `OG_ENV_FILE=var/orderguard/.env`, or export it in your shell. Nothing reads `var/orderguard/.env` on its own (`orderguard doctor` checks it, but the app and the agent read only the environment and the file `OG_ENV_FILE` names), so an app token still has to be exported. Never commit a key; `npm run scan` and `bash scripts/scan_committable.sh` look for them.
 
 Live calls default to DeepSeek direct; set `DEEPSEEK_API_KEY` or point `OG_ENV_FILE` at a protected file containing it. To explicitly use OpenRouter, set `OG_PROVIDER=openrouter` and `OPENROUTER_API_KEY`. Then set `OG_LLM=live` and a small `OG_BUDGET_USD` before a live call.
 
@@ -153,17 +153,19 @@ print(transcript["final"], [c["name"] for c in transcript["calls"]], transcript[
 
 ### Receiver SDK (Node)
 
-`packages/sdk` is a small client for the receiver's HTTP routes. It turns one typed order into a preview and submits it; it holds no signing key and is not a security boundary. See `packages/sdk/README.md`.
+`packages/sdk` is a small client for the mesh receiver's HTTP routes (`receiver/r5/server.ts`, port 4173 by default; not the bridge on port 8700, which has a different, Python-facing API). It turns one typed order into a preview and submits it; it holds no signing key and is not a security boundary. See `packages/sdk/README.md`, and `node examples/node/check-order.mjs` for a run that needs no setup.
 
 ```js
 import { OrderGuardClient } from "@orderguard/sdk";
-const og = new OrderGuardClient({ baseUrl: "http://127.0.0.1:8700" });
+const og = new OrderGuardClient({ baseUrl: "http://127.0.0.1:4173" });
 const result = await og.proposeOrder({ mandateId, symbol: "AAPL", side: "buy", quantity: 1, orderType: "market", session: "regular", timeInForce: "day" });
 ```
 
 ### MCP server
 
-`packages/mcp-server` exposes `get_mandate`, `propose_order`, `order_status` and `cancel` to any MCP client over stdio. It is a thin adapter over the same receiver routes: `ORDERGUARD_URL=http://127.0.0.1:8700 node bin/orderguard-mcp.js`. Send bearer tokens only through the host's secret environment, never in a URL or a prompt. See `packages/mcp-server/README.md`.
+`packages/mcp-server` exposes `get_mandate`, `propose_order`, `order_status` and `cancel` to any MCP client over stdio. It is a thin adapter over the same receiver routes as the SDK: `ORDERGUARD_URL=http://127.0.0.1:4173 node bin/orderguard-mcp.js`. For the guard itself as MCP tools (`check_order`, `screen_text` and more), use `python -m orderguard_mcp` ([MCP.md](MCP.md)). Copy-paste client configs are in [QUICKSTART.md](QUICKSTART.md#mcp). Send bearer tokens only through the host's secret environment, never in a URL or a prompt. See `packages/mcp-server/README.md`.
+
+Fastest way to see each of these refuse an order, offline: [QUICKSTART.md](QUICKSTART.md).
 
 Whichever way you integrate, give the agent no money-movement tool and let the receiver be the only path to the ledger.
 
@@ -203,7 +205,10 @@ Command-line mistakes (missing or malformed JSON file, bad date, bad `--prices`)
 | `signing.key is readable by other users` | `chmod 600 var/orderguard/signing.key`. |
 | `mandate: ... changed after the human signed` | You edited `mandate.json`. Run `orderguard init --resign`. |
 | `mandate: ... expired` | Edit `expiresAt`, run `orderguard init --resign`, restart the bridge. |
-| `OPENROUTER_API_KEY is not set` (or `DEEPSEEK_API_KEY`) | Only matters for live model calls. Add the key to `var/orderguard/.env` or the environment, or use `OG_LLM=replay`. |
+| `OPENROUTER_API_KEY is not set` (or `DEEPSEEK_API_KEY`) | Only matters for live model calls. Export the key, or put it in `var/orderguard/.env` and run with `OG_ENV_FILE=var/orderguard/.env`, or use `OG_LLM=replay`. |
+| `OG_LLM=replay and no recorded response` | Replay serves only recorded runs. For your own agent pass a model object with `.chat()` ([QUICKSTART](QUICKSTART.md#python)), or record with a key and a low `OG_BUDGET_USD`. |
+| `no --mandate given ... built-in demo mandate` (from `check-order`) | Pass `--mandate var/orderguard/mandate.json`; its signature is checked against the `signing.pub` beside it. |
+| `Node X is too old` / `The Node dependencies are not installed` | Node 22.13+ (`nvm install 22`) and `npm ci` in the repository root. |
 | `ORDERGUARD_APP_TOKEN is not set` | Set a long random token before any use beyond this machine. |
 | `receiver at the configured URL: ... unreachable` | The bridge is not running or the URL is wrong. Start it and check it printed `READY`. |
 | Dashboard shows "Model screen unavailable" | No key, or replay mode has no recording for that text. Not an error: L1, L5, L6 and L7 still work. |

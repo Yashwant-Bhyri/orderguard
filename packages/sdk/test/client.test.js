@@ -63,3 +63,24 @@ test("unreachable and oversized replies give actionable errors without secrets",
   const big = new OrderGuardClient({ baseUrl: "http://127.0.0.1:1", fetchImpl: async () => new Response("x".repeat(1_100_000), { status: 200 }) });
   assert.equal((await big.getMandate()).error, "receiver returned an invalid or oversized reply");
 });
+
+test("a refusal at preview carries the receiver's reason instead of a generic mismatch", async () => {
+  const paths = [];
+  const client = new OrderGuardClient({ fetchImpl: async (url) => {
+    paths.push(new URL(url).pathname);
+    return Response.json({ run: { id: "run-1", outcome: "blocked", intent: { symbol: "AAPL", side: "buy", quantity: 500, market: "US", orderType: "market", session: "regular", timeInForce: "day", limitPrice: null },
+      findings: [{ code: "kill-switch", status: "pass", detail: "Kill switch is off." }, { code: "order-notional", status: "block", detail: "Estimated notional is $109210.00 USD equivalent, above the $12,500 illustrative limit." }] } });
+  } });
+  const result = await client.proposeOrder({ mandateId: "m", symbol: "AAPL", side: "buy", quantity: 500 });
+  assert.equal(result.state, "proposal_denied");
+  assert.match(result.reason, /^order-notional: Estimated notional is \$109210\.00.*illustrative limit/);
+  assert.deepEqual(result.findings.map((f) => f.code), ["order-notional"]);
+  assert.equal(result.venueDispatchAttempted, false);
+  assert.deepEqual(paths, ["/api/chat"]);
+});
+
+test("first-run mistakes say what to do", async () => {
+  assert.throws(() => new OrderGuardClient({ fetchImpl: "not a function" }), /no global fetch .*Node 20 or newer.*fetchImpl/);
+  const client = new OrderGuardClient({ fetchImpl: async () => { throw new Error("must not be called"); } });
+  await assert.rejects(client.proposeOrder({ symbol: "AAPL", side: "buy", quantity: 1 }), /mandateId is required: read it from getMandate\(\)/);
+});

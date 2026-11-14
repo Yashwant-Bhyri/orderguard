@@ -12,6 +12,7 @@ Start with the [README](../README.md) for the one-minute overview. Then pick the
 
 ## Integrators: install, connect, operate
 
+- [QUICKSTART.md](QUICKSTART.md): from clone to a refused order in Python, HTTP, Node or MCP, offline.
 - [GUIDE.md](GUIDE.md): user guide. Concepts, install, first run, the dashboard, integrating your agent, troubleshooting, FAQ.
 - [API.md](API.md): HTTP endpoints, auth, limits ([openapi.json](openapi.json)).
 - [MCP.md](MCP.md): OrderGuard as an MCP server for any MCP client.
@@ -19,6 +20,7 @@ Start with the [README](../README.md) for the one-minute overview. Then pick the
 - [APP.md](APP.md): the web app and dashboard pages. [DESIGN.md](DESIGN.md): its design language.
 - [ARENA.md](ARENA.md): the swarm arena, mandate review and the envelope lab for tuning limits.
 - [REVIEW.md](REVIEW.md): the escalation lane: held-order triage and the mandate copilot.
+- Examples that refuse an order, one per language: `../examples/python/guarded_agent.py`, `../examples/http/check_order.sh`, `../examples/node/check-order.mjs`, `../examples/mcp/` (see [QUICKSTART.md](QUICKSTART.md)).
 - Packages: `../packages/sdk/README.md` (Node SDK for the receiver), `../packages/mcp-server/README.md` (MCP over the receiver), `../examples/quickstart/README.md` (offline receiver quickstart).
 
 ## Reviewers and auditors: how it works and how it was measured

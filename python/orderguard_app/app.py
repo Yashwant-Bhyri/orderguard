@@ -70,9 +70,12 @@ def create_app(token: str | None = None) -> FastAPI:
         return JSONResponse({"error": detail}, status_code=e.status_code, headers=getattr(e, "headers", None))
 
     @app.exception_handler(RequestValidationError)
-    async def _invalid(_: Request, e: RequestValidationError):
-        return JSONResponse({"error": "invalid request", "details": [{"where": ".".join(str(x) for x in d["loc"]), "problem": re.sub(r"^Value error, ", "", d["msg"])} for d in e.errors()]},
-                            status_code=422)
+    async def _invalid(request: Request, e: RequestValidationError):
+        body = {"error": "invalid request", "details": [{"where": ".".join(str(x) for x in d["loc"]), "problem": re.sub(r"^Value error, ", "", d["msg"])} for d in e.errors()]}
+        if "json" not in request.headers.get("content-type", "").lower():
+            # curl -d sends form data unless told otherwise; the schema error that follows would not say what is actually wrong
+            body["hint"] = 'send the body as JSON with the header "Content-Type: application/json"'
+        return JSONResponse(body, status_code=422)
 
     @app.exception_handler(Exception)
     async def _crash(_: Request, e: Exception):

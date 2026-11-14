@@ -4,6 +4,7 @@ stdout belongs to the protocol: everything this package logs goes to stderr.
 """
 import argparse
 import json
+import os
 import sys
 from typing import Literal
 
@@ -49,7 +50,9 @@ class _Server(FastMCP):
 
 
 def build_server() -> FastMCP:
-    mcp = _Server("orderguard", instructions=INSTRUCTIONS)
+    # The SDK logs one INFO line per request to stderr, which clients keep in their logs; WARNING by default, FASTMCP_LOG_LEVEL=INFO for more.
+    level = os.environ.get("FASTMCP_LOG_LEVEL", "WARNING").upper()
+    mcp = _Server("orderguard", instructions=INSTRUCTIONS, log_level=level if level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL") else "WARNING")
     for fn in (core.screen_text, core.check_order, core.verify_figures, core.get_reported_figure, core.evaluate_rules, core.get_mandate, core.review_mandate,
                core.review_held_order, core.review_mandate_draft):
         mcp.tool(annotations=_READ_ONLY)(fn)
@@ -72,13 +75,45 @@ def build_server() -> FastMCP:
     return mcp
 
 
+def _config(env: dict[str, str] | None = None) -> dict:
+    entry: dict = {"command": sys.executable, "args": ["-m", "orderguard_mcp"]}
+    if env:
+        entry["env"] = env
+    return {"mcpServers": {"orderguard": entry}}
+
+
+def _list_tools(out=None) -> int:
+    """Start the server in this process (no stdio, no network) and print the tools a client would see. Exit 0 if there are any."""
+    import asyncio
+    out = out or sys.stdout
+    tools = asyncio.run(build_server().list_tools())
+    for t in tools:
+        print(f"{t.name:<22}{(t.description or '').strip().splitlines()[0][:100] if t.description else ''}", file=out)
+    print(f"\n{len(tools)} tools. The server is ready; add it to an MCP client (see --print-config).", file=out)
+    return 0 if tools else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="orderguard-mcp", description="OrderGuard MCP server (stdio). Configure it in an MCP client; see docs/MCP.md.")
     ap.add_argument("--print-config", action="store_true", help="print a client configuration snippet for this interpreter and exit")
+    ap.add_argument("--list-tools", action="store_true", help="start the server in-process, print its tools and exit (a quick check that it works; no network)")
     a = ap.parse_args(argv)
     if a.print_config:
-        print(json.dumps({"mcpServers": {"orderguard": {"command": sys.executable, "args": ["-m", "orderguard_mcp"]}}}, indent=2))
+        env = {k: os.environ[k] for k in ("ORDERGUARD_HOME",) if os.environ.get(k)}
+        print(json.dumps(_config(env), indent=2))
+        env_flags = "".join(f"--env {k}={v} " for k, v in env.items())
+        print(f"# Claude Code: claude mcp add {env_flags}orderguard -- {sys.executable} -m orderguard_mcp", file=sys.stderr)
+        if not env:
+            print("# Using your own mandate? Add \"env\": {\"ORDERGUARD_HOME\": \"/absolute/path/to/your/config\"} (the directory `orderguard init` made).", file=sys.stderr)
         return 0
+    if a.list_tools:
+        return _list_tools()
+    if sys.stdin.isatty():
+        # A person ran this in a terminal: the server would sit silently waiting for a client's JSON-RPC on stdin.
+        print("orderguard-mcp: this server speaks MCP over stdio and is started by an MCP client (Claude Desktop, Claude Code, ...), not by hand.\n"
+              "  see the config to paste into a client:  python -m orderguard_mcp --print-config\n"
+              "  check that it starts and list its tools: python -m orderguard_mcp --list-tools\n"
+              "Waiting for a client on stdin; press Ctrl+C to stop.", file=sys.stderr)
     build_server().run(transport="stdio")
     return 0
 

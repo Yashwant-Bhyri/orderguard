@@ -23,12 +23,14 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
-import { register } from "tsx/esm/api";
 import { virtualPasskey, registrationResponse, authenticationResponse } from "./synthetic-passkey.mjs";
 import { HttpError, failure, readJsonBody, scrub } from "./http-util.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
+// Say "upgrade Node" or "run npm ci" in one sentence instead of a module-resolution stack trace.
+(await import("./preflight.mjs")).requireEnvironment(root);
+const { register } = await import("tsx/esm/api");
 
 function arg(name) { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; }
 
@@ -58,6 +60,9 @@ async function main() {
   const ownerPath = arg("--owner-public-key");
   const revocations = arg("--revocations");
   const stepUp = arg("--step-up-usd");
+  if (!mandatePath && !proofPath) {
+    throw new Error("--mandate FILE is required: pass the signed mandate that `orderguard init` wrote, for example --mandate var/orderguard/mandate.json (run `orderguard init` first if you have none)");
+  }
   if (Boolean(mandatePath) === Boolean(proofPath) || Boolean(proofPath) !== Boolean(ownerPath) || (proofPath && stepUp !== undefined)
       || (revocations && !proofPath)) {
     throw new Error("Choose --mandate FILE for a demo, or --parent-proof FILE --owner-public-key FILE for signed paper policy");
@@ -67,7 +72,11 @@ async function main() {
   const { SignedPaperPolicy } = await import(pathToFileURL(join(root, "receiver/core/paper-policy.ts")).href);
   const signedPolicy = proofPath ? new SignedPaperPolicy(JSON.parse(await readFile(resolve(proofPath), "utf8")),
     (await readFile(resolve(ownerPath), "utf8")).trim()) : undefined;
-  const mandate = signedPolicy?.parent ?? JSON.parse(await readFile(resolve(mandatePath), "utf8"));
+  const mandate = signedPolicy?.parent ?? JSON.parse(await readFile(resolve(mandatePath), "utf8").then((text) => { try { JSON.parse(text); } catch { throw new Error(`the mandate file ${mandatePath} is not valid JSON: re-create it with \`orderguard init --resign\``); } return text; }, (error) => {
+    throw new Error(error?.code === "ENOENT"
+      ? `no mandate file at ${mandatePath}: create one with \`orderguard init\` (it writes var/orderguard/mandate.json) or fix the path`
+      : `cannot read the mandate file ${mandatePath} (${error?.code ?? "error"})`);
+  }));
   if (stepUp !== undefined) mandate.stepUpThresholdUsd = Number(stepUp);
   // Anchor lifetime and renewal point. r5 caps a mandate at 1 h and floors it at 2 s (see receiver/r5/PATCHES.md).
   const ttlRaw = arg("--anchor-ttl-sec") ?? process.env.ORDERGUARD_ANCHOR_TTL_SEC;
@@ -326,7 +335,9 @@ async function main() {
     await new Promise((ok, bad) => { http.once("error", bad); http.listen(port, "127.0.0.1", ok); });
     process.stdout.write(`READY ${port}\n`);
   } catch (error) {
-    process.stderr.write(`bridge failed: ${scrub(error?.message || error)}\n`);
+    const hint = error?.code === "EADDRINUSE" ? ` (port ${port} is already in use: stop the other program, or pass --port N to pick a free one)`
+      : error?.code === "EPERM" || error?.code === "EACCES" ? " (this environment does not allow listening on a local port: run outside the sandbox, or allow local binding)" : "";
+    process.stderr.write(`bridge failed: ${scrub(error?.message || error)}${hint}\n`);
     await shutdown(1);
   }
 }

@@ -109,7 +109,8 @@ class Decisions:
     def _live(self, body: dict) -> dict:
         key = _key()
         if not key:
-            raise NoApiKey(f"no {KEY_VAR} in the environment and none in OG_ENV_FILE; use OG_LLM=replay or set the key")
+            raise NoApiKey(f"no {KEY_VAR} in the environment and none in OG_ENV_FILE; use OG_LLM=replay (no key needed), or export it, or point OG_ENV_FILE at a file that holds it, "
+                            "for example OG_ENV_FILE=var/orderguard/.env (the file `orderguard init` made; `orderguard doctor` checks it)")
         # Input-token billing: bound one call by one token per request byte at a conservative US$0.10 per million.
         estimate = (len(canonical(body)) + 512) * 0.10 / 1e6
         with BUDGET.lock:

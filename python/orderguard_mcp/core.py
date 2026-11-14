@@ -48,6 +48,16 @@ UNITS = ("USD", "USD millions", "USD billions", "USD/share")
 DEMO_LABEL = ("DEMO MANDATE: signed by a throw-away key created when this server started, valued at the lab's demo prices. "
               "It is not your mandate. Run `orderguard init`, edit and re-sign mandate.json, and set ORDERGUARD_HOME to use your own.")
 
+
+def demo_label() -> str:
+    """DEMO_LABEL, plus a pointed sentence when ORDERGUARD_HOME is set yet holds no mandate.json (a mistyped path is the usual cause).
+    The directory itself is never echoed."""
+    if os.getenv("ORDERGUARD_HOME"):
+        return (DEMO_LABEL + " ORDERGUARD_HOME is set, but that directory has no mandate.json, so your mandate is NOT in use: "
+                "check the path, or create the files there with `orderguard init --dir <that path>`.")
+    return DEMO_LABEL
+
+
 LAYERS = [
     {"id": "L1", "name": "Normalise", "checks": "Code-only cleaning of text before a model reads it: hidden zero-width/bidi/Unicode-tag characters, "
      "look-alike (mixed-script) tickers, compatibility characters, base64 payloads.", "tools": ["screen_text"]},
@@ -381,7 +391,7 @@ def _order_check(ticker: str, side: str, quantity: int, limit_price: float, figs
     public = {
         "layers": "L5+L6", "decision": res["decision"], "reasons": res["reasons"],
         "mandate": {"source": am.source, "id": am.mandate.id if am.mandate else None, "signature_verified": verified,
-                    **({"problem": problem} if problem else {}), **({"label": DEMO_LABEL} if am.source == "demo" else {})},
+                    **({"problem": problem} if problem else {}), **({"label": demo_label()} if am.source == "demo" else {})},
         "numbers": {"claimed_limit_price": limit_price, "trusted_price": chk.get("trusted_price"), "price_source": chk.get("price_source"),
                     "limit_vs_trusted_pct": chk.get("limit_vs_trusted_pct"), "quantity": quantity,
                     "notional_usd_at_trusted_price": chk.get("notional_usd"), "notional_usd_at_claimed_limit": chk.get("limit_notional_usd"),
@@ -505,7 +515,7 @@ def mandate_summary(now: dt.datetime | None = None) -> dict:
     verified, problem = am.verification(now or _now())
     out: dict[str, Any] = {"source": am.source, "present": am.mandate is not None, "signature_verified": verified, "problem": problem}
     if am.source == "demo":
-        out["label"] = DEMO_LABEL
+        out["label"] = demo_label()
     if am.mandate is not None:
         m = am.mandate
         out.update(id=m.id, signed=bool(m.signature), symbols=m.symbols, sides=m.sides, max_order_notional_usd=m.maxOrderNotionalUsd,

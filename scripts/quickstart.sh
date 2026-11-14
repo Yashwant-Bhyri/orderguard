@@ -113,10 +113,17 @@ cat <<MSG
 ==> Ready
 
   Dashboard:   http://127.0.0.1:$PORT   (this machine only; replay mode, no model calls)
+  See an agent's order refused with a reason, in your language (about a second each, offline):
+    Python:  .venv/bin/python examples/python/guarded_agent.py
+    HTTP:    sh examples/http/check_order.sh        (with the dashboard server below running)
+    Node:    node examples/node/check-order.mjs
+    MCP:     .venv/bin/python examples/mcp/list_tools.py
+    All four explained in docs/QUICKSTART.md
+
   Next steps:
     1. Open the dashboard and try "Check order" with the fake 10-for-1 split example.
     2. Edit $home/mandate.json (limits, symbols, referencePrices), then: .venv/bin/orderguard init --resign
-    3. For live model calls, put a provider key in $home/.env (names only are listed there), set OG_LLM=live and a low OG_BUDGET_USD.
+    3. For live model calls, put a provider key in $home/.env (names only are listed there), run with OG_ENV_FILE=$home/.env, set OG_LLM=live and a low OG_BUDGET_USD.
     4. Run the receiver: node receiver/bridge/serve.mjs --port 8700 --mandate $home/mandate.json
        then export ORDERGUARD_RECEIVER_URL=http://127.0.0.1:8700 before serving.
     5. Read docs/GUIDE.md.

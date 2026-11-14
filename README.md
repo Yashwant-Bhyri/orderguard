@@ -67,6 +67,7 @@ In the dashboard, open **Check order** and try "Fake 10-for-1 split" to see an o
 
 | Surface | Use it for | Start here |
 |---|---|---|
+| **Quickstart** | Clone to a refused order in Python, HTTP, Node or MCP, offline, in minutes | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
 | HTTP API | Check an order or screen text from any stack | `orderguard serve`, then `POST /api/check-order` · [API](docs/API.md) |
 | MCP server | Give any MCP client (Claude, other agent frameworks) guarded tools | `python -m orderguard_mcp` · [MCP](docs/MCP.md) |
 | Python | Wrap your own agent loop | `orderguard_guard.agent.run_agent(...)` · [Guide](docs/GUIDE.md#integrating-your-own-agent) |

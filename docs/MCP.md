@@ -14,7 +14,7 @@ cd /path/to/orderguard
 .venv/bin/python -m orderguard_mcp --print-config
 ```
 
-The server speaks JSON-RPC on stdin/stdout, so it prints nothing else there; diagnostics go to stderr. Run it from a client, not by hand.
+The server speaks JSON-RPC on stdin/stdout, so it prints nothing else there; diagnostics go to stderr. Run it from a client, not by hand; started in a terminal it says so on stderr and waits.
 
 ### Configuration
 
@@ -54,7 +54,9 @@ Put provider keys in the environment or the config directory's `.env`, not in th
 claude mcp add --env ORDERGUARD_HOME=/path/to/orderguard-config orderguard -- /path/to/orderguard/.venv/bin/python -m orderguard_mcp
 ```
 
-After the `orderguard-mcp` console script is added to `pyproject.toml` the command becomes `claude mcp add orderguard -- /path/to/orderguard/.venv/bin/orderguard-mcp`.
+The `orderguard-mcp` console script installed with the package does the same: `claude mcp add orderguard -- /path/to/orderguard/.venv/bin/orderguard-mcp`.
+
+`python -m orderguard_mcp --print-config` prints a ready-to-paste block with this interpreter's absolute path (plus the `claude mcp add` line on stderr), and `--list-tools` starts the server in-process, lists its tools and exits: a one-command check that needs no client and no network. [examples/mcp/list_tools.py](../examples/mcp/list_tools.py) is a tiny stdio client you can copy for any MCP library. If `ORDERGUARD_HOME` is set but holds no `mandate.json`, the demo mandate is used and its label says that your directory was not found (the path is never echoed). All of it in one page: [QUICKSTART.md](QUICKSTART.md#mcp).
 
 ## Tools
 

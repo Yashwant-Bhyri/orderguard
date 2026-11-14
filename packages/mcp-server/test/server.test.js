@@ -45,3 +45,11 @@ test("malformed lines get a JSON-RPC error instead of silence, and an unreachabl
     lines.close();
   }
 });
+
+test("the bundled client reports a preview refusal with the receiver's reason", async () => {
+  const { OrderGuardClient } = await import("../src/client.js");
+  const client = new OrderGuardClient({ fetchImpl: async () => Response.json({ run: { id: "r", outcome: "blocked", findings: [{ code: "price-band", status: "block", detail: "The limit price is more than 20% from the selected reference quote." }] } }) });
+  const result = await client.proposeOrder({ mandateId: "m", symbol: "AAPL", side: "buy", quantity: 1, orderType: "limit", limitPrice: 10 });
+  assert.equal(result.state, "proposal_denied");
+  assert.match(result.reason, /^price-band: The limit price is more than 20%/);
+});

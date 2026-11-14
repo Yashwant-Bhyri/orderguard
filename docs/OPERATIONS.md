@@ -138,9 +138,10 @@ Back up `var/orderguard/` with the signing key encrypted and offline.
 ## Troubleshooting
 
 - `listen EPERM` or "Operation not permitted" when starting the bridge or app: the sandbox forbids binding local ports. Run outside the sandbox, or enable local port binding in the sandbox settings.
+- `Node X is too old` or `The Node dependencies are not installed` when starting the bridge: upgrade to Node 22.13+ (`nvm install 22`), or run `npm ci` in the repository root. `--mandate FILE is required` or `no mandate file at ...`: pass the `mandate.json` that `orderguard init` wrote. `port N is already in use`: pass `--port` with a free one.
 - `receiver unreachable`: check the bridge printed `READY`, the URL matches, and in compose that `app` uses `network_mode: service:receiver`. If the text says the request may or may not have been applied, retry with the same client order id (applied at most once) or check `ledger-verify` and the snapshot.
 - `bridge failed: ... integrity check`: the ledger was edited or damaged; see Ledger persistence and backup. `Another receiver ... is already using`: stop the other receiver or use a different ledger path.
 - `mandate: ... changed after the human signed it`: you edited `mandate.json`; run `orderguard init --resign`.
 - `mandate expired`: edit `expiresAt`, then `--resign`; restart the bridge.
 - `anchor_unavailable` denials: the bridge's r5 anchor could not renew; see `docs/receiver/bridge.md`.
-- Model calls fail with an auth error: the key variable for `OG_PROVIDER` is empty; `orderguard init --check` names it.
+- Model calls fail with an auth error or `no DEEPSEEK_API_KEY in the environment`: the key variable for `OG_PROVIDER` is empty; `orderguard init --check` names it. The key is read from the environment or from the file `OG_ENV_FILE` names (for example `OG_ENV_FILE=var/orderguard/.env`); the app does not read `var/orderguard/.env` by itself.

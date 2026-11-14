@@ -57,7 +57,9 @@ export class OrderGuardClient {
     }
     if (parsed.protocol === "http:" && !isLoopback(parsed.hostname)) throw new TypeError("HTTPS is required for non-loopback OrderGuard URLs.");
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError("OrderGuard timeout must be positive.");
-    if (typeof fetchImpl !== "function") throw new TypeError("A Fetch-compatible implementation is required.");
+    if (typeof fetchImpl !== "function") {
+      throw new TypeError(`This runtime has no global fetch (Node ${globalThis.process?.versions?.node ?? "unknown"}). Use Node 20 or newer, or pass a Fetch-compatible function as fetchImpl.`);
+    }
     this.baseUrl = rawUrl;
     this.token = token ?? process.env.ORDERGUARD_BEARER_TOKEN;
     this.timeoutMs = timeoutMs;
@@ -98,7 +100,7 @@ export class OrderGuardClient {
   }
 
   async proposeOrder({ mandateId, symbol, side, quantity, orderType = "market", limitPrice, session = "regular", timeInForce = "day" }) {
-    if (typeof mandateId !== "string" || !mandateId.trim()) throw new TypeError("mandateId is required.");
+    if (typeof mandateId !== "string" || !mandateId.trim()) throw new TypeError("mandateId is required: read it from getMandate() (the active entry in `mandates`) or from the owner who signed it.");
     if (typeof symbol !== "string" || !/^[A-Za-z0-9._-]{1,24}$/.test(symbol.trim())) throw new TypeError("symbol is invalid.");
     const normalizedSymbol = symbol.trim().toUpperCase();
     if (!["buy", "sell"].includes(side)) throw new TypeError("side must be buy or sell.");
@@ -134,6 +136,14 @@ export class OrderGuardClient {
       && intent.session === session
       && intent.timeInForce === timeInForce
       && (price === undefined ? intent.limitPrice == null : decimal(intent.limitPrice, "receiver limitPrice").normalized === price.normalized);
+    if (run?.outcome !== "ready" && Array.isArray(run?.findings)) {
+      // The receiver refused at preview and says why (notional, price band, kill switch...). Pass that on instead of a generic mismatch.
+      const blocking = run.findings.filter((f) => f && f.status !== "pass" && typeof f.detail === "string")
+        .map((f) => ({ code: String(f.code ?? "finding"), detail: f.detail.slice(0, 300) }));
+      if (blocking.length > 0) {
+        return { state: "proposal_denied", reason: `${blocking[0].code}: ${blocking[0].detail}`, findings: blocking, venueDispatchAttempted: false };
+      }
+    }
     if (run?.outcome !== "ready" || !matches) return { state: "proposal_denied", reason: "typed_proposal_did_not_match_receiver_intent" };
     if (![run.id, confirmation?.token, confirmation?.intentHash].every((value) => typeof value === "string" && value)) {
       return { state: "proposal_denied", reason: "required_receiver_capability_missing" };

@@ -276,7 +276,9 @@ class LLM:
                     return resp
         if self.mode == "replay":
             raise ReplayMiss(f"OG_LLM=replay and no recorded response for request {h} (model {body['model']})"
-                             + (f"; the recording {unreadable} exists but is unreadable, re-record it" if unreadable else ""))
+                             + (f"; the recording {unreadable} exists but is unreadable, re-record it" if unreadable else
+                                "; replay serves only recorded runs, so an agent of your own needs a model object with .chat() "
+                                "(see examples/python/guarded_agent.py) or OG_LLM=record with a key and a low OG_BUDGET_USD"))
         resp = self._live(body)
         cost = float((resp.get("usage") or {}).get("cost") or 0.0)
         self.record_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +308,8 @@ class LLM:
     def _headers(self) -> dict:
         key = api_key()
         if not key:
-            raise NoApiKey(f"no {key_var()} in the environment and none in OG_ENV_FILE; use OG_LLM=replay or set the key")
+            raise NoApiKey(f"no {key_var()} in the environment and none in OG_ENV_FILE; use OG_LLM=replay (no key needed), or export it, or point OG_ENV_FILE at a file that holds it, "
+                            "for example OG_ENV_FILE=var/orderguard/.env (the file `orderguard init` made; `orderguard doctor` checks it)")
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if provider() == "openrouter":
             headers.update({"HTTP-Referer": "https://github.com/orderguard", "X-Title": "OrderGuard"})

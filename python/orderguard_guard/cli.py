@@ -175,7 +175,25 @@ def cmd_verify_mandate(a) -> int:
 
 def cmd_check_order(a) -> int:
     order = _load_json(a.order, "order file")
-    mandate = _load_json(a.mandate, "mandate file") if a.mandate else _builtin_mandate()
+    pub = None
+    if a.mandate:
+        mandate = _load_json(a.mandate, "mandate file")
+        pub_file = Path(a.pub) if a.pub else Path(a.mandate).with_name("signing.pub")
+        if pub_file.is_file():
+            try:
+                pub = G.public_key_from_b64(_read_key_text(pub_file, "public key"))
+            except UserError:
+                raise
+            except Exception:
+                raise UserError(f"{pub_file} is not a valid Ed25519 public key", "re-create it with `orderguard init`, or pass the owner's key with --pub FILE") from None
+        elif a.pub:
+            raise UserError(f"public key file not found: {a.pub}", "pass the owner's signing.pub, or leave --pub out to skip the signature check")
+        elif mandate.get("signature"):
+            print(f"note: no signing.pub next to {a.mandate}, so the mandate's signature was NOT checked. Pass --pub FILE to check it.", file=sys.stderr)
+    else:
+        mandate = _builtin_mandate()
+        print("note: no --mandate given, so the built-in demo mandate is used (AAPL and MSFT, buy only, $10,000 per order). "
+              "For yours: --mandate var/orderguard/mandate.json (made by `orderguard init`)", file=sys.stderr)
     if a.prices:
         try:
             prices = json.loads(a.prices)
@@ -187,7 +205,7 @@ def cmd_check_order(a) -> int:
         prices = mandate.get("referencePrices") or {}
     market = SimMarket(prices, as_of=f"{a.as_of}T15:05:00Z")
     checker = G.default_figure_checker()
-    gate = G.OrderGate(mandate, market, checker, require_figures=a.require_figures)
+    gate = G.OrderGate(mandate, market, checker, public_key=pub, require_figures=a.require_figures)
     res = gate.evaluate(order, {"daily_total_usd": a.daily_total, "as_of": a.as_of})
     print(json.dumps(res, indent=1, default=str))
     return {"allow": 0, "hold": 2, "refuse": 1}[res["decision"]]
@@ -410,7 +428,8 @@ def main(argv=None) -> int:
     p.set_defaults(fn=cmd_demo)
     p = sub.add_parser("check-order", help="one order JSON through L5 + L6")
     p.add_argument("order", help="order JSON file or - for stdin")
-    p.add_argument("--mandate")
+    p.add_argument("--mandate", help="signed mandate JSON (default: a built-in demo mandate)")
+    p.add_argument("--pub", help="owner's public key file used to check the mandate's signature (default: signing.pub next to --mandate)")
     p.add_argument("--prices", help='JSON {"AAPL": 222.7}; default: the mandate referencePrices')
     p.add_argument("--as-of", default="2024-11-06", type=_date_arg, help="decision date YYYY-MM-DD (default 2024-11-06, the demo date)")
     p.add_argument("--daily-total", type=float, default=0.0)

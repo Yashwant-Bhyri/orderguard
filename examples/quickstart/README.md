@@ -1,5 +1,7 @@
 # OrderGuard quickstart
 
+Want a readable first refusal in your own language first? See [docs/QUICKSTART.md](../../docs/QUICKSTART.md). This page is the full receiver check below: one JSON line for CI.
+
 This offline example starts an isolated loopback LocalSim paper receiver, creates a **synthetic WebAuthn signer fixture**, and authorizes one AAPL-only mandate. It submits one in-scope paper buy through the Node SDK, then asks the MCP server to sell AAPL. The receiving service must return HTTP 409 and leave the final ledger unchanged for the denied action.
 
 The signer is synthetic. This is not a real passkey ceremony, brokerage integration, model run, testnet order, or safety guarantee for actions inside an allowed mandate.

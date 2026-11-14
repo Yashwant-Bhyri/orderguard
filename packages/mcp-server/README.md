@@ -8,6 +8,8 @@ An MCP stdio server exposing `get_mandate`, `propose_order`, `order_status`, and
 ORDERGUARD_URL=http://127.0.0.1:4173 node bin/orderguard-mcp.js
 ```
 
+`ORDERGUARD_URL` is the mesh receiver (`receiver/r5/server.ts`, default `http://127.0.0.1:4173`), not the bridge on port 8700. `node ../../examples/mcp/list-tools.mjs` (from a clone) starts this server, lists the four tools and shows the error an agent gets when no receiver is running; copy-paste client configs are in [docs/QUICKSTART.md](../../docs/QUICKSTART.md#mcp). The Python server with the guard tools (`check_order`, `screen_text`, ...) is a different package: `docs/MCP.md`.
+
 MCP frames use newline-delimited JSON-RPC on stdin/stdout. Logs and rejected-frame notices go to stderr. For remote receivers, use HTTPS. Provide `ORDERGUARD_BEARER_TOKEN` only through the host's secret environment mechanism; never put it in the URL or agent prompt.
 
 ## Install and verify
