@@ -124,3 +124,22 @@ def test_arena_replay_only_tightens_and_costs_little():
     assert res["honest_tightened_rate"] < 0.05
     rows = [json.loads(l) for _, l in zip(range(50), STREAM.open())]
     assert all(set(arena_event(r)) >= {"step", "agent", "env", "ticker", "side", "qty", "tp", "notional"} for r in rows if "order" in r)
+
+
+def test_edge_pruning_never_changes_features():
+    """Pruning the co-trade map is pure memory management: any prune schedule gives identical features (the bench found the
+    old fixed threshold rebuilt the map on every order once most edges were live)."""
+    rng = random.Random(21)
+    evs = [_event(rng, s // 6) for s in range(3000)]
+
+    def run(cap):
+        eng = F.FeatureEngine(ENVS, 100)
+        eng._edge_cap = cap
+        out = []
+        for e in evs:
+            out.append(eng.featurize(e))
+            eng.update(e)
+            if cap < 400_000:
+                eng._edge_cap = min(eng._edge_cap, cap)          # keep pruning aggressively
+        return out
+    assert run(10) == run(10**9)

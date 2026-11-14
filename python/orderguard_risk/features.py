@@ -130,6 +130,7 @@ class FeatureEngine:
         self.env_pace_sum: dict = {}
         self.env_day: dict = {}                       # env -> (day, usd)
         self.edges: dict = {}                         # (a,b) -> [weight, last_step]
+        self._edge_cap = 400_000
         self.px: dict = {}                            # ticker -> [last_tp, ewma_abs_s, ewma_abs_l]
         self.script: deque = deque()
         self.script_c: Counter = Counter()
@@ -506,8 +507,12 @@ class FeatureEngine:
             s0 = self.script.popleft()[1]
             self.script_c[s0] -= 1
         self.n_seen += 1
-        if len(self.edges) > 400_000:                      # bound memory: drop stale edges
+        if len(self.edges) > self._edge_cap:               # bound memory: drop stale edges
             self.edges = {k: v for k, v in self.edges.items() if step - v[1] <= W_L}
+            # Amortised: when most edges are live, pruning on every order would rebuild the map each time (O(n) per
+            # order). Doubling the threshold keeps pruning O(1) amortised. Stale edges never affect a feature (reads
+            # check staleness and a stale edge restarts at weight 1), so when pruning happens cannot change any score.
+            self._edge_cap = max(400_000, 2 * len(self.edges))
 
 
 # ---- explanations ----------------------------------------------------------------------------------------------------------
