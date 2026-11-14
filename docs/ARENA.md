@@ -32,6 +32,8 @@ Package `python/orderguard_arena/`:
 | `cli.py`, `api.py` | `og-arena` and a FastAPI router for the dashboard. |
 | `python/orderguard_guard/brokers/` | `binance_testnet.py` and `futu_sim.py`. |
 
+The original arena above is a price-taking replay. The separate [`orderguard_sim`](SIMULATION.md) package uses vectorized agent state, impact-aware multi-symbol prices, and the same signed `Authority` to study feedback, crowding and cap sizing up to one million agents.
+
 ### What the authority checks, in order
 
 1. **L1**: ticker normalised (NFKC, upper-case); a ticker with non-Latin look-alike letters is refused; money movement (`transfer`, `destination_account`) is not an order and is refused.

@@ -86,6 +86,7 @@ Whichever surface you use, give the agent no money-movement tool and make the re
 - [Product brief](docs/PRODUCT.md): who it is for, rollout, FAQ
 - [Documentation index](docs/README.md): guides for product, integrators and reviewers
 - [Evidence](docs/EVIDENCE.md), [Bench](docs/BENCH.md), [Red team](docs/REDTEAM.md), [Architecture](docs/ARCHITECTURE.md)
+- [Impact-aware market simulation](docs/SIMULATION.md): mandates, crowding, correlated shocks and the sizing frontier at one million agents
 - [Release notes](RELEASE.md)
 - Everything a reviewer needs, offline, in one command: `scripts/check_all.sh` ([Testing](docs/TESTING.md))
 
