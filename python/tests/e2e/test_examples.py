@@ -66,6 +66,8 @@ def test_python_guarded_agent_refuses_the_forged_split_with_a_reason():
     assert "REFUSE" in out.stdout and REASON in out.stdout
     assert "ALLOW   -> filled on the paper ledger as P-00001" in out.stdout and "HOLD" in out.stdout
     assert "The refused and held orders never reached the broker." in out.stdout
+    # nothing queues a hold in this example: it must not claim the order is waiting anywhere
+    assert "HOLD    -> held for a human; no order was placed" in out.stdout and "waiting for a human" not in out.stdout
     _assert_documented(out.stdout, "examples/python/guarded_agent.py")
 
 

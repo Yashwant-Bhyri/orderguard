@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-from orderguard_guard.gate import (Mandate, MandateInvalid, _parse_time, normalise_ticker, portfolio_reasons, public_key_to_b64, sign_mandate)
+from orderguard_guard.gate import (MAX_TRUSTED_PRICE, Mandate, MandateInvalid, _parse_time, normalise_ticker, portfolio_reasons, public_key_to_b64,
+                                   sign_mandate, trusted_price_ok)
+from orderguard_guard.money import notional_cents, usd_cents
 import unicodedata
 
 FAR_FUTURE = "2099-01-01T00:00:00Z"
@@ -40,7 +42,7 @@ class DailyBudget:
 
     def __init__(self, cap: float):
         self.cap = float(cap)
-        self._cap_c = round(self.cap * 100)
+        self._cap_c = usd_cents(self.cap)
         self._used: dict[int, int] = {}
         self._agent: dict = {}
         self._lock = threading.Lock()
@@ -50,7 +52,7 @@ class DailyBudget:
 
     def reserve(self, day: int, amount: float, agent=None, agent_cap: float | None = None) -> bool:
         """Atomically add `amount` to the day's total unless that would pass the cap. With `agent_cap`, one agent may also not pass its own share."""
-        c = round(amount * 100)
+        c = usd_cents(amount)
         with self._lock:
             cur = self._used.get(day, 0)
             if cur + c > self._cap_c:
@@ -58,7 +60,7 @@ class DailyBudget:
             if agent_cap is not None:
                 k = (day, agent)
                 mine = self._agent.get(k, 0)
-                if mine + c > round(agent_cap * 100):
+                if mine + c > usd_cents(agent_cap):
                     return False
                 self._agent[k] = mine + c
             self._used[day] = cur + c
@@ -83,6 +85,7 @@ class Envelope:
 
     def __post_init__(self) -> None:
         self.m = Mandate.from_dict(self.mandate)
+        self.m.validate()           # finite limits; reference prices listed, finite, above 0 and not absurd (the gate's own rules)
         self.id = self.m.id
         self.budget = DailyBudget(self.m.maxDailyNotionalUsd)
         self.allowed = frozenset(unicodedata.normalize("NFKC", s).upper() for s in self.m.symbols)
@@ -118,7 +121,7 @@ class Envelope:
             if not self.budget.reserve(day, notional, agent, agent_cap):
                 return False, []
             if self.has_portfolio:
-                self._sym_c[(day, ticker)] = self._sym_c.get((day, ticker), 0) + round(notional * 100)
+                self._sym_c[(day, ticker)] = self._sym_c.get((day, ticker), 0) + usd_cents(notional)
                 self._orders[day] = self._orders.get(day, 0) + 1
                 if held:
                     h = self._held.setdefault(ticker, {"buy": 0, "sell": 0})
@@ -169,6 +172,11 @@ class Envelope:
             reasons.append(f"The mandate allows {' and '.join(m.sides)} orders only, not {side}.")
         if trusted is None:
             trusted = self.ref.get(ticker)
+        bad_price = trusted is not None and not trusted_price_ok(trusted)
+        if bad_price:       # never size from a non-positive or absurd price (the gate refuses the same way)
+            reasons.append(f"The trusted price for {ticker} ({trusted!r}) is not a usable trusted price (it must be a finite number above 0 "
+                           f"and at most {MAX_TRUSTED_PRICE:,.0f}), so the order cannot be sized and is refused.")
+            trusted = None
         if qty is None or qty <= 0 or float(qty) != int(qty):
             reasons.append("The quantity must be a positive whole number of shares.")
             qty = None
@@ -177,15 +185,15 @@ class Envelope:
             limit = None
         notional = None
         if trusted is None:
-            if t_ok:
+            if t_ok and not bad_price:
                 reasons.append(f"There is no trusted price for {ticker}, so the order cannot be sized and is refused.")
         elif qty is not None:
-            cents = round(qty * trusted * 100)                       # integer cents, as in the receiver
+            cents = notional_cents(qty, trusted)                     # integer cents, the receiver's rule (orderguard_guard.money)
             notional = cents / 100.0
-            if cents > round(self.max_order * 100):
+            if cents > usd_cents(self.max_order):
                 reasons.append(f"The order is worth ${notional:,.0f} at the trusted price of ${trusted:,.2f} "
                                f"({int(qty)} shares), above the per-order cap of ${self.max_order:,.0f}.")
-            if round(used * 100) + cents > round(m.maxDailyNotionalUsd * 100):
+            if usd_cents(used) + cents > usd_cents(m.maxDailyNotionalUsd):
                 reasons.append(f"With ${used:,.0f} already placed today this order would bring the day's total to "
                                f"${used + notional:,.0f}, above the daily cap of ${m.maxDailyNotionalUsd:,.0f}.")
         if self.has_portfolio:       # same function as OrderGate, so the two cannot drift; no state at all fails closed
@@ -195,7 +203,7 @@ class Envelope:
             if abs(off) > self.band + 1e-12:
                 reasons.append(f"The limit price ${limit:,.2f} is {abs(off) * 100:.1f}% {'above' if off > 0 else 'below'} the trusted price "
                                f"${trusted:,.2f}; the mandate allows at most {m.priceBandPct:g}%.")
-        if self.stepup is not None and notional is not None and round(notional * 100) > round(self.stepup * 100):
+        if self.stepup is not None and notional is not None and usd_cents(notional) > usd_cents(self.stepup):
             holds.append(f"The order is worth ${notional:,.0f}, above the ${self.stepup:,.0f} step-up threshold, so a human must approve it.")
         return reasons, holds, notional
 
@@ -314,7 +322,7 @@ class EnvelopeBook:
             return None
         ticker, _ = normalise_ticker(order.get("ticker"))
         trusted = prices.get(ticker) if isinstance(prices, dict) else prices
-        notional = round(float(order["quantity"]) * (trusted if trusted is not None else fits[0].ref.get(ticker, 0.0)), 2)
+        notional = notional_cents(float(order["quantity"]), trusted if trusted is not None else fits[0].ref.get(ticker, 0.0)) / 100.0
         return min(fits, key=lambda e: (e.headroom(notional, day), e.name))
 
 

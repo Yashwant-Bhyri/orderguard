@@ -363,7 +363,8 @@ def check_order(state: State, order: dict, upload, prices: dict | None, as_of: s
         pub = None
     market = SimMarket({k: v for k, v in (prices or demo_prices()).items()}, as_of=f"{as_of}T15:05:00Z")
     checker = _Recording(G.default_figure_checker())
-    gate = G.OrderGate(m, market, checker, public_key=pub, require_figures=require_figures)
+    # With a signed mandate and a key configured (the demo one, or an upload with public_key), the signature is required, not optional.
+    gate = G.OrderGate(m, market, checker, public_key=pub, require_figures=require_figures, require_signature=pub is not None)
     try:
         res = gate.evaluate(order, {"daily_total_usd": daily_total, "as_of": as_of})
     except Exception as e:                                           # fail closed, without a stack trace

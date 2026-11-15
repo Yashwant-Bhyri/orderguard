@@ -1,7 +1,8 @@
 """The `orderguard` command.
 
   orderguard demo [--scripted]               end-to-end demo (CONTRACT §7); offline with OG_LLM=replay once recorded
-  orderguard check-order ORDER.json [...]    one order JSON through L5 + L6
+  orderguard check-order ORDER.json [...]    one order JSON through L5 + L6; exit 0 allow (signature verified), 1 refuse, 2 hold or
+                                             a usage error, 3 allow that is ADVISORY only: the mandate's signature was not verified
   orderguard graph-demo                      the trigger-graph scenarios (L7)
   orderguard sign-mandate MANDATE.json       Ed25519-sign a mandate
   orderguard verify-mandate SIGNED.json      check signature, expiry, revocation
@@ -173,6 +174,10 @@ def cmd_verify_mandate(a) -> int:
 
 # ---- check-order ---------------------------------------------------------------------------------------------------
 
+EXIT_ALLOW_UNVERIFIED = 3
+ADVISORY_ALLOW = "allow (advisory: mandate signature not verified)"
+
+
 def cmd_check_order(a) -> int:
     order = _load_json(a.order, "order file")
     pub = None
@@ -207,8 +212,15 @@ def cmd_check_order(a) -> int:
     checker = G.default_figure_checker()
     gate = G.OrderGate(mandate, market, checker, public_key=pub, require_figures=a.require_figures)
     res = gate.evaluate(order, {"daily_total_usd": a.daily_total, "as_of": a.as_of})
+    # Only code that checked the owner's signature against a pinned key can say a plain "allow". Without it the answer is advice.
+    verified = pub is not None and res.get("checks", {}).get("mandate") == "ok"
+    res["signature_verified"] = verified
+    if res["decision"] == "allow" and not verified:
+        res["decision"] = ADVISORY_ALLOW
+        print("note: allow is ADVISORY only: the mandate's signature was not verified against the owner's public key (exit code 3). "
+              "Pass --mandate with the signing.pub beside it, or --pub FILE.", file=sys.stderr)
     print(json.dumps(res, indent=1, default=str))
-    return {"allow": 0, "hold": 2, "refuse": 1}[res["decision"]]
+    return {"allow": 0, "hold": 2, "refuse": 1, ADVISORY_ALLOW: EXIT_ALLOW_UNVERIFIED}[res["decision"]]
 
 
 # ---- graph demo ----------------------------------------------------------------------------------------------------
@@ -366,9 +378,10 @@ def cmd_demo(a) -> int:
         with tempfile.TemporaryDirectory(prefix="og-demo-") as tmp:
             path = Path(tmp) / "mandate.json"
             public = Path(tmp) / "signing.pub"
+            public.write_text(G.public_key_to_b64(pub), encoding="utf-8")
             if a.scripted:
                 path.write_text(json.dumps(mandate), encoding="utf-8")
-                with _demo_receiver(path) as receiver:
+                with _demo_receiver(path, public) as receiver:
                     runs = demo_scenarios(scripted_llm_factory(), receiver, mandate)
                     complete = not any(r["transcript"]["error"] or r["transcript"]["screen_errors"] for r in runs)
                     print("\nLedger snapshot:")
@@ -377,7 +390,6 @@ def cmd_demo(a) -> int:
                 from .demo_replay import run_demo
 
                 path.write_text(json.dumps(parent_proof(mandate)), encoding="utf-8")
-                public.write_text(G.public_key_to_b64(pub), encoding="utf-8")
                 complete = run_demo(a.model, mandate, lambda: _demo_receiver(path, public), _print_scenario)
     except Exception as e:
         complete = False
@@ -426,7 +438,9 @@ def main(argv=None) -> int:
     p.add_argument("--model", default=None)
     p.add_argument("--scripted", action="store_true", help="scripted agent and keyword screen: no key, no network, no recording")
     p.set_defaults(fn=cmd_demo)
-    p = sub.add_parser("check-order", help="one order JSON through L5 + L6")
+    p = sub.add_parser("check-order", help="one order JSON through L5 + L6",
+                       epilog="exit codes: 0 allow (signature verified against the owner's key), 1 refuse, 2 hold (or a usage error), "
+                              "3 allow that is advisory only because the mandate's signature was not verified")
     p.add_argument("order", help="order JSON file or - for stdin")
     p.add_argument("--mandate", help="signed mandate JSON (default: a built-in demo mandate)")
     p.add_argument("--pub", help="owner's public key file used to check the mandate's signature (default: signing.pub next to --mandate)")

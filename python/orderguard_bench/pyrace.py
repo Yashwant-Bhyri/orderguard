@@ -14,6 +14,7 @@ from pathlib import Path
 from orderguard_arena.authority import Authority
 from orderguard_arena.envelopes import EnvelopeBook, make_envelope, owner_key_from_seed
 from orderguard_guard.gate import public_key_to_b64
+from orderguard_guard.money import notional_cents, usd_cents
 
 from . import auditor as A
 from .engine import DecisionLog
@@ -23,7 +24,7 @@ def thread_race(market, threads: int, per_thread: int, *, lock_off: bool = False
     key = owner_key_from_seed("bench-thread-race")
     price = market.trusted[0]["BTCUSDT"]
     qty = 100
-    cents = round(qty * price * 100)
+    cents = notional_cents(qty, price)
     entitled = 20
     env = make_envelope(key, name="race", symbols=["BTCUSDT"], per_order=1_000_000.0, daily=cents * entitled / 100, band_pct=1.0,
                         expires="2099-01-01T00:00:00Z")
@@ -35,7 +36,7 @@ def thread_race(market, threads: int, per_thread: int, *, lock_off: bool = False
         b = env.budget
 
         def racy(day, amount, agent=None, agent_cap=None):
-            c = round(amount * 100)
+            c = usd_cents(amount)
             cur = b._used.get(day, 0)
             time.sleep(0.0002)                             # yield between the check and the write: a lost update is now possible
             if cur + c > b._cap_c:

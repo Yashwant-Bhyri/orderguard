@@ -34,11 +34,11 @@ A scripted toy agent (no model) places three orders through `run_agent` with the
 2. buy 440 AAPL @ 22.30   REFUSE
      The order is worth $97,988 at the trusted price of $222.70 (440 shares), above the per-order cap of $10,000.
      ...
-3. buy 43 AAPL @ 222.70   HOLD
+3. buy 43 AAPL @ 222.70   HOLD    -> held for a human; no order was placed
      The order is worth $9,576, above the $9,500 step-up threshold, so a human must approve it.
 ```
 
-The refused and held orders never reach the broker object; read `main` in the file, it is about thirty lines. To put the guard in front of your own broker call, you need only the gate:
+The refused and held orders never reach the broker object, and nothing queues the hold: a human who approves places the order again. Read `main` in the file, it is about thirty lines. To put the guard in front of your own broker call, you need only the gate:
 
 ```python
 import datetime as dt, json
@@ -58,7 +58,7 @@ verdict = guard.evaluate({"ticker": "AAPL", "side": "buy", "quantity": 440, "lim
 print(verdict["decision"], verdict["reasons"])                 # refuse, with reasons; place the order only on "allow"
 ```
 
-`evaluate` never raises: anything it cannot read becomes a refusal with a reason. Pass your running daily total in `daily_total_usd`. To run your own agent loop under `run_agent`, give it a model object with `.chat(messages, tools=...)` and a broker object with `tools(arm)`, `call(name, args)`, `market`, `mandate` and `as_of` (the `ToyBroker` in the example is exactly that). Always pass `public_key=` (the owner's key, or set `broker.public_key`): the gate then re-verifies the mandate's signature, expiry and revocation on every order, so an edited or foreign-signed mandate refuses everything. Without it, only the limits are enforced. Try your own mandate with `--mandate var/orderguard/mandate.json`; the example checks its signature first and says what to fix if it is missing or edited.
+`evaluate` never raises: anything it cannot read becomes a refusal with a reason. Pass your running daily total in `daily_total_usd`. To run your own agent loop under `run_agent`, give it a model object with `.chat(messages, tools=...)` and a broker object with `tools(arm)`, `call(name, args)`, `market`, `mandate` and `as_of` (the `ToyBroker` in the example is exactly that). Always pass `public_key=` (the owner's key, or set `broker.public_key`): the gate then requires the mandate's signature and re-verifies it, the expiry and revocation on every order, so an edited, unsigned or foreign-signed mandate refuses everything. Without it, only the limits are enforced. Try your own mandate with `--mandate var/orderguard/mandate.json`; the example checks its signature first and says what to fix if it is missing or edited.
 
 ## HTTP
 
@@ -112,7 +112,7 @@ const result = await orderguard.proposeOrder({ mandateId: mandates.find((m) => m
 if (result.state === "denied" || result.state === "proposal_denied") console.log(result.reason);   // never dispatched: venueDispatchAttempted is false
 ```
 
-Two things to know before pointing it at your own receiver. The SDK speaks the mesh receiver's routes (`/api/human-mandate/status`, `/api/chat`, `/api/paper-orders`, `/api/snapshot`), which `receiver/r5/server.ts` serves on `http://127.0.0.1:4173` by default (`ORDERGUARD_LEDGER_DB=var/r5.sqlite node --import tsx receiver/r5/server.ts`; it prints a one-time owner pairing code). The bridge on port 8700 (`node receiver/bridge/serve.mjs`) is a different, Python-facing API and does not serve these routes. And the mandate there is created by the owner's passkey ceremony, not by `orderguard init`; the SDK only reads it, so an agent cannot widen its own authority. A refusal at preview carries the receiver's reason in `result.reason` and `result.findings`.
+Two things to know before pointing it at your own receiver. The SDK speaks the mesh receiver's routes (`/api/human-mandate/status`, `/api/chat`, `/api/paper-orders`, `/api/snapshot`), which `receiver/r5/server.ts` serves on `http://127.0.0.1:4173` by default (`ORDERGUARD_LEDGER_DB=var/r5.sqlite node --import tsx receiver/r5/server.ts`; it prints a one-time owner pairing code). The bridge on port 8700 (`node receiver/bridge/serve.mjs --mandate var/orderguard/mandate.json --pub var/orderguard/signing.pub`, or `orderguard paper-receiver`) is a different, Python-facing API and does not serve these routes; it enforces only a mandate whose signature verifies against the pinned `signing.pub`. And the mandate there is created by the owner's passkey ceremony, not by `orderguard init`; the SDK only reads it, so an agent cannot widen its own authority. A refusal at preview carries the receiver's reason in `result.reason` and `result.findings`.
 
 ## MCP
 
@@ -176,4 +176,4 @@ The Node receiver server ([examples/mcp/receiver-server.json](../examples/mcp/re
 | `no DEEPSEEK_API_KEY in the environment` | Only for live model calls. Use `OG_LLM=replay`, or `OG_ENV_FILE=var/orderguard/.env` with the key filled in. |
 | `OG_LLM=replay and no recorded response` | Replay serves only recorded runs. Give `run_agent` your own model object, or record with a key and a low `OG_BUDGET_USD`. |
 
-More: [GUIDE.md](GUIDE.md#troubleshooting). What this does not prove: the mandate check allows any order that fits inside the signed limits, so choose limits you would accept being used in full ([README, Honest limits](../README.md#honest-limits)).
+More: [GUIDE.md](GUIDE.md#troubleshooting). Sizing tip: choose limits you would accept being used in full, since every order that fits inside them is allowed by the mandate check ([README, scope of this release](../README.md#scope-of-this-release)).

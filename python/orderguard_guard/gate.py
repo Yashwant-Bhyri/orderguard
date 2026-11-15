@@ -30,11 +30,38 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from cryptography.hazmat.primitives import serialization
 
 from .market import TrustedMarket, UnknownTicker
+from .money import notional_cents, usd_cents
 from .normalise import fold_confusables, non_latin_letters
 
 FigureChecker = Callable[[str, dt.date, list], list]
 
 BLOCKING_FIGURE_STATUSES = ("contradicted", "stale", "not_public_yet")
+
+# No listed instrument trades above this per unit: a larger "price" is a unit or data error. TypeScript: valuation.ts MAX_TRUSTED_PRICE.
+MAX_TRUSTED_PRICE = 1e7
+
+
+def trusted_price_ok(v) -> bool:
+    """A usable trusted price: a real number (not a bool or a string), finite, above zero and at most MAX_TRUSTED_PRICE.
+    The same test as the receiver's valuation.ts trustedPriceOk. A negative or zero price would make every notional non-positive and
+    pass every cap, so nothing is ever sized from one."""
+    return (not isinstance(v, bool) and isinstance(v, (int, float)) and math.isfinite(v) and 0 < v <= MAX_TRUSTED_PRICE)
+
+
+def reference_price_problem(symbols, prices) -> str | None:
+    """Why a mandate's referencePrices cannot be used, or None. Keys must be symbols the mandate lists (compared as the gate compares
+    tickers, NFKC and upper case; the signed receiver additionally requires canonical tickers), and every value a usable trusted price. Shared by Mandate.validate, the arena envelopes and mandate_fit."""
+    if not isinstance(prices, dict):
+        return "the mandate's referencePrices must be a mapping of ticker to price"
+    fold = lambda t: unicodedata.normalize("NFKC", t).upper()       # noqa: E731  the gate's own allow-list folding
+    listed = {fold(t) for t in symbols if isinstance(t, str)} if isinstance(symbols, (list, tuple)) else set()
+    for k, v in prices.items():
+        if not isinstance(k, str) or k != k.strip() or fold(k) not in listed:
+            return f"the mandate's reference price for {k!r} is for a symbol it does not list"
+        if not trusted_price_ok(v):
+            return (f"the mandate's reference price for {k} must be a finite number above 0 and at most "
+                    f"{MAX_TRUSTED_PRICE:,.0f}, not {v!r}")
+    return None
 
 
 # ---- keys and canonical JSON ---------------------------------------------------------------------------------------
@@ -160,8 +187,9 @@ class Mandate:
         n = self.maxOrdersPerDay
         if n is not None and (isinstance(n, bool) or not isinstance(n, int) or n < 1 or n > 10**9):
             raise MandateInvalid(f"the mandate's maxOrdersPerDay must be a positive whole number, not {n!r}")
-        if not isinstance(self.referencePrices, dict) or not all(isinstance(k, str) for k in self.referencePrices):
-            raise MandateInvalid("the mandate's referencePrices must be a mapping of ticker to price")
+        problem = reference_price_problem(self.symbols, self.referencePrices)
+        if problem:
+            raise MandateInvalid(problem)
         try:
             _parse_time(self.expiresAt)
         except (ValueError, TypeError, OverflowError):
@@ -281,14 +309,14 @@ def portfolio_reasons(m: Mandate, ticker: str, side: str, qty, trusted, state: d
             return None
         return {str(k).strip().upper(): v for k, v in t.items()}
 
-    cents = round(qty * trusted * 100)
+    cents = notional_cents(qty, trusted)
     if m.maxSymbolDailyNotionalUsd is not None:
         t = table("symbol_daily_usd")
         v = None if t is None else _num(t.get(ticker, 0.0))
         if v is None or v < 0:
             reasons.append(f"The day's running total for {ticker} is missing or not a finite non-negative number, so the per-symbol daily cap of "
                            f"${m.maxSymbolDailyNotionalUsd:,.0f} cannot be enforced and the order is refused.")
-        elif round(v * 100) + cents > round(m.maxSymbolDailyNotionalUsd * 100):
+        elif usd_cents(v) + cents > usd_cents(m.maxSymbolDailyNotionalUsd):
             reasons.append(f"With ${v:,.0f} already placed in {ticker} today this order would bring that symbol's total to "
                            f"${v + cents / 100:,.0f}, above the per-symbol daily cap of ${m.maxSymbolDailyNotionalUsd:,.0f}.")
     if m.maxPositionUsd is not None and side in ("buy", "sell"):
@@ -309,8 +337,8 @@ def portfolio_reasons(m: Mandate, ticker: str, side: str, qty, trusted, state: d
         else:
             s = qty if side == "buy" else -qty
             exposure = max(abs(net + hb + s), abs(net - hs + s))      # held orders counted whichever way grows the exposure
-            after = round(exposure * trusted * 100)
-            if after > round(m.maxPositionUsd * 100):
+            after = notional_cents(exposure, trusted)
+            if after > usd_cents(m.maxPositionUsd):
                 reasons.append(f"After this order the position in {ticker} could reach {exposure:,.0f} shares, ${after / 100:,.0f} at the trusted price of "
                                f"${trusted:,.2f}, above the position cap of ${m.maxPositionUsd:,.0f}.")
     return reasons
@@ -326,11 +354,16 @@ class OrderGate:
     """
 
     def __init__(self, mandate: Mandate | dict, market: TrustedMarket, figure_checker: FigureChecker | None = None, *,
-                 public_key: Ed25519PublicKey | None = None, require_figures: bool = False, revoked: Iterable[str] = ()):
+                 public_key: Ed25519PublicKey | None = None, require_figures: bool = False, revoked: Iterable[str] = (),
+                 require_signature: bool = False):
+        """`public_key` pins the mandate owner's key: the signature, expiry and revocation are then checked on every order. Without it
+        only the limits are enforced (the lab's simulated mandates). `require_signature=True` makes the key mandatory: with no pinned key,
+        or an unsigned mandate, every order is refused. Every path that can cause an effect should set it; production must pin the key."""
         self.mandate = mandate if isinstance(mandate, Mandate) else Mandate.from_dict(mandate)
         self.market = market
         self.figure_checker = figure_checker
         self.public_key = public_key
+        self.require_signature = bool(require_signature)
         self.require_figures = require_figures
         self.revoked = set(revoked)
 
@@ -378,6 +411,8 @@ class OrderGate:
 
         # 0. the mandate itself
         try:
+            if self.require_signature and self.public_key is None:
+                raise MandateInvalid("the owner's public key is not pinned, so the mandate's signature cannot be verified and this gate requires it")
             if self.public_key is not None:
                 m.verify(self.public_key, now=now, revoked=self.revoked | set(state.get("revoked") or ()))
             else:
@@ -418,18 +453,28 @@ class OrderGate:
         # 4. quantity and notional at the TRUSTED price
         qty, limit = _num(order.get("quantity")), _num(order.get("limit_price"))
         trusted = None
+        quoted = None
         if checks["ticker"]["ok"] or not problem:
             try:
                 q = self.market.quote(ticker)
-                trusted = _num(q.get("price")) if isinstance(q, dict) else None
+                quoted = q.get("price") if isinstance(q, dict) else None
             except (UnknownTicker, KeyError):
-                trusted = None
-        if trusted is None:
-            trusted = _num((m.referencePrices or {}).get(ticker))
-            if trusted is not None:
-                checks["price_source"] = "mandate reference price"
-        else:
+                quoted = None
+        if quoted is not None:
             checks["price_source"] = "trusted market quote"
+            if trusted_price_ok(quoted):
+                trusted = float(quoted)
+            else:       # never fall back to another price: a broken trusted feed is a refusal
+                reasons.append(f"The trusted market quote for {ticker} ({quoted!r}) is not a usable trusted price (it must be a finite number above 0 "
+                               f"and at most {MAX_TRUSTED_PRICE:,.0f}), so the order cannot be sized and is refused.")
+        else:
+            ref = (m.referencePrices or {}).get(ticker)
+            if ref is not None:
+                checks["price_source"] = "mandate reference price"
+                if trusted_price_ok(ref):
+                    trusted = float(ref)
+                else:   # validate() rejects this already; checked again at decision time so no path can size from it
+                    reasons.append(f"The mandate's reference price for {ticker} ({ref!r}) is not a usable trusted price, so the order cannot be sized and is refused.")
         checks["trusted_price"] = trusted
         if qty is None or qty <= 0 or float(qty) != int(qty):
             reasons.append("The quantity must be a positive whole number of shares.")
@@ -439,21 +484,24 @@ class OrderGate:
             limit = None
         notional = None
         if trusted is None:
-            if checks["ticker"].get("ok"):
+            if checks["ticker"].get("ok") and quoted is None and "price_source" not in checks:
                 reasons.append(f"There is no trusted price for {ticker}, so the order cannot be sized and is refused.")
         elif qty is not None:
-            notional = round(qty * trusted, 2)
+            # integer cents, the receiver's rule (money.py): Math.round(qty * trusted * 100), caps as Math.round(cap * 100)
+            cents = notional_cents(qty, trusted)
+            notional = cents / 100.0
             checks["notional_usd"] = notional
-            checks["limit_notional_usd"] = round(qty * limit, 2) if limit else None
-            if notional > m.maxOrderNotionalUsd:
+            checks["limit_notional_usd"] = notional_cents(qty, limit) / 100.0 if limit else None
+            if cents > usd_cents(m.maxOrderNotionalUsd):
                 reasons.append(f"The order is worth ${notional:,.0f} at the trusted price of ${trusted:,.2f} "
                                f"({int(qty)} shares), above the per-order cap of ${m.maxOrderNotionalUsd:,.0f}.")
             # 5. running daily total
             placed = _num(state.get("daily_total_usd")) or 0.0
-            checks["daily_total_after_usd"] = round(placed + notional, 2)
-            if placed + notional > m.maxDailyNotionalUsd:
+            after_c = usd_cents(placed) + cents
+            checks["daily_total_after_usd"] = after_c / 100.0
+            if after_c > usd_cents(m.maxDailyNotionalUsd):
                 reasons.append(f"With ${placed:,.0f} already placed today this order would bring the day's total to "
-                               f"${placed + notional:,.0f}, above the daily cap of ${m.maxDailyNotionalUsd:,.0f}.")
+                               f"${after_c / 100:,.0f}, above the daily cap of ${m.maxDailyNotionalUsd:,.0f}.")
 
         # 5b. optional portfolio limits (fail closed when their state is missing)
         reasons.extend(portfolio_reasons(m, ticker, side, qty, trusted, state))
@@ -506,7 +554,7 @@ class OrderGate:
                     reasons.append(f"The cited figure {label} came back with the unrecognised status {st!r}, so it is not treated as confirmed.")
 
         # 8. step-up hold
-        if m.stepUpAboveUsd is not None and notional is not None and notional > m.stepUpAboveUsd:
+        if m.stepUpAboveUsd is not None and notional is not None and notional_cents(qty, trusted) > usd_cents(m.stepUpAboveUsd):
             holds.append(f"The order is worth ${notional:,.0f}, above the ${m.stepUpAboveUsd:,.0f} step-up threshold, so a human must approve it.")
 
         if reasons:

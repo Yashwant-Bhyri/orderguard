@@ -20,7 +20,7 @@ def test_sign_then_verify(tmp_path, capsys):
 def test_check_order_exit_codes(tmp_path, capsys):
     o = tmp_path / "o.json"
     o.write_text(json.dumps({"ticker": "AAPL", "side": "buy", "quantity": 40, "limit_price": 222.7}))
-    assert cli.main(["check-order", str(o)]) == 0
+    assert cli.main(["check-order", str(o)]) == 3          # the built-in demo mandate is unsigned: its allow is advisory (exit 3), never a plain allow
     o.write_text(json.dumps({"ticker": "AAPL", "side": "buy", "quantity": 440, "limit_price": 22.3}))
     assert cli.main(["check-order", str(o)]) == 1
     assert "refuse" in capsys.readouterr().out

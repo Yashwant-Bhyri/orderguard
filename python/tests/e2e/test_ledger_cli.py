@@ -92,7 +92,7 @@ def test_the_bridge_refuses_a_tampered_persistent_ledger_with_an_actionable_mess
     mandate.write_text(json.dumps({"symbols": ["AAPL"], "sides": ["buy"], "maxOrderNotionalUsd": 10000, "maxDailyNotionalUsd": 20000,
                                    "priceBandPct": 5, "expiresAt": "2099-01-01T00:00:00Z", "referencePrices": {"AAPL": 222.7}}))
     with pytest.raises(ReceiverError) as e:
-        Bridge.start(mandate, ledger=ledger, timeout=60)
+        Bridge.start(mandate, ledger=ledger, timeout=60, demo_unsigned=True)       # the seeded ledger is bound to a demo mandate id
     msg = str(e.value)
     assert "integrity check" in msg and "Restore" in msg and str(tmp_path) not in msg
 

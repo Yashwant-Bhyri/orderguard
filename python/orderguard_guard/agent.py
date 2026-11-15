@@ -8,6 +8,11 @@
 `run_agent(model, task, env, arm, max_steps=12)` returns the Transcript dict:
   {"calls": [{"name","args","result","gate"}], "final", "quarantined": [...], "cost_usd", "error"}   (+ "arm", "model", "screen_errors")
 `model` is a model name or any object with `.chat(messages, tools=...)` (ScriptedLLM in tests).
+
+Where orders take effect: the receiver (`receiver=`, the bridge in receiver/bridge) is the production effect path. It owns the ledger and
+the day's spend, re-checks the signed mandate and is the final authority. Calling the environment's own `place_order` (receiver=None) is
+for demos, tests and the lab. Either way the gate's daily total lives in a `DailyBudget` shared by every run on the same environment
+(or passed in as `budget=`), keyed by mandate and decision date, so repeated or concurrent runs can never together pass the daily cap.
 """
 from __future__ import annotations
 
@@ -15,11 +20,13 @@ import copy
 import datetime as dt
 import json
 import re
+import threading
 
 from . import normalise
 from .bucket import RiskBucket
 from .graph import TriggerGraph, graph_events
-from .gate import Mandate, OrderGate, default_figure_checker, normalise_ticker
+from .gate import Mandate, OrderGate, _parse_time, default_figure_checker, normalise_ticker
+from .money import usd_cents
 from .llm import as_llm
 from .market import SimMarket
 from .receiver_client import LocalLedger
@@ -362,13 +369,68 @@ def abandonment_notice(msgs: list, tr: dict, env, market, mandate) -> tuple[str,
     return note, {"claims": claims, "trusted": trusted}
 
 
+class DailyBudget:
+    """The day's spend that run_agent's gate counts against the daily cap, shared by every run that uses it: integer cents per
+    (mandate id, decision date), behind one lock. `reserve` is an atomic check-and-add, so concurrent runs can never together pass the
+    cap; a reservation whose order did not fill is released. It lives in memory: the receiver's ledger is the durable record."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._cents: dict[tuple[str, str], int] = {}
+
+    def used_usd(self, mandate_id: str, day: str) -> float:
+        with self._lock:
+            return self._cents.get((mandate_id, day), 0) / 100.0
+
+    def reserve(self, mandate_id: str, day: str, cents: int, cap_cents: int) -> bool:
+        with self._lock:
+            used = self._cents.get((mandate_id, day), 0)
+            if used + cents > cap_cents:
+                return False
+            self._cents[(mandate_id, day)] = used + cents
+            return True
+
+    def release(self, mandate_id: str, day: str, cents: int) -> None:
+        with self._lock:
+            self._cents[(mandate_id, day)] = max(0, self._cents.get((mandate_id, day), 0) - cents)
+
+
+_BUDGET_ATTR = "orderguard_daily_budget"
+_BUDGET_LOCK = threading.Lock()
+
+
+def env_budget(env) -> DailyBudget:
+    """The DailyBudget stored on `env`, created once under a lock so concurrent first runs share it."""
+    with _BUDGET_LOCK:
+        budget = getattr(env, _BUDGET_ATTR, None)
+        if not isinstance(budget, DailyBudget):
+            budget = DailyBudget()
+            try:
+                setattr(env, _BUDGET_ATTR, budget)
+            except (AttributeError, TypeError):
+                raise TypeError("run_agent keeps the day's spend on the environment object, and this one does not accept attributes: "
+                                "pass budget=DailyBudget() (one per account) instead") from None
+        return budget
+
+
+def _decision_day(as_of) -> str:
+    """The day the gate counts the order against (its own rule: the `as_of` date, else today)."""
+    try:
+        return (_parse_time(as_of).date() if as_of else dt.date.today()).isoformat()
+    except (ValueError, TypeError, OverflowError):
+        return "invalid"            # the gate refuses an invalid date itself; nothing is reserved under it
+
+
 def run_agent(model, task: str, env, arm: str = "full", max_steps: int = 12, *, screen_model=None, receiver=None, figure_checker=None,
-              system: str | None = None, max_tokens: int = 4000, public_key=None) -> dict:
+              system: str | None = None, max_tokens: int = 4000, public_key=None, budget: DailyBudget | None = None) -> dict:
     """Run one analyst agent against `env` in `arm`. See the module docstring for the Transcript.
 
-    `public_key` (or `env.public_key`) pins the mandate owner's Ed25519 key: the gate then verifies the mandate's signature, expiry and
-    revocation on every order, so a tampered or foreign-signed mandate refuses everything. Pass it in any real deployment. Without it
-    the gate enforces the mandate's limits but cannot tell who wrote them (the lab's simulated mandates run that way)."""
+    `public_key` (or `env.public_key`) pins the mandate owner's Ed25519 key: the gate then REQUIRES a valid signature (require_signature)
+    and checks expiry and revocation on every order, so a tampered, unsigned or foreign-signed mandate refuses everything. Pass it in any
+    real deployment. Without it the gate enforces the mandate's limits but cannot tell who wrote them (the lab's simulated mandates).
+
+    `budget` is the day's spend the gate counts (default: one DailyBudget kept on `env`, shared by every run on it). The receiver remains
+    the final authority on the real total; direct calls to `env`'s place_order (receiver=None) are for demos and tests."""
     if arm not in ARMS:
         raise ValueError(f"arm must be one of {ARMS}")
     llm = as_llm(model)
@@ -377,7 +439,7 @@ def run_agent(model, task: str, env, arm: str = "full", max_steps: int = 12, *, 
     mandate = Mandate.from_dict(env.mandate) if isinstance(env.mandate, dict) else env.mandate
     pinned = public_key if public_key is not None else getattr(env, "public_key", None)
     gate = None if arm == "naive" else OrderGate(mandate, market, figure_checker or default_figure_checker(), require_figures=True,
-                                                 public_key=pinned)
+                                                 public_key=pinned, require_signature=pinned is not None)
     guard = None
     if arm == "full":
         guard = Guard(llm, Screen(screen_model if screen_model is not None else llm), RiskBucket(screen_model if screen_model is not None else llm))
@@ -388,7 +450,11 @@ def run_agent(model, task: str, env, arm: str = "full", max_steps: int = 12, *, 
     msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": task}]
     tr: dict = {"calls": [], "final": "", "quarantined": [], "cost_usd": 0.0, "error": None, "arm": arm, "model": getattr(llm, "model", str(model)),
                 "screen_errors": 0, "guard_notices": []}
-    state = {"daily_total_usd": 0.0, "as_of": as_of}
+    budget = budget if budget is not None else (None if arm == "naive" else env_budget(env))
+    # The day's total is read from the shared budget before every order (see _place_order), never reset per call.
+    state = {"daily_total_usd": 0.0, "as_of": as_of, "_budget": budget, "_mandate": mandate, "_day": _decision_day(as_of), "_run_filled_usd": 0.0}
+    if budget is not None:
+        state["daily_total_usd"] = budget.used_usd(mandate.id, state["_day"])
     names = {t["function"]["name"] for t in tools}
     guard_active = arm != "naive"
     try:
@@ -435,7 +501,9 @@ def run_agent(model, task: str, env, arm: str = "full", max_steps: int = 12, *, 
         tr["quarantined"] = guard.quarantined
         tr["screen_errors"] = guard.screen.errors
         tr["cost_usd"] += guard.screen.cost_usd      # screen calls are not in the agent loop above
-    tr["daily_total_usd"] = state["daily_total_usd"]
+    tr["daily_total_usd"] = state["_run_filled_usd"]          # what THIS run filled
+    if budget is not None:
+        tr["day_total_usd"] = budget.used_usd(mandate.id, state["_day"])     # everything filled today on this budget
     return tr
 
 
@@ -477,7 +545,10 @@ def _place_order(args, env, gate, state, receiver, guard=None):
     rule_id, held = _l7(order, ticker, env, guard)
     if held is not None:
         return {"status": "held by the trigger graph", "reasons": held["reasons"], "ledger_effect": False}, held
-    res = gate.evaluate(order, {**state, "l7_confirmed": rule_id is not None})
+    budget, mandate, day = state.get("_budget"), state.get("_mandate"), state.get("_day")
+    if budget is not None:
+        state["daily_total_usd"] = budget.used_usd(mandate.id, day)          # other runs on this budget may have spent since
+    res = gate.evaluate(order, {k: v for k, v in state.items() if not k.startswith("_")} | {"l7_confirmed": rule_id is not None})
     if rule_id is not None:
         res["checks"]["l7_rule"] = rule_id
     if res["decision"] == "refuse":
@@ -486,6 +557,28 @@ def _place_order(args, env, gate, state, receiver, guard=None):
         return {"status": "held for human approval", "reasons": res["reasons"]}, res
     clean = {k: v for k, v in args.items() if k != "key_figures"}
     clean["ticker"] = ticker
+    cents = usd_cents(res["checks"].get("notional_usd") or 0.0)
+    if budget is not None and not budget.reserve(mandate.id, day, cents, usd_cents(mandate.maxDailyNotionalUsd)):
+        # another run on the same budget spent the room between the check and now: the atomic reservation is the answer
+        placed = budget.used_usd(mandate.id, day)
+        res = {"decision": "refuse", "checks": {**res["checks"], "daily_total_after_usd": (usd_cents(placed) + cents) / 100.0},
+               "reasons": [f"With ${placed:,.0f} already placed today this order would bring the day's total to ${(usd_cents(placed) + cents) / 100:,.0f}, "
+                           f"above the daily cap of ${mandate.maxDailyNotionalUsd:,.0f}."]}
+        return {"status": "refused by the order gate", "reasons": res["reasons"]}, res
+    filled = False
+    try:
+        result, filled = _effect(order, clean, ticker, env, receiver)
+    finally:
+        if budget is not None and not filled:
+            budget.release(mandate.id, day, cents)
+    if filled:
+        state["_run_filled_usd"] += res["checks"].get("notional_usd") or 0.0
+        state["daily_total_usd"] = budget.used_usd(mandate.id, day) if budget is not None else state["daily_total_usd"] + (res["checks"].get("notional_usd") or 0.0)
+    return result, res
+
+
+def _effect(order: dict, clean: dict, ticker: str, env, receiver) -> tuple[dict, bool]:
+    """Send an allowed order to the receiver (production) or to the environment's own place_order (demos). -> (result, filled)."""
     if receiver is not None:
         out = receiver.propose(symbol=ticker, side=str(order.get("side")).lower(), quantity=int(float(order["quantity"])),
                                limit_price=float(order["limit_price"]), client_order_id=None)
@@ -494,6 +587,4 @@ def _place_order(args, env, gate, state, receiver, guard=None):
     else:
         result = env.call("place_order", clean)
         filled = bool(result.get("ledger_effect", result.get("status") in ("filled", "submitted", "ok")))
-    if filled:
-        state["daily_total_usd"] += res["checks"].get("notional_usd") or 0.0
-    return result, res
+    return result, filled

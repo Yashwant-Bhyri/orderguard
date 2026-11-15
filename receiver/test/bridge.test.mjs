@@ -1,6 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,9 +12,23 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const dir = mkdtempSync(join(tmpdir(), "og-bridge-test-"));
 const base = { symbols: ["AAPL", "MSFT"], sides: ["buy"], maxOrderNotionalUsd: 10000, maxDailyNotionalUsd: 20000, priceBandPct: 5, expiresAt: new Date(Date.now() + 3_600_000).toISOString(), referencePrices: { AAPL: 222.7, MSFT: 420.18 } };
 
-async function boot(name, mandate, extraArgs = []) {
+// The owner's Ed25519 key. The bridge enforces only a mandate this key signed, verified against the pinned signing.pub.
+const owner = generateKeyPairSync("ed25519");
+const ownerPub = owner.publicKey.export({ format: "jwk" }).x;
+const pubB64 = Buffer.from(ownerPub, "base64url").toString("base64");
+const proofOf = (body, key = owner.privateKey) => {
+  const bytes = Buffer.from(JSON.stringify(body), "utf8");
+  return { payload: bytes.toString("base64"), signature: sign(null, bytes, key).toString("base64") };
+};
+writeFileSync(join(dir, "signing.pub"), pubB64 + "\n");
+
+// Owner approval of one held order (signed paper mode): purpose, parent, ledger and revision come from GET /policy.
+const approval = (policy, orderId) => proofOf({ purpose: "orderguard.paper-order-approval.v1", parentId: policy.parentId,
+  ledgerId: policy.ledgerId, revision: policy.revision, orderId });
+
+async function boot(name, mandate, extraArgs = [], { raw } = {}) {
   const file = join(dir, name + ".json");
-  writeFileSync(file, JSON.stringify(mandate));
+  writeFileSync(file, raw ?? JSON.stringify(proofOf(mandate)));
   const child = spawn(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", file, ...extraArgs], { stdio: ["ignore", "pipe", "pipe"] });
   let err = ""; child.stderr.on("data", (c) => { err += c; });
   const lines = createInterface({ input: child.stdout });
@@ -26,7 +41,7 @@ async function boot(name, mandate, extraArgs = []) {
   const post = async (p, body) => (await fetch(url + p, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) })).json();
   const get = async (p) => (await fetch(url + p)).json();
   const stop = () => new Promise((ok) => { if (child.exitCode !== null) return ok(); child.once("exit", ok); child.kill("SIGTERM"); });
-  return { post, get, stop, child };
+  return { post, get, stop, child, stderr: () => err };
 }
 
 const o = (id, over = {}) => ({ symbol: "AAPL", side: "buy", quantity: 44, limitPrice: 222.7, clientOrderId: id, ...over });
@@ -72,8 +87,8 @@ test("bridge: honest, fake split, unlisted, sell, duplicate, revoke, then propos
   await b.stop();
 });
 
-test("bridge: orders above the step-up threshold are held until the owner passkey approves via POST /approve", async () => {
-  const b = await boot("m2", base, ["--step-up-usd", "5000"]); running.push(b);
+test("bridge: orders above the signed step-up threshold are held until the owner signs the approval", async () => {
+  const b = await boot("m2", { ...base, stepUpAboveUsd: 5000 }); running.push(b);
   const small = await b.post("/propose", o("s-small", { quantity: 10 }));
   assert.equal(small.decision, "filled");
   const held = await b.post("/propose", o("s-big", { quantity: 30 }));
@@ -81,9 +96,17 @@ test("bridge: orders above the step-up threshold are held until the owner passke
   let snap = await b.get("/snapshot");
   assert.equal(snap.orders.find((x) => x.orderId === held.orderId).status, "held");
 
-  const approved = await b.post("/approve", { orderId: held.orderId });
+  // A loopback caller (the agent) cannot release a hold: approval needs the owner's signature.
+  const unsigned = await b.post("/approve", { orderId: held.orderId });
+  assert.equal(unsigned.decision, "denied"); assert.equal(unsigned.reason, "approval_invalid");
+  const stranger = generateKeyPairSync("ed25519");
+  const forged = await b.post("/approve", { orderId: held.orderId, authorization: proofOf({ purpose: "orderguard.paper-order-approval.v1", ...(await b.get("/policy")), orderId: held.orderId }, stranger.privateKey) });
+  assert.equal(forged.decision, "denied");
+
+  const policy = await b.get("/policy");
+  const approved = await b.post("/approve", { orderId: held.orderId, authorization: approval(policy, held.orderId) });
   assert.equal(approved.decision, "filled"); assert.equal(approved.ledgerEffect, true);
-  const again = await b.post("/approve", { orderId: held.orderId });
+  const again = await b.post("/approve", { orderId: held.orderId, authorization: approval(policy, held.orderId) });
   assert.equal(again.ledgerEffect, false);
   snap = await b.get("/snapshot");
   assert.equal(snap.orders.filter((x) => x.status === "filled").length, 2);
@@ -94,7 +117,7 @@ test("bridge: orders above the step-up threshold are held until the owner passke
   const held2 = await b.post("/propose", o("s-big2", { quantity: 30 }));
   assert.equal(held2.decision, "held");
   await b.post("/revoke");
-  const late = await b.post("/approve", { orderId: held2.orderId });
+  const late = await b.post("/approve", { orderId: held2.orderId, authorization: approval(policy, held2.orderId) });
   assert.equal(late.decision, "denied");
   snap = await b.get("/snapshot");
   assert.equal(snap.orders.filter((x) => x.status === "filled").length, 2);
@@ -169,4 +192,89 @@ test("bridge: a failed renewal keeps failing closed with anchor_unavailable", as
   assert.equal(snap.orders.length, 1);
   assert.equal(snap.ledgerIntegrity, true);
   await b.stop();
+});
+
+// ---- review finding: the --mandate path must verify the owner's signature and keep the signed step-up ----
+
+test("bridge: a Python-signed mandate (orderguard init's file) keeps its step-up: $9,576 under a $9,500 threshold is HELD, not filled", async () => {
+  // The bytes Python's gate.sign_mandate signs: canonical JSON with Python float reprs (10000.0) and sorted keys.
+  const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+  const canonical = `{"expiresAt":${JSON.stringify(expiresAt)},"maxDailyNotionalUsd":20000.0,"maxOrderNotionalUsd":10000.0,"priceBandPct":5.0,`
+    + `"referencePrices":{"AAPL":222.7},"sides":["buy"],"stepUpAboveUsd":9500.0,"symbols":["AAPL"]}`;
+  const signature = sign(null, Buffer.from(canonical, "utf8"), owner.privateKey).toString("base64");
+  // As `orderguard init` writes it: indented, Python lexemes, the signer's key alongside (never trusted; the pinned one is).
+  const file = `{\n  "symbols": ["AAPL"],\n  "sides": ["buy"],\n  "maxOrderNotionalUsd": 10000.0,\n  "maxDailyNotionalUsd": 20000.0,\n`
+    + `  "priceBandPct": 5.0,\n  "expiresAt": ${JSON.stringify(expiresAt)},\n  "referencePrices": {"AAPL": 222.7},\n  "stepUpAboveUsd": 9500.0,\n`
+    + `  "signature": "${signature}",\n  "signerPublicKey": "${pubB64}"\n}\n`;
+  const b = await boot("py-signed", null, [], { raw: file }); running.push(b);
+  const big = await b.post("/propose", o("py-9576", { quantity: 43 }));   // 43 x 222.70 = 9,576.10
+  assert.equal(big.decision, "held", JSON.stringify(big)); assert.equal(big.ledgerEffect, false);
+  assert.equal(big.notionalUsd, 9576.1);
+  const small = await b.post("/propose", o("py-small", { quantity: 1 }));
+  assert.equal(small.decision, "filled");
+  await b.stop();
+});
+
+const refuse = (file, ...args) => spawnSync(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", file, ...args], { encoding: "utf8", timeout: 60_000 });
+
+test("bridge: refuses to start on an unsigned, tampered or foreign-signed mandate, a step-up flag, or a missing owner key", () => {
+  const unsigned = join(dir, "unsigned.json");
+  writeFileSync(unsigned, JSON.stringify({ ...base, stepUpAboveUsd: 9500 }));
+  let r = refuse(unsigned);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /not signed/); assert.doesNotMatch(r.stdout, /READY/);
+
+  const good = proofOf(base);
+  const tampered = join(dir, "tampered.json");
+  const body = JSON.parse(Buffer.from(good.payload, "base64").toString("utf8"));
+  writeFileSync(tampered, JSON.stringify({ payload: Buffer.from(JSON.stringify({ ...body, maxOrderNotionalUsd: 1e9 })).toString("base64"), signature: good.signature }));
+  r = refuse(tampered);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /signature did not verify/);
+
+  const foreign = join(dir, "foreign.json");
+  writeFileSync(foreign, JSON.stringify(proofOf(base, generateKeyPairSync("ed25519").privateKey)));
+  r = refuse(foreign);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /signature did not verify/);
+
+  const ok = join(dir, "ok.json");
+  writeFileSync(ok, JSON.stringify(good));
+  r = refuse(ok, "--step-up-usd", "1000000");
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /--step-up-usd was removed/);
+
+  const lonely = mkdtempSync(join(dir, "nokey-"));
+  writeFileSync(join(lonely, "mandate.json"), JSON.stringify(good));
+  r = refuse(join(lonely, "mandate.json"));
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /no owner public key/);
+});
+
+test("bridge: a configured revocation list that is missing or invalid fails closed (the bridge does not start)", () => {
+  const ok = join(dir, "rev-ok.json");
+  writeFileSync(ok, JSON.stringify(proofOf(base)));
+  let r = refuse(ok, "--revocations", join(dir, "no-such-revocations.json"));
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /revocation list is missing or invalid/); assert.doesNotMatch(r.stdout, /READY/);
+  const junk = join(dir, "junk-revocations.json");
+  writeFileSync(junk, "{not json");
+  r = refuse(ok, "--revocations", junk);
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /revocation list is missing or invalid/);
+});
+
+test("bridge: a revocation file deleted while serving fails closed: every later proposal is denied", async () => {
+  const rev = join(dir, "live-revocations.json");
+  writeFileSync(rev, "[]");
+  const b = await boot("rev-live", base, ["--revocations", rev]); running.push(b);
+  assert.equal((await b.post("/propose", o("rv-1", { quantity: 1 }))).decision, "filled");
+  rmSync(rev);
+  const after = await b.post("/propose", o("rv-2", { quantity: 1 }));
+  assert.equal(after.decision, "denied"); assert.equal(after.ledgerEffect, false);
+  assert.equal((await b.get("/snapshot")).orders.length, 1);
+  await b.stop();
+});
+
+test("bridge: --demo-unsigned is explicit and loud", async () => {
+  const b = await boot("demo", null, ["--demo-unsigned"], { raw: JSON.stringify({ ...base, stepUpAboveUsd: 5000 }) }); running.push(b);
+  const held = await b.post("/propose", o("d-big", { quantity: 30 }));
+  assert.equal(held.decision, "held", "the demo path maps stepUpAboveUsd through the same parser");
+  assert.match(b.stderr(), /WARNING: --demo-unsigned\. The mandate's owner signature is NOT checked/);
+  await b.stop();
+  const r = refuse(join(dir, "demo.json"), "--demo-unsigned", "--pub", join(dir, "signing.pub"));
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /--demo-unsigned takes no owner key/);
 });

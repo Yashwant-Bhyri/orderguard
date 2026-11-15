@@ -8,6 +8,13 @@ state, where the equations can be evaluated in NumPy arrays.
 from __future__ import annotations
 
 import numpy as np
+from orderguard_guard.money import usd_cents
+
+
+def _js_round(x: np.ndarray) -> np.ndarray:
+    """orderguard_guard.money.js_round elementwise: the nearest integer, ties toward +infinity, exact for doubles (NaN stays NaN)."""
+    f = np.floor(x)
+    return f + ((x - f) >= 0.5)
 
 
 def vectorized_precheck(ticker, side, quantity, limit_price, trusted_price, daily_used, *,
@@ -25,15 +32,15 @@ def vectorized_precheck(ticker, side, quantity, limit_price, trusted_price, dail
     valid = np.isfinite(q) & np.isfinite(limit) & np.isfinite(px) & np.isfinite(used) & (q > 0) & (q == np.floor(q))
     valid &= (limit > 0) & (px > 0) & (used >= 0)
     valid &= np.isin(tick, np.asarray(sorted(symbols), dtype=str)) & np.isin(sd, np.asarray(sorted(sides), dtype=str))
-    cents = np.rint(q * px * 100.0)
-    valid &= cents <= round(float(per_order) * 100.0)
-    valid &= np.rint(used * 100.0) + cents <= round(float(daily) * 100.0)
+    cents = _js_round(q * px * 100.0)                 # Math.round, the receiver's rule (orderguard_guard.money); np.rint rounds half to even
+    valid &= cents <= usd_cents(per_order)
+    valid &= _js_round(used * 100.0) + cents <= usd_cents(daily)
     valid &= np.abs(limit / np.where(px > 0, px, 1.0) - 1.0) <= float(band_pct) / 100.0 + 1e-12
     result = np.full(tick.shape, "refuse", dtype="U8")
     if step_up is None:
         result[valid] = "allow"
     else:
-        holds = valid & (cents > round(float(step_up) * 100.0))
+        holds = valid & (cents > usd_cents(step_up))
         result[valid & ~holds] = "allow"
         result[holds] = "hold"
     return result

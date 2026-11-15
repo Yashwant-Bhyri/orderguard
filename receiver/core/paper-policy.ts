@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, verify, type KeyObject } from 'node:crypto';
 import type { MandateScope } from './receiver-core.js';
-import { normaliseSymbol } from './valuation.js';
+import { normaliseSymbol, trustedPriceOk } from './valuation.js';
 
 export interface PaperPolicyState {
   ledgerId: string;
@@ -44,6 +44,11 @@ function symbol(value: unknown): value is string {
   return checked.ok && checked.symbol === value;
 }
 
+/** The one place mandate field names become the receiver's: Python's `stepUpAboveUsd` is the core's `stepUpThresholdUsd`. */
+export function parsePolicyScope(raw: unknown): MandateScope {
+  return parseScope(object(raw));
+}
+
 function parseScope(body: Record<string, unknown>): MandateScope {
   const supported = new Set(['symbols', 'sides', 'maxOrderNotionalUsd', 'maxDailyNotionalUsd', 'priceBandPct',
     'expiresAt', 'referencePrices', 'stepUpAboveUsd', 'maxSymbolDailyNotionalUsd', 'maxPositionUsd', 'maxOrdersPerDay']);
@@ -65,7 +70,7 @@ function parseScope(body: Record<string, unknown>): MandateScope {
   const refs = Object.entries(object(body.referencePrices === undefined ? {} : body.referencePrices));
   const referencePrices: Record<string, number> = {};
   for (const [ticker, value] of refs) {
-    if (!symbols.includes(ticker) || typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 1e12) {
+    if (!symbols.includes(ticker) || !trustedPriceOk(value)) {
       throw new Error('Invalid policy reference price');
     }
     referencePrices[ticker] = value;

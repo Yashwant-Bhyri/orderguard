@@ -85,6 +85,19 @@ def _configured(directory: Path):
     return parent, key, revoked, mandate.id
 
 
+def _ensure_revocation_list(path: Path) -> None:
+    """The receiver fails closed when its configured revocation list is missing or unreadable. No file has always meant "nothing is
+    revoked" (load_parent reads it that way just above), so start one with [] if none exists; never touch an existing one."""
+    try:
+        with open(path, "x", encoding="utf-8") as fh:
+            fh.write("[]\n")
+    except FileExistsError:
+        pass
+    except OSError as exc:      # a read-only config directory: say exactly what to create
+        raise ValueError(f"The receiver needs a revocation list and could not create one ({type(exc).__name__}). Create {path.name} "
+                         "containing [] in the config directory (or copy the owner's list there).") from None
+
+
 def paper_receiver(a) -> int:
     directory = (a.dir or init_cmd.default_dir()).resolve()
     try:
@@ -93,6 +106,7 @@ def paper_receiver(a) -> int:
             path = Path(tmp) / "parent.json"
             path.write_text(json.dumps(parent_proof(parent)), encoding="utf-8")
             ledger, note = resolve_ledger(directory, a.ledger, a.ephemeral)
+            _ensure_revocation_list(directory / REVOCATIONS)
             with Bridge.start(path, port=a.port, owner_public_key=directory / init_cmd.PUB_FILE,
                               revocations=directory / REVOCATIONS, ledger=ledger) as bridge:
                 print(f"Signed paper receiver at http://127.0.0.1:{bridge.port}", flush=True)

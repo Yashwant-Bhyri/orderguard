@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 // OrderGuard receiver bridge (CONTRACT 5.1).
-//   node receiver/bridge/serve.mjs [--port P] --mandate mandate.json [--step-up-usd N]
+//   node receiver/bridge/serve.mjs [--port P] --mandate mandate.json [--pub signing.pub] [--revocations FILE]
 //                                [--anchor-ttl-sec S] [--anchor-renew-frac F|off]
 //                                [--ledger FILE|:ephemeral]     (or ORDERGUARD_LEDGER)
+//
+// The mandate must be signed by the owner (`orderguard init`, or a {payload, signature} parent proof) and verify against the
+// PINNED owner key: --pub FILE, default signing.pub next to the mandate. Limits come only from the signed bytes; no flag can
+// change them. A configured --revocations file that is missing or invalid fails closed. `--demo-unsigned` skips the signature
+// for tests and benchmarks only, with a loud warning.
 //
 // Without --ledger the effect ledger lives in a temp directory removed on exit (demo). With --ledger it is a
 // persistent SQLite file: single writer (lock file), hash-chain verified before serving, refused if tampered.
@@ -55,29 +60,57 @@ async function jsonFetch(base, path, body) {
 }
 
 async function main() {
-  const mandatePath = arg("--mandate");
-  const proofPath = arg("--parent-proof");
-  const ownerPath = arg("--owner-public-key");
+  // --parent-proof / --owner-public-key are the older spellings of --mandate / --pub and behave the same.
+  const mandatePath = arg("--mandate") ?? arg("--parent-proof");
+  const pubArg = arg("--pub") ?? arg("--owner-public-key");
+  const demoUnsigned = process.argv.includes("--demo-unsigned");
   const revocations = arg("--revocations");
-  const stepUp = arg("--step-up-usd");
-  if (!mandatePath && !proofPath) {
+  if (!mandatePath) {
     throw new Error("--mandate FILE is required: pass the signed mandate that `orderguard init` wrote, for example --mandate var/orderguard/mandate.json (run `orderguard init` first if you have none)");
   }
-  if (Boolean(mandatePath) === Boolean(proofPath) || Boolean(proofPath) !== Boolean(ownerPath) || (proofPath && stepUp !== undefined)
-      || (revocations && !proofPath)) {
-    throw new Error("Choose --mandate FILE for a demo, or --parent-proof FILE --owner-public-key FILE for signed paper policy");
+  if (arg("--mandate") && arg("--parent-proof")) throw new Error("Pass the signed mandate once, with --mandate FILE");
+  if (process.argv.includes("--step-up-usd")) {
+    // A flag cannot change a limit the owner signed. Lower the threshold in the mandate and re-sign it (`orderguard init --resign`),
+    // or activate a tighter owner-signed draft on a running receiver (`orderguard activate-draft`).
+    throw new Error("--step-up-usd was removed: the step-up threshold is stepUpAboveUsd in the signed mandate. Edit it and re-sign with `orderguard init --resign`, or tighten it with a signed draft (`orderguard activate-draft`)");
   }
+  if (demoUnsigned && (pubArg || revocations)) throw new Error("--demo-unsigned takes no owner key and no revocation list; drop it to enforce a signed mandate");
   register();
   const { ReceiverCore } = await import(pathToFileURL(join(root, "receiver/core/receiver-core.ts")).href);
-  const { SignedPaperPolicy } = await import(pathToFileURL(join(root, "receiver/core/paper-policy.ts")).href);
-  const signedPolicy = proofPath ? new SignedPaperPolicy(JSON.parse(await readFile(resolve(proofPath), "utf8")),
-    (await readFile(resolve(ownerPath), "utf8")).trim()) : undefined;
-  const mandate = signedPolicy?.parent ?? JSON.parse(await readFile(resolve(mandatePath), "utf8").then((text) => { try { JSON.parse(text); } catch { throw new Error(`the mandate file ${mandatePath} is not valid JSON: re-create it with \`orderguard init --resign\``); } return text; }, (error) => {
+  const { SignedPaperPolicy, parsePolicyScope } = await import(pathToFileURL(join(root, "receiver/core/paper-policy.ts")).href);
+  const { parentProofFromFile } = await import(pathToFileURL(join(root, "receiver/core/signed-mandate.ts")).href);
+  const mandateText = await readFile(resolve(mandatePath), "utf8").then((text) => { try { JSON.parse(text); } catch { throw new Error(`the mandate file ${mandatePath} is not valid JSON: re-create it with \`orderguard init --resign\``); } return text; }, (error) => {
     throw new Error(error?.code === "ENOENT"
       ? `no mandate file at ${mandatePath}: create one with \`orderguard init\` (it writes var/orderguard/mandate.json) or fix the path`
       : `cannot read the mandate file ${mandatePath} (${error?.code ?? "error"})`);
-  }));
-  if (stepUp !== undefined) mandate.stepUpThresholdUsd = Number(stepUp);
+  });
+  let signedPolicy;
+  let mandate;
+  let demoMandate;
+  if (demoUnsigned) {
+    process.stderr.write([
+      "################################################################################",
+      "WARNING: --demo-unsigned. The mandate's owner signature is NOT checked, and any",
+      "local caller can approve a held order. For tests and benchmarks only; never use",
+      "it with real money or a real broker. Drop --demo-unsigned to enforce a signed one.",
+      "################################################################################", ""].join("\n"));
+    demoMandate = JSON.parse(mandateText);
+    mandate = parsePolicyScope(demoMandate);             // same field names and checks as the signed path
+  } else {
+    // The owner key is PINNED: --pub FILE, else signing.pub next to the mandate (as `orderguard check-order` does). Never the key in the file.
+    const pubPath = pubArg ?? join(dirname(resolve(mandatePath)), "signing.pub");
+    const pub = await readFile(resolve(pubPath), "utf8").catch((error) => {
+      throw new Error(error?.code === "ENOENT"
+        ? `no owner public key at ${pubArg ?? "signing.pub next to the mandate"}: pass --pub FILE with the owner's signing.pub (written by \`orderguard init\`)`
+        : `cannot read the owner public key ${pubPath} (${error?.code ?? "error"})`);
+    });
+    try {
+      signedPolicy = new SignedPaperPolicy(parentProofFromFile(mandateText), pub.trim());
+    } catch (error) {
+      throw new Error(`the mandate cannot be enforced: ${error?.message || error}. It must be signed by the owner whose key is pinned with --pub`);
+    }
+    mandate = signedPolicy.parent;
+  }
   // Anchor lifetime and renewal point. r5 caps a mandate at 1 h and floors it at 2 s (see receiver/r5/PATCHES.md).
   const ttlRaw = arg("--anchor-ttl-sec") ?? process.env.ORDERGUARD_ANCHOR_TTL_SEC;
   const ttlSec = ttlRaw === undefined || ttlRaw === "" ? 3600 : Number(ttlRaw);
@@ -98,16 +131,18 @@ async function main() {
       if (!ids.includes(signedPolicy.parentId)) return true;
       if (core && !core.revoked) core.revoke();
       return false;
-    } catch (error) { return error?.code === "ENOENT"; }
+    } catch { return false; } // configured but missing, unreadable or not JSON: fail closed, nothing can commit
   };
-  if (!await parentUnrevoked()) throw new Error("The signed parent is revoked or its revocation list is invalid");
+  if (!await parentUnrevoked()) {
+    throw new Error("The signed parent is revoked, or the configured revocation list is missing or invalid (it must be a JSON list of mandate ids; write [] if none are revoked)");
+  }
   // ---- the effect ledger: opened and verified first, before any port or child process exists ----
   const ledgerRaw = arg("--ledger") ?? process.env.ORDERGUARD_LEDGER;
   const persistent = ledgerRaw !== undefined && ledgerRaw !== "" && ledgerRaw !== ":ephemeral";
   const scratch = await mkdtemp(join(await realpath(tmpdir()), "orderguard-bridge-"));
   // Stable across restarts: orders, idempotency keys and order ids are bound to it. (The r5 anchor id changes every start.)
   const files = await import(pathToFileURL(join(root, "receiver/core/ledger-files.ts")).href);
-  const mandateId = signedPolicy ? signedPolicy.parentId : files.demoMandateId(mandate);
+  const mandateId = signedPolicy ? signedPolicy.parentId : files.demoMandateId(demoMandate);
   let releaseLedger = () => {};
   let ledgerPath = join(scratch, "receiver-core.sqlite");
   try {

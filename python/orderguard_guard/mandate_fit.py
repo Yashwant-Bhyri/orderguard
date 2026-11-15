@@ -13,7 +13,7 @@ from typing import Iterable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from .gate import Mandate, MandateInvalid, public_key_to_b64
+from .gate import MAX_TRUSTED_PRICE, Mandate, MandateInvalid, public_key_to_b64
 
 _FIELDS = frozenset(Mandate.__dataclass_fields__)
 _SIGNATURE_FIELDS = {"signature", "signerPublicKey"}
@@ -85,8 +85,8 @@ def _parse(raw: dict, *, signed: bool) -> tuple[Mandate, dt.datetime]:
     refs = raw.get("referencePrices", {})
     if not isinstance(refs, dict) or refs.keys() - symbols:
         raise PolicyInputError("referencePrices", "Reference prices must be keyed by an allowed symbol.")
-    for value in refs.values():
-        _number(value, "referencePrices")
+    for value in refs.values():     # the gate's rule (gate.trusted_price_ok): finite, above 0, at most MAX_TRUSTED_PRICE
+        _number(value, "referencePrices", maximum=MAX_TRUSTED_PRICE)
     expiry = _expiry(raw.get("expiresAt"))
     if signed:
         for field in _SIGNATURE_FIELDS:

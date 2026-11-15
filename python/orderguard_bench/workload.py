@@ -36,6 +36,7 @@ from orderguard_arena.authority import Authority
 from orderguard_arena.envelopes import DEFAULT_LIMITS, PURPOSES, EnvelopeBook, make_envelope, owner_key_from_seed, split_sleeves
 from orderguard_guard import ROOT
 from orderguard_guard.gate import public_key_to_b64, sign_mandate
+from orderguard_guard.money import notional_cents, usd_cents
 
 from .market import BenchMarket
 from .profiles import Profile
@@ -227,7 +228,7 @@ def _system_traffic(p: Profile, o: int, market: BenchMarket, sleeves: dict) -> l
             sym = sleeves[sleeve][-1]
             px = market.trusted[s][sym]
             fit = int(math.floor(t["per_order"] / px))
-            while fit > 0 and round(fit * px * 100) > round(t["per_order"] * 100):
+            while fit > 0 and notional_cents(fit, px) > usd_cents(t["per_order"]):
                 fit -= 1
             band = t["band_pct"] / 100.0
             probes = [("cap_fit", fit, px), ("cap_plus_one", fit + 1, px),

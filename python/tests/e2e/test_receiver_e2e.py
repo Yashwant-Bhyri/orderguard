@@ -43,9 +43,11 @@ def start_bridge(tmp_path, name, **mandate_over) -> Bridge:
         pytest.skip(blocked)
     exp = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     path = tmp_path / f"{name}.json"
-    path.write_text(json.dumps({**MANDATE, "expiresAt": exp, **mandate_over}))
+    priv, pub = gate.generate_keypair()             # the owner signs; the bridge verifies against the pinned signing.pub beside the mandate
+    path.write_text(json.dumps(gate.sign_mandate({**MANDATE, "expiresAt": exp, **mandate_over}, priv)))
+    (tmp_path / f"{name}.pub").write_text(gate.public_key_to_b64(pub))
     try:
-        return Bridge.start(path, timeout=90)
+        return Bridge.start(path, owner_public_key=tmp_path / f"{name}.pub", timeout=90)
     except ReceiverError as e:
         if any(m.lower() in str(e).lower() for m in BIND_ERRORS):
             pytest.skip(f"the bridge could not bind a port in this environment: {e}")
@@ -85,6 +87,7 @@ def test_owner_activates_reviewed_draft_on_the_same_paper_ledger(tmp_path, capsy
     proof_path = tmp_path / "parent-proof.json"
     proof_path.write_text(json.dumps(parent_proof(parent)))
     revocations = owner_dir / REVOCATIONS
+    revocations.write_text("[]")            # a configured revocation list must exist: the receiver fails closed without it (paper-receiver creates it)
     with Bridge.start(proof_path, owner_public_key=owner_dir / init_cmd.PUB_FILE, revocations=revocations) as b:
         receiver = b.receiver
         args = ["--dir", str(owner_dir), "--receiver", f"http://127.0.0.1:{b.port}"]

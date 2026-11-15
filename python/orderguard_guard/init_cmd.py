@@ -256,6 +256,6 @@ def main(argv: list[str] | None = None, prog: str = "orderguard init") -> int:
     print(f"  2. only for live model calls or use beyond this machine: put {PROVIDERS[a.provider]} in {d / ENV_FILE} and run with OG_ENV_FILE={d / ENV_FILE},")
     print("     and export ORDERGUARD_APP_TOKEN in your shell (the app reads the environment, not that file). Offline runs need neither")
     print("  3. verify with `orderguard doctor`")
-    print(f"  4. start the receiver: node receiver/bridge/serve.mjs --mandate {d / MANDATE_FILE}")
+    print(f"  4. start the receiver: node receiver/bridge/serve.mjs --mandate {d / MANDATE_FILE} --pub {d / PUB_FILE}")
     print("  5. open the dashboard: `orderguard serve` then http://127.0.0.1:8600")
     return 0

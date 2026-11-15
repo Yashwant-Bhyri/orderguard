@@ -137,7 +137,9 @@ Three ways in, from most to least Python-specific.
 
 ### Python: `run_agent`
 
-`run_agent` runs one analyst agent against a tool environment in a chosen arm, applying the layers around every tool output and every order. In any real deployment pass `public_key=` (the mandate owner's Ed25519 key, or set it as `env.public_key`) so the gate verifies the signature, expiry and revocation on every order; without it the gate enforces the mandate's limits but cannot tell who wrote them.
+`run_agent` runs one analyst agent against a tool environment in a chosen arm, applying the layers around every tool output and every order. **Production must pin the owner's key.** Pass `public_key=` (the mandate owner's Ed25519 key, or set it as `env.public_key`): the gate then requires a valid signature and checks expiry and revocation on every order. Without it the gate enforces the mandate's limits but cannot tell who wrote them (the lab runs that way). `OrderGate(..., require_signature=True)` refuses every order unless a key is pinned and the signature verifies; `run_agent` with a key, the MCP `check_order` tool and the app's check-order endpoint (with a key configured) all set it.
+
+The receiver (`receiver=`, the bridge) is the production effect path: it owns the ledger and the day's spend. Calling the environment's own `place_order` (no receiver) is for demos and tests. Either way the day's running total is shared by every `run_agent` call on the same environment (or pass one `budget=DailyBudget()` per account), keyed by mandate and decision date, so repeated or concurrent runs cannot together pass the daily cap.
 
 ```python
 from orderguard_guard.agent import run_agent
@@ -149,7 +151,7 @@ transcript = run_agent("deepseek/deepseek-v4.1-flash-1017", case.user_task(), en
 print(transcript["final"], [c["name"] for c in transcript["calls"]], transcript["quarantined"])
 ```
 
-`model` is a model name or any object with `.chat(messages, tools=...)`. The transcript holds each call with its `gate` decision, the quarantined chunks and the cost. With `OG_LLM=replay` it serves recordings only. To check single orders without an agent, use `orderguard check-order order.json --mandate mandate.json`, or `POST /api/check-order` on the app. Orders must cite their figures as `key_figures: [{metric, fiscal_year, value, unit}]` when the gate requires figures.
+`model` is a model name or any object with `.chat(messages, tools=...)`. The transcript holds each call with its `gate` decision, the quarantined chunks and the cost. With `OG_LLM=replay` it serves recordings only. To check single orders without an agent, use `orderguard check-order order.json --mandate mandate.json`, or `POST /api/check-order` on the app. `check-order` exits 0 allow, 1 refuse, 2 hold, and 3 for `allow (advisory: mandate signature not verified)`: an allow it could not verify against the owner's `signing.pub` (none beside the mandate and no `--pub`, or the built-in demo mandate) is never reported as a plain allow. Orders must cite their figures as `key_figures: [{metric, fiscal_year, value, unit}]` when the gate requires figures.
 
 ### Receiver SDK (Node)
 
@@ -177,7 +179,7 @@ Whichever way you integrate, give the agent no money-movement tool and let the r
 
 **Logs.** The app logs to the terminal where `orderguard serve` runs. An unexpected error returns a short reference (`ref`) to the browser and logs only the error type with that reference: request text is never logged. Spend is written to the file named by `OG_SPEND_FILE`.
 
-**Ledger backup.** The receiver bridge keeps its SQLite ledger in a temporary directory that it deletes on shutdown, so it does not persist across restarts today. Before stopping it:
+**Ledger backup.** The bare receiver bridge keeps its SQLite ledger in a temporary directory that it deletes on shutdown unless `--ledger FILE` is passed (`orderguard paper-receiver` persists it by default; see [OPERATIONS.md](OPERATIONS.md)). Before stopping a throw-away one:
 
 ```sh
 curl -s http://127.0.0.1:8700/snapshot > var/ledger-snapshot-$(date +%Y%m%d%H%M%S).json
@@ -185,7 +187,7 @@ curl -s http://127.0.0.1:8700/snapshot > var/ledger-snapshot-$(date +%Y%m%d%H%M%
 
 Also back up `var/orderguard/`. The signing key is the one irreplaceable file; keep an encrypted offline copy.
 
-**Mandate lifecycle.** A mandate expires (30 days by default). Edit `expiresAt` and limits, run `orderguard init --resign`, then restart the bridge. `orderguard init --force` makes a new key and loses the old one.
+**Mandate lifecycle.** A mandate expires (30 days by default). Edit `expiresAt` and limits, run `orderguard init --resign`, then restart the bridge (`node receiver/bridge/serve.mjs --mandate var/orderguard/mandate.json --pub var/orderguard/signing.pub`; it verifies the new signature at start). `orderguard init --force` makes a new key and loses the old one.
 
 **Upgrading.** `git pull && pip install -e . && npm ci && orderguard doctor`.
 

@@ -134,6 +134,7 @@ def cmd_l8(a) -> int:
     from orderguard_guard.receiver_client import Bridge, bridge_available
     from .agents import PopulationConfig, make_population
     from .envelopes import EnvelopeBook, make_envelope, owner_key_from_seed
+    from orderguard_guard.gate import public_key_to_b64, sign_mandate
     ok, why = bridge_available()
     if not ok:
         print(f"l8 check skipped: {why}")
@@ -141,15 +142,18 @@ def cmd_l8(a) -> int:
     feed = ReplayFeed(a.seed, steps=a.steps, steps_per_day=a.steps, vol_scale=0.0)
     px = next(iter(feed)).trusted()
     syms = feed.symbols
-    mand = {"symbols": syms, "sides": ["buy", "sell"], "maxOrderNotionalUsd": 25000, "maxDailyNotionalUsd": 400000, "priceBandPct": 1.0,
-            "expiresAt": "2099-01-01T00:00:00Z", "referencePrices": px, "stepUpThresholdUsd": 20000}
     key = owner_key_from_seed("l8")
+    # The receiver enforces only an owner-signed mandate, verified against the pinned key: the same limits as the envelope, plus the
+    # step-0 trusted prices (the bridge has no quote feed).
+    mand = sign_mandate({"symbols": syms, "sides": ["buy", "sell"], "maxOrderNotionalUsd": 25000, "maxDailyNotionalUsd": 400000, "priceBandPct": 1.0,
+                         "expiresAt": "2099-01-01T00:00:00Z", "referencePrices": px, "stepUpAboveUsd": 20000}, key)
     book = EnvelopeBook(key.public_key())
     book.add(make_envelope(key, name="core", symbols=syms, per_order=25000, daily=400000, band_pct=1.0, step_up=20000))
     with tempfile.TemporaryDirectory() as d:
         mp = os.path.join(d, "mandate.json")
         Path(mp).write_text(json.dumps(mand))
-        with Bridge.start(mp) as b:
+        Path(d, "signing.pub").write_text(public_key_to_b64(key.public_key()))
+        with Bridge.start(mp, owner_public_key=Path(d, "signing.pub")) as b:
             auth = Authority(book, steps_per_day=a.steps, receiver=b.receiver, receiver_sample=1.0)
             ags = make_population(PopulationConfig(n=a.agents, seed=a.seed), {"core": syms}, a.steps)
             r = run_arena(ArenaConfig(agents=a.agents, steps=a.steps, steps_per_day=a.steps, seed=a.seed), feed=feed, book=book, authority=auth, agents=ags)

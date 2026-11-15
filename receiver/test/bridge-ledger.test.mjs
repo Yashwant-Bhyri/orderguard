@@ -30,7 +30,8 @@ async function seededLedger(name) {
   core.close();
   return path;
 }
-const bridge = (...args) => spawnSync(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", mandateFile, ...args], { encoding: "utf8", timeout: 60_000 });
+// These tests are about the ledger file, seeded under a demo mandate id, so the bridge runs in its explicit unsigned demo mode.
+const bridge = (...args) => spawnSync(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--demo-unsigned", "--mandate", mandateFile, ...args], { encoding: "utf8", timeout: 60_000 });
 const tool = (...args) => spawnSync(process.execPath, [join(root, "receiver/bridge/ledger-tool.mjs"), ...args], { encoding: "utf8", timeout: 60_000 });
 
 test("bridge refuses to serve a tampered ledger, says why and what to do, and leaves the file alone", async () => {
@@ -51,7 +52,7 @@ test("bridge refuses a ledger from another mandate, a garbage file and a live ho
   const path = await seededLedger("other.sqlite");
   const other = join(dir, "other-mandate.json");
   writeFileSync(other, JSON.stringify({ ...mandate, maxDailyNotionalUsd: 30000 }));
-  const run = spawnSync(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", other, "--ledger", path], { encoding: "utf8", timeout: 60_000 });
+  const run = spawnSync(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--demo-unsigned", "--mandate", other, "--ledger", path], { encoding: "utf8", timeout: 60_000 });
   assert.equal(run.status, 1);
   assert.match(run.stderr, /different mandate/);
 

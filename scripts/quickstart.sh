@@ -124,7 +124,8 @@ cat <<MSG
     1. Open the dashboard and try "Check order" with the fake 10-for-1 split example.
     2. Edit $home/mandate.json (limits, symbols, referencePrices), then: .venv/bin/orderguard init --resign
     3. For live model calls, put a provider key in $home/.env (names only are listed there), run with OG_ENV_FILE=$home/.env, set OG_LLM=live and a low OG_BUDGET_USD.
-    4. Run the receiver: node receiver/bridge/serve.mjs --port 8700 --mandate $home/mandate.json
+    4. Run the receiver (it enforces the signed mandate, verified against the pinned key):
+       node receiver/bridge/serve.mjs --port 8700 --mandate $home/mandate.json --pub $home/signing.pub
        then export ORDERGUARD_RECEIVER_URL=http://127.0.0.1:8700 before serving.
     5. Read docs/GUIDE.md.
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from orderguard_arena.authority import Authority
 from orderguard_arena.envelopes import Envelope, EnvelopeBook, make_envelope, owner_key_from_seed
 from orderguard_guard.gate import OrderGate
+from orderguard_guard.money import notional_cents
 
 from . import auditor as A
 from . import receiver as R
@@ -22,7 +23,7 @@ FAR = "2099-01-01T00:00:00Z"
 
 
 def _cents(q: int, px: float) -> int:
-    return round(q * px * 100)
+    return notional_cents(q, px)                    # the receiver's rule (orderguard_guard.money)
 
 
 def scenarios(market: BenchMarket) -> list[dict]:

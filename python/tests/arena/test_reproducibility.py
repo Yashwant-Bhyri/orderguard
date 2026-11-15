@@ -29,6 +29,13 @@ def test_review_lane_numbers_quoted_in_the_readme_and_product_brief_match_result
     assert not _failures(claims.check_texts(claims.review_expectations(), "review"))
 
 
+def test_bench_and_red_team_proof_bullets_are_rebuilt_from_results_by_verify():
+    """The README says og-arena verify rebuilds every Proof number: the exchange-scale bench and red-team bullets are among its checks."""
+    names = {c.name for c in claims.doc_claims(risk=False)}
+    assert {"bench: README.md proof bench", "redteam: README.md proof red team"} <= names
+    assert not _failures(claims.check_texts(claims.bench_expectations() + claims.redteam_expectations(), "proof"))
+
+
 def test_risk_numbers_quoted_in_the_docs_match_results_risk():
     checks = claims.risk_checks()
     if any(c.name == "risk: results/risk/*.json layout" for c in checks):

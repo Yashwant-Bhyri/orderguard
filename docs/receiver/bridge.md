@@ -1,6 +1,8 @@
 # Receiver bridge and core
 
-`node receiver/bridge/serve.mjs --mandate mandate.json [--port P] [--step-up-usd N] [--ledger FILE|:ephemeral] [--anchor-ttl-sec S] [--anchor-renew-frac F|off]` (or `npm run bridge -- --mandate path`) prints `READY <port>` on stdout once listening on 127.0.0.1.
+`node receiver/bridge/serve.mjs --mandate mandate.json [--pub signing.pub] [--revocations FILE] [--port P] [--ledger FILE|:ephemeral] [--anchor-ttl-sec S] [--anchor-renew-frac F|off]` (or `npm run bridge -- --mandate path`) prints `READY <port>` on stdout once listening on 127.0.0.1.
+
+The mandate must be signed by the owner: the `mandate.json` that `orderguard init` writes, or a `{payload, signature}` parent proof. The bridge verifies it against the pinned owner key (`--pub`, default `signing.pub` next to the mandate; never the key inside the file) and refuses to start if the signature does not match. Every limit, including the step-up threshold `stepUpAboveUsd`, comes from the signed bytes; there is no flag that changes one (`--step-up-usd` was removed: re-sign, or tighten with `orderguard activate-draft`). A configured `--revocations` file that is missing, unreadable or not a JSON list fails closed: the bridge does not start, and once running it denies every order. `--parent-proof`/`--owner-public-key` are accepted as older spellings of `--mandate`/`--pub`. `--demo-unsigned` skips the signature for tests and benchmarks only; it prints a warning and any local caller can then approve a held order.
 
 ## API
 
@@ -16,7 +18,7 @@
 
 Error statuses: 400 for a malformed body (`invalid_json`, `invalid_body`), 408 if the body stalls, 413 over 64 KiB, 403 for a non-loopback Host, 503 while stopping, 500 `internal_error` (no internal detail in the reply; it goes to the receiver's log with paths removed). Order refusals are always HTTP 200 with a `decision`. A retry of `/propose` or `/approve` is answered from the ledger before the anchor is consulted, so it sees the original outcome even while the anchor is unavailable. `anchor_unavailable` and `mandate_changed` mean "not now": nothing was recorded and the same `clientOrderId` may be sent again.
 
-The demo bridge uses contract mandate JSON with an optional `stepUpThresholdUsd`. Deny reasons include `invalid_order`, `non_ascii_symbol`, `invalid_symbol`, `unlisted_symbol`, `side_not_allowed`, `no_trusted_price`, `limit_outside_band`, `per_order_cap`, `daily_cap`, `mandate_revoked`, `mandate_expired`, `mandate_changed`, `anchor_unavailable`, `idempotency_conflict`, `approval_invalid` and `not_held`.
+Mandate fields use the Python names (`stepUpAboveUsd` and so on); `receiver/core/paper-policy.ts` maps them to the core's in one place. Deny reasons include `invalid_order`, `non_ascii_symbol`, `invalid_symbol`, `unlisted_symbol`, `side_not_allowed`, `no_trusted_price`, `limit_outside_band`, `per_order_cap`, `daily_cap`, `mandate_revoked`, `mandate_expired`, `mandate_changed`, `anchor_unavailable`, `idempotency_conflict`, `approval_invalid` and `not_held`.
 
 ## Signed paper mode
 

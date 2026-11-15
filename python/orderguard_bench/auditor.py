@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from orderguard_arena.feeds import BASE_DATE
 from orderguard_guard.gate import OrderGate, normalise_ticker
+from orderguard_guard.money import js_round, usd_cents
 from orderguard_guard.market import UnknownTicker
 
 GENESIS = "0" * 64
@@ -85,12 +86,12 @@ def verify_signature(mandate: dict, public_key_b64: str) -> bool:
         return False
 
 
-def py_cents(x: float) -> int:          # the Python authority's rounding (round half to even)
-    return round(x)
+def py_cents(x: float) -> int:          # the Python authority's rounding: ONE rule with the receiver (orderguard_guard.money)
+    return js_round(x)
 
 
-def js_cents(x: float) -> int:          # the receiver's rounding (Math.round: half up)
-    return math.floor(x + 0.5)
+def js_cents(x: float) -> int:          # the receiver's rounding: Math.round, exactly
+    return js_round(x)
 
 
 # ---- per-envelope state ---------------------------------------------------------------------------------------------------------------
@@ -99,10 +100,10 @@ class Book:
 
     def __init__(self, mandate: dict):
         self.m = mandate
-        self.cap = round(float(mandate["maxDailyNotionalUsd"]) * 100)
-        self.per_order = round(float(mandate["maxOrderNotionalUsd"]) * 100)
-        self.sym_cap = None if mandate.get("maxSymbolDailyNotionalUsd") is None else round(float(mandate["maxSymbolDailyNotionalUsd"]) * 100)
-        self.pos_cap = None if mandate.get("maxPositionUsd") is None else round(float(mandate["maxPositionUsd"]) * 100)
+        self.cap = usd_cents(mandate["maxDailyNotionalUsd"])
+        self.per_order = usd_cents(mandate["maxOrderNotionalUsd"])
+        self.sym_cap = None if mandate.get("maxSymbolDailyNotionalUsd") is None else usd_cents(mandate["maxSymbolDailyNotionalUsd"])
+        self.pos_cap = None if mandate.get("maxPositionUsd") is None else usd_cents(mandate["maxPositionUsd"])
         self.n_cap = mandate.get("maxOrdersPerDay")
         self.allowed = {unicodedata.normalize("NFKC", s).upper() for s in mandate["symbols"]}
         self.sides = {s.lower() for s in mandate["sides"]}
@@ -309,7 +310,7 @@ def _audit_envelope(env: str, recs: list[dict], reg: dict, prices: list[dict], o
             f.bad("out_of_scope", {"env": env, "key": key, "ticker": ticker, "side": side, "qty": qty})
             continue
         cents = py_cents(qty * tp * 100)
-        if rec["n"] is None or round(rec["n"] * 100) != cents:
+        if rec["n"] is None or usd_cents(rec["n"]) != cents:
             f.bad("notional", {"env": env, "key": key, "logged": rec["n"], "recomputed": cents / 100})
         lim = order.get("limit_price")
         if not isinstance(lim, (int, float)) or abs((lim - tp) / tp) > book.band + 1e-12:
@@ -410,11 +411,9 @@ def audit_ledger(path: str | Path, mandate: dict, *, prices: dict | None = None,
         res = gate.evaluate({"ticker": sym, "side": side, "quantity": qty, "limit_price": lim}, st)
         want = "hold" if status == "held" else "allow"
         if res["decision"] != want:
-            if js_cents(qty * tp * 100) != py_cents(qty * tp * 100):
-                f.note("half_cent_rounding")       # Math.round vs round-half-even on an exact half cent
-            else:
-                f.bad("not_reproducible_by_order_gate", {"client_order_id": coid, "status": status, "order_gate": res["decision"],
-                                                         "why": (res.get("reasons") or [""])[0][:140]})
+            # Python and the receiver share one cents rule (orderguard_guard.money), so even an exact half cent must agree
+            f.bad("not_reproducible_by_order_gate", {"client_order_id": coid, "status": status, "order_gate": res["decision"],
+                                                     "why": (res.get("reasons") or [""])[0][:140]})
         else:
             f.ok("reproduced_by_order_gate")
         book.apply(d, sym, side, qty, cents, held=(status == "held"))

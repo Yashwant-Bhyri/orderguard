@@ -15,6 +15,7 @@ import numpy as np
 from orderguard_arena.authority import Authority
 from orderguard_arena.envelopes import EnvelopeBook, make_envelope, owner_key_from_seed
 from orderguard_arena.feeds import DEFAULT_SYMBOLS, Snapshot
+from orderguard_guard.money import notional_cents, usd_cents
 from orderguard_risk.scorer import RiskScorer, tighten
 
 from .market import DEFAULT_RECORDING, ImpactMarket
@@ -160,23 +161,23 @@ def audit_order_log(events: Iterable[dict], envelope_specs: dict[str, dict]) -> 
         order = ev["order"]
         sym, side = str(order["ticker"]).upper(), str(order["side"]).lower()
         qty, tp = int(order["quantity"]), float(ev["tp"])
-        cents = round(qty * tp * 100)
+        cents = notional_cents(qty, tp)
         env, day = ev["envelope"], int(ev["step"]) // int(ev.get("steps_per_day", 1))
         dkey, skey, pkey = (env, day), (env, day, sym), (env, sym)
         used = daily.get(dkey, 0)
         sym_used = by_symbol.get(skey, 0)
-        if cents > round(float(spec["per_order"]) * 100):
+        if cents > usd_cents(spec["per_order"]):
             breaches.append({"i": ev.get("i"), "reason": "per-order cap exceeded"})
-        if used + cents > round(float(spec["daily"]) * 100):
+        if used + cents > usd_cents(spec["daily"]):
             breaches.append({"i": ev.get("i"), "reason": "daily cap exceeded"})
-        if spec.get("max_symbol_daily") is not None and sym_used + cents > round(float(spec["max_symbol_daily"]) * 100):
+        if spec.get("max_symbol_daily") is not None and sym_used + cents > usd_cents(spec["max_symbol_daily"]):
             breaches.append({"i": ev.get("i"), "reason": "per-symbol daily cap exceeded"})
         side_qty = qty if side == "buy" else -qty
         if spec.get("max_position") is not None:
             old = net.get(pkey, 0)
             h = held.get(pkey, {"buy": 0, "sell": 0})
             exposure = max(abs(old + h["buy"] + side_qty), abs(old - h["sell"] + side_qty))
-            if round(exposure * tp * 100) > round(float(spec["max_position"]) * 100):
+            if notional_cents(exposure, tp) > usd_cents(spec["max_position"]):
                 breaches.append({"i": ev.get("i"), "reason": "position cap exceeded"})
         daily[dkey] = used + cents
         by_symbol[skey] = sym_used + cents
@@ -250,7 +251,7 @@ def run_arm(cfg: SimConfig, scenario: Scenario, arm: str, *, log_path: str | Pat
                 dec = auth.authorize(order, key=str(batch.key[j]), envelope=env, trigger=trigger, step=step, agent=aid)
                 auth_decision, auth_layer = dec.decision, dec.layer
                 tp = float(auth.prices.get(sym, market.mid[si]))
-                notional = round(qty * tp * 100.0) / 100.0
+                notional = notional_cents(qty, tp) / 100.0
                 final_decision = auth_decision
                 risk_result = None
                 risk_event = None

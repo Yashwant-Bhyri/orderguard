@@ -20,14 +20,13 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
   -v "$PWD/var/orderguard:/owner" orderguard:local orderguard init --dir /owner
 ```
 
-Copy the signed parent and public key into the directory the services can read. If the owner directory has an existing revocation list, copy that file too before starting the receiver.
+Copy the signed parent, the public key and the revocation list into the directory the services can read. The receiver fails closed without a readable revocation list, so write an empty one (`[]`) if the owner has never revoked anything.
 
 ```sh
 install -d -m 0755 var/paper-policy
 install -m 0644 var/orderguard/mandate.json var/orderguard/signing.pub var/paper-policy/
-if test -f var/orderguard/revoked-mandates.json; then
-  install -m 0644 var/orderguard/revoked-mandates.json var/paper-policy/
-fi
+test -f var/orderguard/revoked-mandates.json || echo '[]' > var/orderguard/revoked-mandates.json
+install -m 0644 var/orderguard/revoked-mandates.json var/paper-policy/
 docker compose up --build
 ```
 
@@ -104,7 +103,7 @@ Rebuild the image with `docker compose build`. Keep the current signed mandate w
 
 ## Ledger persistence and backup
 
-`orderguard paper-receiver` keeps its SQLite ledger (hash-chained event log) at `<config dir>/ledger/paper-ledger.sqlite`. Change it with `--ledger PATH` or `ORDERGUARD_LEDGER`; `--ephemeral` (or `:ephemeral`) gives a throw-away ledger. After a restart the receiver keeps its orders, idempotency keys, UTC-day spending, policy revision and revocation. The bare bridge (`npm run bridge`, the demo, tests) is still throw-away unless `--ledger` is passed.
+`orderguard paper-receiver` keeps its SQLite ledger (hash-chained event log) at `<config dir>/ledger/paper-ledger.sqlite`. Change it with `--ledger PATH` or `ORDERGUARD_LEDGER`; `--ephemeral` (or `:ephemeral`) gives a throw-away ledger. After a restart the receiver keeps its orders, idempotency keys, UTC-day spending, policy revision and revocation. The bare bridge (`npm run bridge`, the demo, tests) is still throw-away unless `--ledger` is passed. Either way the receiver enforces only a mandate signed by the owner and verified against the pinned `signing.pub` (`node receiver/bridge/serve.mjs --mandate var/orderguard/mandate.json --pub var/orderguard/signing.pub`); it refuses to start otherwise. A configured revocation list (`revoked-mandates.json`) that is missing or unreadable fails closed; `orderguard paper-receiver` creates an empty one if none exists.
 
 At start the whole ledger is verified. A ledger that fails verification is never served: the receiver exits 1, names the first problem and leaves the file as found. Restore the last backup, or move the file aside to begin a new ledger. A ledger created under a different mandate, or a re-signed parent, is refused too: start a new ledger path. A revoked ledger stays revoked.
 

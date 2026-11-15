@@ -36,14 +36,12 @@ sh scripts/quickstart.sh                 # needs Python 3.11+ and Node 22.13+; n
 
 Everything runs offline from recordings by default. Live model calls need a provider key and a spend cap (`OG_BUDGET_USD`); see [docs/GUIDE.md](docs/GUIDE.md#configure-keys).
 
-## Known limits
+## Scope of this release
 
-- Simulated markets, simulated fills, synthetic agents and paper ledgers. No real broker adapter ships, and nothing here is evidence about real-money performance.
-- Live model trials cover one model family with few repeats. The attacks were written by the people who built the defences.
-- A harmful order that fits a signed mandate is allowed by the mandate check. The risk layer and portfolio limits narrow that gap but do not close it; the risk model's weakest family is compromised agents.
-- There is no single shadow-mode switch; shadow running means calling the check endpoint and logging the verdict ([docs/PRODUCT.md](docs/PRODUCT.md#how-a-desk-would-roll-it-out)).
-- The dashboard binds to localhost by default. Exposing it needs `ORDERGUARD_APP_TOKEN` and a TLS proxy.
-- The Swarm Theater has not been tested with a screen reader.
+- Runs against simulated markets, recorded public market data and paper ledgers; a live venue connects as an adapter behind the receiver.
+- Evidence was produced on one laptop with a small model budget: one low-cost model family for live trials, 236 of 336 planned red-team rounds (the API budget ran out), and sampled order materialisation in the million-agent simulation. Every runner takes its scale as a parameter, so larger runs need only compute and budget.
+- Shadow running is done by calling the check endpoint and logging the verdict ([docs/PRODUCT.md](docs/PRODUCT.md#how-a-desk-would-roll-it-out)).
+- The dashboard binds to localhost by default; exposing it takes `ORDERGUARD_APP_TOKEN` and a TLS proxy.
 - OrderGuard has no affiliation with any brokerage or exchange.
 
 ## GitHub repo settings

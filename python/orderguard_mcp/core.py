@@ -151,7 +151,7 @@ def _demo() -> tuple[dict, Any]:
             priv, pub = G.generate_keypair()
             m = G.sign_mandate({"symbols": ["AAPL", "MSFT"], "sides": ["buy"], "maxOrderNotionalUsd": 10000, "maxDailyNotionalUsd": 20000,
                                 "priceBandPct": 5, "stepUpAboveUsd": 9500, "expiresAt": "2099-01-01T00:00:00Z",
-                                "referencePrices": dict(TRUSTED_PRICES)}, priv)
+                                "referencePrices": {s: TRUSTED_PRICES[s] for s in ("AAPL", "MSFT")}}, priv)
             _S.demo = (m, pub)
         return _S.demo
 
@@ -377,7 +377,7 @@ def _order_check(ticker: str, side: str, quantity: int, limit_price: float, figs
     if not am.usable:
         res = {"decision": "refuse", "reasons": [f"The mandate cannot be relied on: {problem}; no order can be placed."], "checks": {"mandate": "invalid"}}
     else:
-        gate = G.OrderGate(am.mandate, _market(am, d), _checker(), public_key=am.public_key,
+        gate = G.OrderGate(am.mandate, _market(am, d), _checker(), public_key=am.public_key, require_signature=True,
                            require_figures=os.getenv("ORDERGUARD_REQUIRE_FIGURES") == "1")
         # `as_of` is the date the figures and quotes are read at; `now` is the real clock the mandate's expiry is judged by,
         # so a caller cannot dodge an expired mandate by passing an old date.

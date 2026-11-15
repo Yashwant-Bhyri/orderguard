@@ -43,7 +43,8 @@ def random_mandate(rng: random.Random, *, live: bool | None = None) -> dict:
     expires = "2024-11-07T00:00:00Z" if live else rng.choice(["2024-11-06T00:00:00Z", "2024-11-05T12:00:00Z", "2023-01-01T00:00:00Z"])
     m = {"symbols": symbols, "sides": sides, "maxOrderNotionalUsd": cap, "maxDailyNotionalUsd": cap * rng.choice([1, 2, 3, 5]),
          "priceBandPct": rng.choice([0.5, 1, 2, 5, 10]), "expiresAt": expires,
-         "referencePrices": {t: p for t, p in PRICES.items() if rng.random() < 0.5}}
+         # reference prices only for listed symbols (a price for an unlisted one is an invalid mandate); one draw per price keeps the stream
+         "referencePrices": {t: p for t, p in PRICES.items() if rng.random() < 0.5 and t in {s.upper() for s in symbols}}}
     if rng.random() < 0.5:
         m["stepUpAboveUsd"] = rng.choice([100, 1_000, cap * 0.5, cap])
     return m

@@ -375,6 +375,36 @@ def review_expectations() -> list[tuple[str, str, str]]:
     ]
 
 
+def bench_expectations() -> list[tuple[str, str, str]]:
+    """The README's exchange-scale bullet, rebuilt from results/bench (summary.json, and full-partial.json for the per-worker gate runs)."""
+    s = _json(ROOT / "results" / "bench" / "summary.json")
+    runs = _json(ROOT / "results" / "bench" / "full-partial.json")
+    at, head = s["at_scale"], s["headline"]
+    gate = runs["gate_runs"]
+    workers = sorted(r["workers"] for r in gate)
+    identical = runs["gate_digest_identical_across_worker_counts"] and len({r["gate_digest_prefix"] for r in gate}) == 1 and at["identical_decisions_at_every_worker_count"]
+    breaches = at["breaches"] + sum(r["audit_breaches"] for r in gate)
+    # The auditor's breach list covers every signed cap and double execution, so zero breaches is zero of each.
+    assert identical and {r["decisions"] for r in gate} == {at["decisions"]} and max(r["decisions_per_s"] for r in gate) == at["decisions_per_s"]
+    return [("README.md", "proof bench", f"{at['agents']:,} agents, {at['envelopes']:,} signed mandates and {at['decisions'] / 1e6:.2f}M orders: an independent auditor, "
+             f"rebuilding every limit from the raw logs, found **{breaches} cap breaches** and **{breaches} double executions**, with identical decisions on "
+             f"{workers[0]} to {workers[-1]} processes and **{at['decisions_per_s']:,} decisions/s** on one laptop. It also caught "
+             f"**{head['mutations_caught']} of {head['mutations']}** deliberately broken builds.")]
+
+
+def redteam_expectations() -> list[tuple[str, str, str]]:
+    """The README's red-team bullet, rebuilt from results/redteam/campaign.json (the same arithmetic as orderguard_lab.redteam.report)."""
+    camp = _json(ROOT / "results" / "redteam" / "campaign.json")
+    S, cfg, units = camp["summary"], camp["config"], camp["units"]
+    planned, done = len(units) * cfg["rounds"], S["rounds"] + S["failed_rounds"]
+    rx = [u for u in units if u["family"] == "receiver"]
+    rx_done, rx_planned = sum(len(u["rounds"]) for u in rx), cfg["rounds"] * len(rx)
+    out = [("README.md", "proof red team", f"**{S['hard_breach_count']} hard breaches** in {S['rounds']} usable rounds (95% upper bound {100 * S['round_rate']['hi']:.1f}% per round)")]
+    if not camp["complete"]:
+        out.append(("README.md", "proof red team coverage", f"The campaign is incomplete ({done} of {planned} planned rounds; the receiver family got {rx_done} of {rx_planned})"))
+    return out
+
+
 def check_texts(expect: list[tuple[str, str, str]], label: str) -> list[Check]:
     docs: dict[str, str] = {}
     out = []
@@ -399,7 +429,8 @@ def risk_checks() -> list[Check]:
 
 
 def doc_claims(*, risk: bool = True) -> list[Check]:
-    checks = check_texts(arena_expectations(), "arena") + check_texts(lab_expectations(), "lab") + check_texts(review_expectations(), "review")
+    checks = (check_texts(arena_expectations(), "arena") + check_texts(lab_expectations(), "lab") + check_texts(review_expectations(), "review")
+              + check_texts(bench_expectations(), "bench") + check_texts(redteam_expectations(), "redteam"))
     if risk:
         checks += risk_checks()
     return checks

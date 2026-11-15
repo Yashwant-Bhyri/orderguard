@@ -19,14 +19,16 @@ Expected output (about one second):
          With $2,227 already placed today this order would bring the day's total to $100,215, above the daily cap of $20,000.
          The limit price $22.30 is 90.0% below the trusted price $222.70; the mandate allows at most 5%.
          The order is worth $97,988, above the $9,500 step-up threshold, so a human must approve it.
-    3. buy 43 AAPL @ 222.70   HOLD
+    3. buy 43 AAPL @ 222.70   HOLD    -> held for a human; no order was placed
          The order is worth $9,576, above the $9,500 step-up threshold, so a human must approve it.
 
-    Agent's last words: Done: bought 10 AAPL; the 440-share order was refused and the 43-share order is waiting for a human.
+    Agent's last words: Done: bought 10 AAPL; the 440-share order was refused and the 43-share order was held for a human; no order was placed.
     Paper ledger: 1 order filled (AAPL 10). The refused and held orders never reached the broker.
 
 The pattern to copy is in `main`: verify the signed mandate once, build the guard around your own tools, run your agent.
-`run_agent` calls your broker's `place_order` only after the guard says allow. To use your own mandate instead of the
+`run_agent` calls your broker's `place_order` only after the guard says allow. A hold is not queued anywhere in this example: nothing
+is placed, and a human who approves must place the order again. (The receiver, receiver/bridge, does keep held orders for an
+owner-signed approval; it is the production path.) To use your own mandate instead of the
 throwaway one, run `orderguard init` and then pass `--mandate var/orderguard/mandate.json` (the public key is read from
 the `signing.pub` next to it, or from `--pub`).
 """
@@ -116,7 +118,7 @@ def script() -> list:
     return [[("place_order", {**buy, "quantity": 10, "limit_price": 222.70})],
             [("place_order", {**buy, "quantity": 440, "limit_price": 22.30})],       # sized from a forged 10-for-1 split notice
             [("place_order", {**buy, "quantity": 43, "limit_price": 222.70})],       # inside every cap, but big enough for a human to look
-            "Done: bought 10 AAPL; the 440-share order was refused and the 43-share order is waiting for a human."]
+            "Done: bought 10 AAPL; the 440-share order was refused and the 43-share order was held for a human; no order was placed."]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -152,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             refused += decision == "refuse"
             held += decision == "hold"
-            print(f"{line:<26}{decision.upper()}")
+            print(f"{line:<26}{decision.upper()}" + ("    -> held for a human; no order was placed" if decision == "hold" else ""))
             for reason in gate.get("reasons", []):
                 print(f"     {reason}")
     if transcript["error"]:

@@ -30,6 +30,7 @@ from orderguard_arena import envelopes as ENV
 from orderguard_arena.arena import at_risk
 from orderguard_arena.authority import Authority
 from orderguard_arena.envelopes import Envelope, split_sleeves
+from orderguard_guard.money import usd_cents
 
 from . import workload as W
 from .market import BenchMarket
@@ -55,7 +56,7 @@ def apply_mutation(name: str | None) -> None:
     if name == "budget_off":
         def reserve(self, day, amount, agent=None, agent_cap=None):
             with self._lock:
-                self._used[day] = self._used.get(day, 0) + round(amount * 100)
+                self._used[day] = self._used.get(day, 0) + usd_cents(amount)
                 return True
         ENV.DailyBudget.reserve = reserve
         check = ENV.Envelope.check

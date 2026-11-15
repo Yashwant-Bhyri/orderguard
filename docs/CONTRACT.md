@@ -87,7 +87,7 @@ lab/legacy/               the 5–6 Nov experiments, kept as history (not import
 
 ### 5.1 Receiver bridge (TypeScript, `receiver/bridge/`)
 
-A Node entry point, `node receiver/bridge/serve.mjs --port P --mandate mandate.json`. It:
+A Node entry point, `node receiver/bridge/serve.mjs --port P --mandate mandate.json [--pub signing.pub]` (the owner-signed mandate, verified against the pinned key; see docs/receiver/bridge.md). It:
 - boots the r5 receiver with an isolated temp ledger;
 - registers a synthetic owner passkey and authorises ONE human mandate from the JSON (the same synthetic WebAuthn flow the quickstart uses);
 - serves a small HTTP API on loopback.

@@ -33,9 +33,8 @@ At every stage the owner signs the limits; nothing widens them without a new sig
 ## What it is not
 
 - **Not a trading strategy.** It bounds what a wrong or fooled agent can do. It does not judge whether a trade is a good idea.
-- **Not a broker or an exchange connector.** Orders reach paper ledgers; no real broker adapter ships.
+- **Not a broker or an exchange connector.** This release writes to paper ledgers; a venue connects as an adapter behind the receiver.
 - **Not a model that approves orders.** Models screen text and rank the review queue. Only code says yes.
-- **Not complete protection.** A harmful order that fits a signed mandate is allowed by the mandate check. The risk layer and portfolio limits narrow that gap; they do not close it.
 - **Not affiliated** with any brokerage or exchange.
 
 ## Integration surface

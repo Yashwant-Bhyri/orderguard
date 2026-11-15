@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// HTTP benchmark of the real receiver bridge (receiver/bridge/serve.mjs) on loopback: boots the bridge with a demo mandate and an
+// HTTP benchmark of the real receiver bridge (receiver/bridge/serve.mjs) on loopback: boots the bridge with an owner-signed mandate (an
+// ephemeral bench key, verified against its pinned public key exactly as in production) and an
 // ephemeral ledger (it also boots r5, the owner-passkey authority, which the bridge asks whether the mandate is still active on every
 // proposal), then sends N proposals with C in flight, re-sends some keys as retries, and reads /snapshot for the ledger's own integrity
 // check. Writes a JSON result. If this machine (or a sandbox) does not allow binding a loopback port, it writes a skip record with
 // the reason instead of failing.
 //
 //   node receiver/bench/http.mjs --spec SPEC.json --out OUT.json --requests N --concurrency C
-// SPEC: {"mandate": {...bridge mandate JSON with referencePrices...}, "orders": [{symbol, side, quantity, limitPrice, clientOrderId}...]}
+// SPEC: {"mandate": {...mandate body (Python field names) with referencePrices...}, "orders": [{symbol, side, quantity, limitPrice, clientOrderId}...]}
 
 import { spawn } from "node:child_process";
+import { generateKeyPairSync, sign } from "node:crypto";
 import { createServer } from "node:net";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,8 +55,11 @@ async function main() {
   const spec = JSON.parse(await readFile(arg("--spec"), "utf8"));
   const scratch = await mkdtemp(join(tmpdir(), "og-bench-http-"));
   const mandatePath = join(scratch, "mandate.json");
-  await writeFile(mandatePath, JSON.stringify(spec.mandate));
-  const child = spawn(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", mandatePath, "--ledger", ":ephemeral"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+  const owner = generateKeyPairSync("ed25519");
+  const bytes = Buffer.from(JSON.stringify(spec.mandate), "utf8");
+  await writeFile(mandatePath, JSON.stringify({ payload: bytes.toString("base64"), signature: sign(null, bytes, owner.privateKey).toString("base64") }));
+  await writeFile(join(scratch, "signing.pub"), Buffer.from(owner.publicKey.export({ format: "jwk" }).x, "base64url").toString("base64"));
+  const child = spawn(process.execPath, [join(root, "receiver/bridge/serve.mjs"), "--mandate", mandatePath, "--pub", join(scratch, "signing.pub"), "--ledger", ":ephemeral"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (b) => { stderr += b.toString(); });
   const port = await new Promise((ok, bad) => {

@@ -1,6 +1,6 @@
 """L8 client: talks to the receiver bridge (CONTRACT §5.1) and can start and stop the bridge subprocess.
 
-    with Bridge.start(mandate_path) as b:        # node receiver/bridge/serve.mjs --port 0 --mandate <file>, reads "READY <port>"
+    with Bridge.start(mandate_path) as b:        # node receiver/bridge/serve.mjs --port 0 --mandate <file> [--pub KEY], reads "READY <port>"
         b.receiver.propose(symbol="AAPL", side="buy", quantity=10, limit_price=222.7, client_order_id="o1")
 
 `bridge_available()` says whether node and the bridge script exist; the demo falls back to a local paper ledger when they do not.
@@ -163,14 +163,18 @@ class Bridge:
 
     @classmethod
     def start(cls, mandate_path, *, timeout: float = 30.0, node: str = "node", port: int = 0,
-              owner_public_key=None, revocations=None, ledger=None) -> "Bridge":
-        """`ledger=PATH` keeps the effect ledger in a persistent, verified SQLite file (see docs/receiver/bridge.md); the default is a
-        throw-away ledger removed when the bridge stops."""
+              owner_public_key=None, revocations=None, ledger=None, demo_unsigned: bool = False) -> "Bridge":
+        """`mandate_path` is the owner-signed mandate (`orderguard init`'s mandate.json, or a {payload, signature} parent proof). The bridge
+        verifies it against the PINNED owner key `owner_public_key` (default: signing.pub next to the mandate) and refuses to start otherwise.
+        `ledger=PATH` keeps the effect ledger in a persistent, verified SQLite file (see docs/receiver/bridge.md); the default is a
+        throw-away ledger removed when the bridge stops. `demo_unsigned=True` skips the signature (tests and benchmarks only)."""
         ok, why = bridge_available()
         if not ok:
             raise ReceiverError(why)
-        mode = ["--mandate", str(mandate_path)] if owner_public_key is None else [
-            "--parent-proof", str(mandate_path), "--owner-public-key", str(owner_public_key)]
+        if demo_unsigned:
+            mode = ["--demo-unsigned", "--mandate", str(mandate_path)]
+        else:
+            mode = ["--mandate", str(mandate_path)] + ([] if owner_public_key is None else ["--pub", str(owner_public_key)])
         if revocations is not None:
             mode.extend(["--revocations", str(revocations)])
         if ledger is not None:

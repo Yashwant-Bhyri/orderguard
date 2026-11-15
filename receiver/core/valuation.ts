@@ -40,6 +40,14 @@ export function normaliseSymbol(raw: unknown): SymbolResult {
 
 export type QuoteSource = (symbol: string) => number | undefined;
 
+/** No listed instrument trades above this per unit; a larger "price" is a unit or data error. Python: gate.MAX_TRUSTED_PRICE. */
+export const MAX_TRUSTED_PRICE = 1e7;
+
+/** A usable trusted price: a finite number above zero and not absurdly large. Python: gate.trusted_price_ok. */
+export function trustedPriceOk(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= MAX_TRUSTED_PRICE;
+}
+
 export interface TrustedPriceConfig {
   /** From the signed mandate; keys are normalised on load. */
   referencePrices?: Record<string, number>;
@@ -51,7 +59,7 @@ export function buildTrustedPrices(config: TrustedPriceConfig): QuoteSource {
   const table = new Map<string, number>();
   for (const [key, value] of Object.entries(config.referencePrices ?? {})) {
     const symbol = normaliseSymbol(key);
-    if (!symbol.ok || typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    if (!symbol.ok || !trustedPriceOk(value)) {
       throw new Error('mandate referencePrices contains an invalid symbol or price');
     }
     table.set(symbol.symbol, value);
@@ -60,7 +68,7 @@ export function buildTrustedPrices(config: TrustedPriceConfig): QuoteSource {
     const fromMandate = table.get(symbol);
     if (fromMandate !== undefined) return fromMandate;
     const quoted = config.quoteSource?.(symbol);
-    return typeof quoted === 'number' && Number.isFinite(quoted) && quoted > 0 ? quoted : undefined;
+    return trustedPriceOk(quoted) ? quoted : undefined;
   };
 }
 
@@ -68,7 +76,8 @@ export function withinBand(limitPrice: number, trustedPrice: number, priceBandPc
   return Math.abs(limitPrice - trustedPrice) <= (trustedPrice * priceBandPct) / 100 + 1e-9;
 }
 
-/** Notional in USD, rounded to cents so budget arithmetic is exact in integer cents. */
+/** Notional in integer cents: Math.round(quantity * price * 100) on IEEE doubles (half-cents round up). Python's
+ *  orderguard_guard.money.notional_cents is the same rule; python/tests/guard/test_cents_parity.py checks the two agree. */
 export function notionalCents(quantity: number, trustedPrice: number): number {
   return Math.round(quantity * trustedPrice * 100);
 }

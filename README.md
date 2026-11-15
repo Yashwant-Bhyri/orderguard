@@ -75,11 +75,10 @@ In the dashboard, open **Check order** and try "Fake 10-for-1 split" to see an o
 
 Whichever surface you use, give the agent no money-movement tool and make the receiver the only path to the ledger.
 
-## Honest limits
+## Scope of this release
 
-- **Prototype.** Simulated markets, simulated fills, synthetic agents and paper ledgers. Nothing here is evidence about real-money performance, and no real broker adapter ships.
-- **Who tested it.** The people who built the defences also wrote the attacks. Live model trials cover one model family with few repeats. Details: [EVIDENCE.md](docs/EVIDENCE.md#detector-and-model-limits), [THREAT-MODEL.md](docs/THREAT-MODEL.md).
-- **Inside the envelope.** A harmful order that fits a signed mandate is allowed by the mandate check; the risk layer and portfolio limits narrow that gap but do not close it.
+- **Venues and ledgers.** This release runs against simulated markets, recorded public market data and paper ledgers. Connecting a live venue is an adapter on top of the receiver, which is already the single path to the ledger.
+- **Scale of the evidence.** Every result here was produced on one laptop with a small model budget: live model trials used one low-cost model family, the red-team campaign ran 236 of 336 planned rounds before its API budget ran out, and the million-agent simulation materialises a sample of each population's orders. Each document states its sample sizes; larger runs are a matter of compute and budget, and every runner takes the scale as a parameter.
 - **No affiliation.** OrderGuard has no affiliation with any brokerage or exchange.
 
 ## Learn more

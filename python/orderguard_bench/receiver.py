@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 from orderguard_guard import ROOT
+from orderguard_guard.money import notional_cents
 
 from . import auditor as A
 
@@ -186,7 +187,7 @@ def race(out_dir: Path, procs: int, per_proc: int, *, shared_keys: bool, mutatio
     """K processes, one ledger. Unique keys: the daily cap fits exactly 20 orders; every process tries per_proc. Shared keys: every
     process delivers the SAME per_proc keys (ample budget), so each key races K-1 duplicates of itself."""
     price, qty = 73.77, 100
-    notional = round(price * qty, 2)
+    notional = notional_cents(qty, price) / 100
     entitled = 20
     scope = {"symbols": ["BTCUSDT"], "sides": ["buy"], "maxOrderNotionalUsd": 1_000_000.0,
              "maxDailyNotionalUsd": round(notional * entitled, 2) if not shared_keys else 1e9, "priceBandPct": 1.0,
@@ -328,7 +329,7 @@ def http(work: Path, reg: dict, env: str, out: Path, requests: int, concurrency:
     px0 = header["prices"][0]
     scope = scope_of(reg[env]["mandate"])
     scope["referencePrices"] = {s: px0[s] for s in scope["symbols"] if s in px0}
-    scope.pop("stepUpThresholdUsd", None)                      # the bridge takes step-up from --step-up-usd; keep every order a fill or a denial
+    scope.pop("stepUpThresholdUsd", None)                      # no step-up: keep every order a fill or a denial (http.mjs signs this body)
     spec_orders = [{"symbol": o["s"], "side": o["sd"], "quantity": o["q"], "limitPrice": round(scope["referencePrices"].get(o["s"], o["l"]), 2),
                     "clientOrderId": o["k"]} for o in orders if o["s"] in scope["referencePrices"]][:2000]
     spec = out.with_suffix(".spec.json")
