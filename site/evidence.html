@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderGuard · Evidence</title>
+<meta name="description" content="Give agents the freedom to trade. Keep the authority to decide. OrderGuard is pre-trade infrastructure for AI agents and the runtime they trade inside: signed limits on every order, a risk model that watches the whole swarm, and a tamper-proof record of every decision.">
+<meta name="color-scheme" content="light dark">
+<meta name="og-repo" content="">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z' fill='%233355E6'/%3E%3Cpath d='m6.8 10 2.4 2.4L13.4 8' fill='none' stroke='white' stroke-width='1.8'/%3E%3C/svg%3E">
+<script>try{var t=localStorage.getItem("og-site-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar" id="top">
+  <div class="wrap bar-in">
+    <a class="brand" href="index.html" aria-label="OrderGuard home">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m6.8 10 2.4 2.4L13.4 8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>OrderGuard</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="index.html#how">Product</a>
+      <a href="index.html#system">How it works</a>
+      <a href="index.html#live">At scale</a>
+      <a href="index.html#start">Developers</a>
+      <a href="evidence.html">Evidence</a>
+    </nav>
+    <span class="grow"></span>
+    <a class="bar-link" data-repo-link href="#">GitHub</a>
+    <button type="button" class="theme" id="theme" aria-label="Colour theme: follow the system. Activate to change.">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>
+      <span id="theme-label">System</span>
+    </button>
+    <a class="btn primary sm" data-doc="docs/SANDBOX.md">Run the sandbox</a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+<section class="hero slim" aria-labelledby="h-ev">
+  <div class="wrap">
+    <p class="eyebrow">Evidence</p>
+    <h1 id="h-ev">What we measured, and how to check it</h1>
+    <p class="lead">Every number on this page comes from a file in the repository, linked beside it. Runs are on simulated markets and paper ledgers with recorded prices; no real orders were sent.</p>
+  </div>
+</section>
+<!-- ===================================================================== compare -->
+<section class="sec" id="compare" aria-labelledby="h-compare">
+  <div class="wrap">
+    <header class="sec-head center">
+      <p class="eyebrow">Full trading scope, or OrderGuard in the middle</p>
+      <h2 id="h-compare">The same agents, with and without OrderGuard</h2>
+      <p>We gave the same agents full trading access, then ran them again behind OrderGuard: fed poisoned web pages, colluding with each other, crowding into the same trade. This is what reached the market each time.</p>
+    </header>
+    <div class="flow" aria-hidden="true">
+      <span class="f-node">Your agents<small>any model, chat assistant or research swarm</small></span>
+      <span class="f-arrow"></span>
+      <span class="f-node og"><svg viewBox="0 0 20 20"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="currentColor"/></svg>OrderGuard<small>checks every order before it leaves</small></span>
+      <span class="f-arrow"></span>
+      <span class="f-node">Your broker<small>or exchange, with every fill on the ledger</small></span>
+    </div>
+    <div class="cmp" id="cmp">
+      <div class="cmp-head" aria-hidden="true"><span></span><span class="w-o">Full trading scope</span><span class="w-g">With OrderGuard</span><span></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== models -->
+<section class="sec" id="models" aria-labelledby="h-models">
+  <div class="wrap">
+    <header class="sec-head center">
+      <p class="eyebrow">Under the hood</p>
+      <h2 id="h-models">Models built for agent risk</h2>
+      <p>Each one can make a decision stricter. None of them can approve an order.</p>
+    </header>
+    <div class="mgrid">
+      <article class="mcard">
+        <p class="m-kind">Swarm risk model</p>
+        <p class="m-big" data-f="models.risk.usd_recall"></p>
+        <p class="m-cap">of bad dollars stopped on swarms it never trained on, holding <b data-f="models.risk.honest_hold"></b> of honest orders</p>
+        <a class="m-link" data-doc="data/models/order_risk.json">Model weights</a>
+      </article>
+      <article class="mcard">
+        <p class="m-kind">Decision adapter</p>
+        <p class="m-big" data-f="models.decision.drafts_heldout"></p>
+        <p class="m-cap">of unsafe mandate drafts flagged on held-out cases</p>
+        <a class="m-link" data-doc="docs/REVIEW.md">How it is used</a>
+      </article>
+      <article class="mcard">
+        <p class="m-kind">Input screen</p>
+        <p class="m-big" data-f="models.screen.auc"></p>
+        <p class="m-cap">accuracy score (AUC) on text it was not trained on, running offline</p>
+        <a class="m-link" data-doc="data/models/injection_clf.json">Model weights</a>
+      </article>
+    </div>
+    <p class="m-scale">Stress-tested on <b data-f="sim.facts.million_orders_total"></b> orders from simulations of up to <b data-f="sim.facts.million_agents"></b> agents, and against adaptive AI attackers given the full threat model: <b data-f="redteam.facts.hard"></b> breaches in <b data-f="redteam.facts.rounds"></b> rounds.</p>
+  </div>
+</section>
+
+
+<section class="sec alt" id="repro" aria-labelledby="h-repro">
+  <div class="wrap narrow">
+    <h2 id="h-repro">Check it yourself</h2>
+    <p>The benchmarks, the attack suite, the model cards and the commands to reproduce each result are in the repository.</p>
+    <nav aria-label="Evidence documents"><ul class="learn" id="learn"></ul></nav>
+  </div>
+</section>
+</main>
+<footer class="foot"><div class="wrap foot-grid"><div><p class="brand-sm">OrderGuard</p><p class="hint">Pre-trade infrastructure for AI agents.</p><p class="hint" data-seg="readme.licence"></p></div></div></footer>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script src="site.js" defer></script>
+</body>
+</html>

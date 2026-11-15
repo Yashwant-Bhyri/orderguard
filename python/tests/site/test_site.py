@@ -145,24 +145,29 @@ class _Text(HTMLParser):
                 self.h1 += d
 
 
-def _page():
+PAGES = ("index.html", "evidence.html")
+
+
+def _page(name="index.html"):
     p = _Text()
-    p.feed((SITE / "index.html").read_text(encoding="utf-8"))
+    p.feed((SITE / name).read_text(encoding="utf-8"))
     return p
 
 
 def test_the_html_holds_no_figures_of_its_own():
     """Every number on the page is placed from data.json. The markup may only name the layer codes (L1 to L8)."""
-    text = " ".join(_page().out)
-    text = re.sub(r"\bL[1-8]\b", "", text)
-    assert not re.findall(r"\d", text), f"hand-typed digits in site/index.html: {re.findall(r'.{0,30}\d.{0,30}', text)}"
+    for name in PAGES:
+        text = " ".join(_page(name).out)
+        text = re.sub(r"\bL[1-8]\b", "", text)
+        assert not re.findall(r"\d", text), f"hand-typed digits in site/{name}: {re.findall(r'.{0,30}\d.{0,30}', text)}"
 
 
 def test_every_binding_resolves_in_data_json(data):
     page = _page()
-    # the console, the comparison and the how-it-works tiles are built from data.json by site.js, so fewer bindings live in the markup
-    assert len(page.binds) > 20
-    for kind, path in page.binds:
+    evidence = _page("evidence.html")
+    # the demos, the console and the comparison are built from data.json by site.js, so fewer bindings live in the markup
+    assert len(page.binds) + len(evidence.binds) > 20
+    for kind, path in page.binds + evidence.binds:
         node = data
         for k in path.split("."):
             assert isinstance(node, dict) and k in node, f"{kind}={path!r} does not resolve in site/data.json"
@@ -187,7 +192,7 @@ def test_the_script_formats_no_figures_of_its_own():
 
 
 def test_static_contract_weight_and_no_external_requests():
-    files = [SITE / "index.html", SITE / "site.css", SITE / "site.js"]
+    files = [SITE / "index.html", SITE / "evidence.html", SITE / "site.css", SITE / "site.js"]
     total = sum(p.stat().st_size for p in files)
     assert total < 400_000, f"page weight {total:,} bytes (data.json excluded)"
     for p in files:

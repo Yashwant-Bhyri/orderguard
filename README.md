@@ -1,6 +1,6 @@
 # OrderGuard
 
-**Every order passed. The swarm didn't.**
+**Give agents the freedom to trade. Keep the authority to decide.**
 
 One person signs the limits; hundreds or thousands of AI agents trade under them and share one daily budget. The costly orders often break no rule on their own: a position split across agents into slices just under the cap, a runaway loop of small legal orders, a colluding group draining the budget honest agents need. OrderGuard sits between the agents and the money: code enforces the signed limits at a trusted price, a risk model catches the bad flow that fits them, and people review only the orders most likely to cost money.
 

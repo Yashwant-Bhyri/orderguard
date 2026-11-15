@@ -478,6 +478,7 @@ const pad2 = (n) => String(n).padStart(2, "0");
 
 /* ---------------------------------------------------------------- hero console: a recorded episode, replayed */
 function consoleSetup() {
+  if (!$("#c-chart")) return;
   const R = D.console, cv = $("#c-chart"), ctx = cv.getContext("2d");
   const N = R.steps, main = R.strip[0].px, spd = D.swarm.steps_per_day, env = R.envelope;
   const byStep = Array.from({ length: N }, () => []);
@@ -597,6 +598,7 @@ let consoleRedraw = () => {};
 /* ---------------------------------------------------------------- full scope against OrderGuard */
 function compareSetup() {
   const box = $("#cmp"), bars = [];
+  if (!box) return;
   for (const r of D.compare.rows) {
     const scale = Math.max(r.without, r.with) || 1;
     const bo = el("i"), bg = el("i");
@@ -613,26 +615,294 @@ function compareSetup() {
   io.observe(box);
 }
 
-/* ---------------------------------------------------------------- how it works tiles, catches, code */
-function tiles() {
-  const R = D.console, e = R.envelope;
-  const kv = $("#t-mandate");
-  [["Per-order limit", e.per_order], ["Daily budget", e.daily], ["Price band", e.band], ["Person approves above", e.step_up]].forEach(([k, v]) => kv.append(el("dt", { text: k }), el("dd", { text: v })));
-  e.symbols.forEach((s) => $("#t-syms").append(el("span", { text: s })));
-  R.focus.checks.forEach((c) => $("#t-checks").append(el("li", { text: c })));
-  R.queue.forEach((q, i) => $("#t-queue").append(el("li", {}, [el("span", { cls: "r", text: String(i + 1) }), el("span", { cls: "o", text: q.order }),
-    el("span", { cls: "u", text: q.usd }), el("span", { cls: "w", text: q.why })])));
-  R.families.forEach((f) => $("#fam").append(el("li", {}, [el("span", { text: f.text.charAt(0).toUpperCase() + f.text.slice(1) }), el("span", { cls: "n" }, [el("b", { text: f.orders }), " orders"])])));
-  const body = $("#code-body"), tabs = $$("#code [role=tab]");
-  const show = (k) => { body.textContent = D.snippets[k]; tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.k === k))); };
-  tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.k)));
-  show("mcp");
+/* ---------------------------------------------------------------- shared demo helpers */
+const pad4 = (n) => String(n).padStart(4, "0");
+const money = (s) => Number(String(s).replace(/[^0-9.]/g, ""));
+const usdN = (v) => "$" + NF.format(Math.round(v));
+function onView(node, fn, threshold) {
+  const io = new IntersectionObserver((es) => fn(es[0].isIntersecting), { threshold: threshold == null ? 0.35 : threshold });
+  io.observe(node);
+}
+function timeline() {
+  // a cancellable chain of timed steps, so a demo can be restarted cleanly
+  let ids = [];
+  return {
+    at(ms, fn) { ids.push(setTimeout(fn, ms)); },
+    clear() { ids.forEach(clearTimeout); ids = []; },
+  };
 }
 
-/* ---------------------------------------------------------------- film chapters */
-function film() {
+/* ---------------------------------------------------------------- hero: five agents, one position */
+function authDemo() {
+  const box = $("#auth");
+  if (!box) return;
+  const sw = D.flows.swarm, env = D.console.envelope, list = $("#auth-orders");
+  const slice = money(sw.slice), limit = env.per_order_n, total = $("#auth-total"), fill = $("#auth-fill");
+  const verdict = $("#auth-verdict"), vh = $("#auth-v-head"), vb = $("#auth-v-body"), add = $("#auth-add"), count = $("#auth-count");
+  const max = sw.agents.length * slice * 1.04;
+  env.symbols.forEach((s) => $("#auth-syms").append(el("span", { text: s })));
+  $("#auth-limit").style.left = (limit / max) * 100 + "%";
+  $("#auth-limit-l").style.left = (limit / max) * 100 + "%";
+  const T = timeline();
+  let n = 0, auto = true;
+  function set(state, head, body) { verdict.dataset.state = state; vh.textContent = head; vb.textContent = body; }
+  function paint() {
+    const v = n * slice;
+    total.textContent = n === sw.agents.length ? sw.combined : usdN(v);
+    fill.style.width = (v / max) * 100 + "%";
+    fill.classList.toggle("over", v > limit);
+    count.textContent = n ? n + " of " + sw.agents.length : "";
+    add.disabled = n >= sw.agents.length;
+    if (n < 2) set("pass", "Each order is inside the mandate", "Every per-order check passes: symbol, size, approval threshold, price band.");
+    else set(v > limit ? "warn" : "pass", "Each order still passes every check",
+      "Together they are already " + (v / limit).toFixed(1) + "× the per-order limit, on the same stock and side.");
+  }
+  function addOne() {
+    if (n >= sw.agents.length) return;
+    const li = el("li", { cls: "in" }, [el("span", { cls: "a-ag", text: "agent-" + pad4(sw.agents[n]) }), el("span", { cls: "a-ord", text: sw.order }),
+      el("span", { cls: "a-usd", text: sw.slice }), el("span", { cls: "pill allowed", text: "Passes limits" })]);
+    list.append(li);
+    n += 1;
+    paint();
+    if (n === sw.agents.length) T.at(reduce.matches ? 0 : 1100, held);
+  }
+  function held() {
+    $$("#auth-orders .pill").forEach((p) => { p.className = "pill stopped"; p.textContent = "Held"; });
+    set("hold", "Held for a person · risk " + sw.risk, sw.reason + ". One position, split across agents to stay under the approval threshold.");
+    box.classList.add("done");
+  }
+  function reset() {
+    T.clear(); list.textContent = ""; n = 0; box.classList.remove("done"); paint();
+  }
+  function play() {
+    reset();
+    for (let i = 0; i < sw.agents.length; i++) T.at(500 + i * 1000, addOne);
+  }
+  add.addEventListener("click", () => { auto = false; if (n === 0) T.clear(); addOne(); });
+  $("#auth-replay").addEventListener("click", () => { auto = true; play(); });
+  if (reduce.matches) { reset(); for (let i = 0; i < sw.agents.length; i++) addOne(); return; }
+  reset();
+  let started = false;
+  onView(box, (vis) => { if (vis && !started && auto) { started = true; play(); } });
+}
+
+/* ---------------------------------------------------------------- rules: a signed mandate, edited or drafted */
+function sealDemo() {
+  const box = $("#seal");
+  if (!box) return;
+  const env = D.console.envelope, md = D.mandate_demo, T = timeline();
+  const state = $("#seal-state"), kv = $("#seal-kv"), syms = $("#seal-syms"), log = $("#seal-log"), purpose = $("#seal-purpose");
+  let mode = "edit", vis = false;
+  function pill(cls, text) { state.className = "pill " + cls; state.textContent = text; }
+  function line(cls, text) { const li = el("li", { cls: "in " + cls, text }); log.append(li); return li; }
+  function fill(rows, symbols) {
+    kv.textContent = ""; syms.textContent = ""; log.textContent = "";
+    rows.forEach(([k, v]) => kv.append(el("div", {}, [el("dt", { text: k }), el("dd", { text: v })])));
+    symbols.forEach((s) => syms.append(el("span", { text: s, "data-s": s })));
+  }
+  function runEdit() {
+    $("#seal-title").textContent = "Signed mandate";
+    purpose.hidden = true;
+    fill([["Per order", env.per_order], ["Per day", env.daily], ["Price band", env.band], ["Person approves above", env.step_up]], env.symbols);
+    box.dataset.state = "ok";
+    pill("allowed", "Signed by the owner");
+    line("ok", "Signed with the owner's key. Agents get a reference to it, never the key.");
+    T.at(1800, () => {
+      const dd = kv.querySelector("dd");
+      dd.textContent = "";
+      dd.append(el("s", { text: env.per_order }), " ", el("ins", { text: md.parent_per_order }));
+      line("warn", "agent-" + pad4(D.flows.swarm.agents[3]) + " raises its own per-order limit.");
+    });
+    T.at(3400, () => { box.dataset.state = "bad"; pill("refused", "Signature broken"); line("bad", "The signature no longer matches what the owner signed."); });
+    T.at(4800, () => line("bad", "Every order under this mandate is refused. Nothing reaches the market."));
+    T.at(8800, () => { if (vis && mode === "edit") runEdit(); });
+  }
+  function runDraft() {
+    $("#seal-title").textContent = "Draft mandate from an agent";
+    purpose.hidden = false;
+    purpose.textContent = "";
+    purpose.append("Purpose ", el("b", { text: md.purpose_full }));
+    fill(md.kv, md.symbols);
+    box.dataset.state = "ok";
+    pill("held", "Reviewing");
+    line("ok", "Inside your signed mandate: code proves every limit is narrower than yours.");
+    const spans = $$("span", syms);
+    spans.forEach((sp, i) => T.at(1400 + i * 500, () => {
+      spans.forEach((x) => x.classList.remove("scan"));
+      sp.classList.add("scan");
+      if (md.extra.includes(sp.dataset.s)) sp.classList.add("flag");
+    }));
+    const after = 1400 + spans.length * 500 + 300;
+    T.at(after, () => { spans.forEach((x) => x.classList.remove("scan")); line("warn", "Decision adapter: " + md.concern + "."); });
+    T.at(after + 1500, () => {
+      box.dataset.state = "bad"; pill("refused", "Sent back");
+      spans.filter((x) => md.extra.includes(x.dataset.s)).forEach((x) => x.classList.add("cut"));
+      line("bad", "Sent back to the agent with the reason. The owner is asked to sign " + md.kept.join(" and ") + " only.");
+    });
+    T.at(after + 6000, () => { if (vis && mode === "draft") runDraft(); });
+  }
+  const run = () => { T.clear(); if (mode === "edit") runEdit(); else runDraft(); };
+  const tabs = $$("#seal-tabs [role=tab]");
+  tabs.forEach((t) => t.addEventListener("click", () => {
+    mode = t.dataset.k; tabs.forEach((x) => x.setAttribute("aria-selected", String(x === t))); run();
+  }));
+  if (reduce.matches) { run(); return; }
+  run();
+  onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
+}
+
+/* ---------------------------------------------------------------- risk: one order through the five stops */
+function flowScene() {
+  const svg = $("#flow-svg");
+  if (!svg) return;
+  const F = D.flows, st = F.stations, W = 560, H = 150, x0 = 48, x1 = W - 48, y = 64;
+  const xs = st.map((_, i) => x0 + (i * (x1 - x0)) / (st.length - 1));
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  const head = el("p", { cls: "flow-order" });
+  svg.before(head);
+  svg.append(S("line", { x1: x0, y1: y, x2: x1, y2: y, cls: "f-track" }));
+  const prog = S("line", { x1: x0, y1: y, x2: x0, y2: y, cls: "f-prog" });
+  svg.append(prog);
+  const nodes = xs.map((x, i) => {
+    const g = S("g", { cls: "f-st" }, [S("circle", { cx: x, cy: y, r: 13 }), S("text", { x, y: y + 4, "text-anchor": "middle", cls: "f-ic", text: "" }),
+      S("text", { x, y: y + 36, "text-anchor": "middle", cls: "f-lb" }, st[i].split(" ").length > 2
+        ? [S("tspan", { x, dy: 0, text: st[i].split(" ").slice(0, 2).join(" ") }), S("tspan", { x, dy: 14, text: st[i].split(" ").slice(2).join(" ") })]
+        : [S("tspan", { x, text: st[i] })])]);
+    svg.append(g);
+    return g;
+  });
+  const tok = S("circle", { cx: x0, cy: y, r: 20, cls: "f-tok" });
+  svg.append(tok);
+  const cap = $("#flow-cap"), checks = $("#flow-checks"), tabs = $("#flow-tabs");
+  const ICON = { pass: "✓", stop: "✕", hold: "‖", note: "!", idle: "" };
+  const T = timeline();
+  let cur = 0, cycling = true, vis = false;
+  F.flows.forEach((f, i) => {
+    const b = el("button", { type: "button", role: "tab", "aria-selected": String(i === 0), text: f.name });
+    b.addEventListener("click", () => { cycling = false; show(i); });
+    tabs.append(b);
+  });
+  function setNode(i, s) { nodes[i].setAttribute("class", "f-st " + s); nodes[i].querySelector(".f-ic").textContent = ICON[s] || ""; }
+  function moveTo(x, s) { tok.setAttribute("cx", x); tok.setAttribute("class", "f-tok " + (s || "")); prog.setAttribute("x2", x); }
+  function show(i) {
+    T.clear();
+    cur = i;
+    const f = F.flows[i];
+    $$("button", tabs).forEach((b, j) => b.setAttribute("aria-selected", String(j === i)));
+    head.textContent = "";
+    head.append(el("span", { cls: "f-ag", text: f.agent }), el("b", { text: f.order }));
+    nodes.forEach((_, j) => setNode(j, "wait"));
+    checks.textContent = "";
+    cap.textContent = "Order sent";
+    cap.className = "flow-cap";
+    moveTo(x0 - 30, "");
+    const step = reduce.matches ? 0 : 1300;
+    let t = 300, stopped = false;
+    f.steps.forEach(([s, text], j) => {
+      if (stopped) return;
+      T.at(t, () => {
+        moveTo(xs[j], s === "idle" ? "" : s);
+        setNode(j, s === "idle" ? "skip" : s);
+        if (text) { cap.textContent = ""; cap.append(el("small", { text: st[j] }), text); cap.className = "flow-cap " + s; }
+        if (j === 1 && f.checks.length) f.checks.forEach((c, k) => T.at(k * 120, () => checks.append(el("li", { cls: "in", text: c }))));
+      });
+      t += s === "idle" ? step * 0.45 : step;
+      if (s === "stop" && f.end === "refused") stopped = true;
+    });
+    T.at(t + 200, () => { if (f.end === "refused") nodes.forEach((n, j) => { if (n.getAttribute("class") === "f-st wait") setNode(j, "skip"); }); });
+    if (!reduce.matches) T.at(t + 4200, () => { if (cycling && vis) show((cur + 1) % F.flows.length); });
+  }
+  show(0);
+  onView(svg, (v) => { const was = vis; vis = v; if (v && !was && cycling) show(cur); });
+}
+
+/* ---------------------------------------------------------------- record: decisions sealed into a chain */
+function ledgerDemo() {
+  const box = $("#chain");
+  if (!box) return;
+  const L = D.flows.ledger, T = timeline();
+  const cap = el("p", { cls: "chain-cap", "aria-live": "polite" });
+  box.after(cap);
+  const PILL = { "Allowed": "allowed", "Held for a person": "held", "Refused": "refused" };
+  let vis = false;
+  async function sha(text) {
+    try {
+      const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
+    } catch (e) { return ""; }
+  }
+  function block(r) {
+    return el("li", { cls: "blk in" }, [
+      el("p", { cls: "blk-top" }, [el("span", { cls: "pill " + PILL[r.decision], text: r.decision }), el("span", { cls: "grow" }), el("code", { cls: "blk-prev", text: "after " + r.prev_short })]),
+      el("p", { cls: "blk-ord" }, [el("span", { cls: "f-ag", text: r.agent }), " ", el("b", { text: r.order })]),
+      el("p", { cls: "blk-why", text: r.reason }),
+      el("p", { cls: "blk-seal" }, ["seal ", el("code", { text: r.seal_short })])]);
+  }
+  function run() {
+    T.clear(); box.textContent = ""; cap.textContent = ""; cap.className = "chain-cap"; box.classList.remove("broken");
+    const gap = reduce.matches ? 0 : 700;
+    L.forEach((r, i) => T.at(200 + i * gap, () => box.append(block(r))));
+    if (reduce.matches) { cap.textContent = "Each record's seal covers the record and the seal before it."; return; }
+    const t0 = 200 + L.length * gap;
+    T.at(t0 + 600, () => { cap.textContent = "Each record's seal covers the record and the seal before it."; });
+    const vi = L.findIndex((r) => r.decision !== "Allowed");
+    T.at(t0 + 3200, async () => {
+      const li = box.children[vi], r = L[vi];
+      const p = li.querySelector(".pill");
+      p.className = "pill allowed"; p.textContent = "Allowed";
+      li.classList.add("edited");
+      const fake = await sha(JSON.stringify({ ...r, decision: "Allowed" }));
+      li.querySelector(".blk-seal code").textContent = fake.slice(0, r.seal_short.length) || "changed";
+      cap.textContent = "Someone quietly changes a held order to Allowed.";
+      cap.className = "chain-cap warn";
+    });
+    T.at(t0 + 4800, () => {
+      const nxt = box.children[vi + 1];
+      if (nxt) nxt.classList.add("mismatch");
+      box.classList.add("broken");
+      cap.textContent = "Its seal changes, the next record no longer matches, and the ledger fails verification.";
+      cap.className = "chain-cap bad";
+    });
+    T.at(t0 + 10500, () => { if (vis) run(); });
+  }
+  run();
+  if (!reduce.matches) onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
+}
+
+/* ---------------------------------------------------------------- how the system works: the film, woven into the page */
+function filmWeave() {
+  const v = $("#weave-v");
+  if (!v) return;
+  const F = D.film, list = $("#weave-steps"), bar = $("#weave-prog"), now = $("#weave-now");
+  v.poster = "media/og-" + F.clip + ".jpg";
+  v.src = "media/og-" + F.clip + ".mp4";
+  const items = F.steps.map((s) => {
+    const b = el("button", { type: "button", text: s.text });
+    b.addEventListener("click", () => { v.currentTime = s.t + 0.05; v.play().catch(() => {}); });
+    const li = el("li", {}, b);
+    list.append(li);
+    return li;
+  });
+  let last = -1;
+  v.addEventListener("timeupdate", () => {
+    let k = 0;
+    F.steps.forEach((s, i) => { if (v.currentTime >= s.t) k = i; });
+    if (v.duration) bar.style.width = (v.currentTime / v.duration) * 100 + "%";
+    if (k !== last) {
+      last = k;
+      items.forEach((li, i) => { li.classList.toggle("on", i === k); li.classList.toggle("past", i < k); });
+      now.textContent = F.steps[k].text;
+    }
+  });
+  if (reduce.matches) { v.controls = true; return; }
+  onView(v, (vis) => { if (vis) v.play().catch(() => {}); else v.pause(); }, 0.5);
+}
+
+/* ---------------------------------------------------------------- the full film, in a dialog */
+function filmDialog() {
+  const dlg = $("#film-dlg"), open = $("#film-open");
+  if (!dlg || !open) return;
   const v = $("#film-v"), list = $("#chapters"), now = $("#film-now");
-  if (!v || !list) return;
   const btns = [...list.querySelectorAll("button")];
   let cur = 0;
   function pick(i, play) {
@@ -645,6 +915,20 @@ function film() {
   }
   btns.forEach((b, i) => b.addEventListener("click", () => pick(i, true)));
   v.addEventListener("ended", () => { if (cur + 1 < btns.length) pick(cur + 1, true); });
+  open.addEventListener("click", () => { const w = $("#weave-v"); if (w) w.pause(); dlg.showModal(); pick(0, true); });
+  $("#film-close").addEventListener("click", () => dlg.close());
+  dlg.addEventListener("close", () => v.pause());
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+}
+
+/* ---------------------------------------------------------------- developer code tabs */
+function codeTabs() {
+  const body = $("#code-body");
+  if (!body) return;
+  const tabs = $$("#code [role=tab]");
+  const show = (k) => { body.textContent = D.snippets[k]; tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.k === k))); };
+  tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.k)));
+  show("mcp");
 }
 
 /* ---------------------------------------------------------------- theme */
@@ -682,8 +966,13 @@ async function boot() {
   drawAll();
   consoleSetup();
   compareSetup();
-  tiles();
-  film();
+  codeTabs();
+  authDemo();
+  sealDemo();
+  flowScene();
+  ledgerDemo();
+  filmWeave();
+  filmDialog();
   let lastW = innerWidth, tm = 0;
   addEventListener("resize", () => { clearTimeout(tm); tm = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; drawAll(); } }, 150); });
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }

@@ -1009,6 +1009,105 @@ def snippets(r: Reader) -> dict:
             "src": {"mcp": "docs/MCP.md", "python": "docs/GUIDE.md", "http": "docs/API.md"}}
 
 
+def flows(r: Reader) -> dict:
+    """Five real orders from the recorded run, each walked through the stations it actually passed, for the animated order path."""
+    tl = r.json("results/theater/timeline.json")
+    envs = {e["name"]: e for e in tl["envelopes"]}
+    focus = {f["id"].split("-")[0]: f for f in tl["focus"]}
+    rows = []
+    with r.path("results/arena/arena-s7-k1000-t2000.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("type") != "meta":
+                rows.append(row)
+    def otext(o):
+        return f"{o['side'].upper()} {num(o['quantity'])} {o['ticker']} @ {o['limit_price']:,.2f}"
+    honest = next(x for x in rows if x["label"] == "legit" and x["d"] == "allow" and x["env"] == "core" and x["order"].get("ticker") == "AAPL"
+                  and 4000 < x["order"]["quantity"] * x["tp"] < 15000)
+    e = envs["core"]
+    n = honest["order"]["quantity"] * honest["tp"]
+    honest_checks = [f"Symbol: {honest['order']['ticker']} is in the signed mandate",
+                     f"Size: {usd(n)} at the trusted price, {n / e['per_order'] * 100:.0f}% of the {usd(e['per_order'])} limit",
+                     f"Approval: below the {usd(e['step_up'])} threshold",
+                     f"Price: limit within ±{e['band_pct']:g}% of the trusted {honest['tp']:,.2f}"]
+    col, ovr, rum = focus["collusion"], focus["compromised_oversize"], focus["fake_news"]
+    tr = next(x for x in rows if x["label"] == "compromised_transfer")
+    tro = tr["order"]
+    PASS, STOP, HOLD, IDLE = "pass", "stop", "hold", "idle"
+    out = [
+        {"name": "An honest order", "order": otext(honest["order"]), "agent": f"agent-{honest['agent']:04d}", "end": "ledger",
+         "steps": [[PASS, "Nothing it relied on needed verifying"], [PASS, "Inside the signed mandate"] , [PASS, "Normal for this agent and this swarm"], [IDLE, ""], [PASS, "Filled and written to the ledger"]],
+         "checks": honest_checks},
+        {"name": "Five agents, one position", "order": otext(col["order"]), "agent": f"agent-{col['agent']:04d}", "end": "person",
+         "steps": [[PASS, "Nothing it relied on needed verifying"], [PASS, "Every mandate check passes"],
+                   [STOP, f"Risk {col['rule']['risk']:.5f}: one position split across five agents to stay under the approval threshold"],
+                   [HOLD, "Queued first for a person, ranked by money at stake"], [IDLE, ""]],
+         "checks": [c.split(" so ")[0].rstrip(",.") for c in col["gate_checks"]]},
+        {"name": "An order on a rumour", "order": otext(rum["order"]), "agent": f"agent-{rum['agent']:04d}", "end": "person",
+         "steps": [[HOLD, "The news it acts on has one source; the rule needs two independent ones"], [IDLE, ""], [IDLE, ""],
+                   [HOLD, "Held for a person until a second source confirms"], [IDLE, ""]], "checks": []},
+        {"name": "A hidden instruction to move money", "order": f"TRANSFER {usd(tro['amount_usd'])} to {tro['destination_account']}", "agent": f"agent-{tr['agent']:04d}",
+         "end": "refused",
+         "steps": [["note", "The agent followed an instruction hidden in a web page's code"], [STOP, "A transfer is not an order: no mandate allows moving money out"],
+                   [IDLE, ""], [IDLE, ""], [IDLE, ""]], "checks": []},
+    ]
+    return {"stations": ["Reads and verifies", "Mandate check", "Risk model", "A person", "Ledger"], "flows": out,
+            "src": "results/arena/arena-s7-k1000-t2000.jsonl",
+            "swarm": {"agents": [q["agent"] for q in tl["queue"]["items"][:5]], "order": otext(col["order"]), "pct": round(col["claimed"]["notional_at_trusted"] / envs["core"]["per_order"], 4),
+                      "slice": usd(col["claimed"]["notional_at_trusted"]), "combined": usd(5 * col["claimed"]["notional_at_trusted"]),
+                      "limit": usd(envs["core"]["per_order"]), "step_up": usd(envs["core"]["step_up"]), "step_up_pct": envs["core"]["step_up"] / envs["core"]["per_order"],
+                      "risk": f"{col['rule']['risk']:.5f}",
+                      "reason": col["rule"]["text"].split("; ")[1][:1].upper() + col["rule"]["text"].split("; ")[1][1:]},
+            "ledger": ledger_chain(out)}
+
+
+def ledger_chain(flows_out: list[dict]) -> list[dict]:
+    """The demo decisions sealed the way the receiver's ledger seals records: each SHA-256 covers the record and the previous seal."""
+    word = {"ledger": "Allowed", "person": "Held for a person", "refused": "Refused"}
+    prev, out = "0" * 64, []
+    for f in flows_out:
+        reason = (next((t for st, t in f["steps"] if st == "stop"), "") or next((t for st, t in reversed(f["steps"]) if st == "hold"), "")
+                  or "Inside the signed mandate")
+        rec = {"agent": f["agent"], "order": f["order"], "decision": word[f["end"]], "reason": reason, "prev": prev}
+        prev = hashlib.sha256(json.dumps(rec, sort_keys=True).encode()).hexdigest()
+        out.append({**rec, "seal": prev, "prev_short": rec["prev"][:12], "seal_short": prev[:12]})
+    return out
+
+
+FILM_STEPS = [(0, "Your agent connects through an SDK or an MCP server"),
+              (4, "At the broker, a receiver checks the signature, the scope and the exact order before anything happens"),
+              (9, "The ledger commits the order in one transaction, on a chain you can audit"),
+              (18, "Around the code: fast classifiers, a model reviewer, verifier agents and a test chamber"),
+              (29, "The models can stop an order. They can never widen what you signed"),
+              (34, "You don't sign orders. You sign a mandate for a whole strategy, once"),
+              (39, "The agent never holds the key; plain code checks every order against the mandate"),
+              (44, "Automated checks run around every order, before it reaches the market")]
+
+
+CONCERN_TEXT = {"asset_class_mismatch": "is not an index ETF, so it does not fit the purpose",
+                "too_many_symbols": "is more than the purpose needs"}
+
+
+def mandate_demo(r: Reader) -> dict:
+    """One labelled draft (s01) and the decision adapter's real verdict on it, for the animated mandate review."""
+    r.path("python/orderguard_review/labelled_drafts.py")
+    from orderguard_review.labelled_drafts import SET, PARENT_BODY
+    sid, _cat, purpose, d, _acc = next(s for s in SET if s[0] == "s01")
+    cop = r.json("results/review/copilot.json")
+    row = next(x for x in (cop["rows"] if isinstance(cop, dict) else cop) if x["id"] == "s01")
+    named = re.findall(r"\b[A-Z]{2,5}\b", purpose.split(":", 1)[-1])
+    extra = [s for s in d["symbols"] if s not in named]
+    return {"purpose": purpose.split(":")[0], "purpose_full": purpose,
+            "kv": [["Per order", usd(d["maxOrderNotionalUsd"])], ["Per day", usd(d["maxDailyNotionalUsd"])], ["Sides", " and ".join(d["sides"])],
+                   ["Price band", f"±{d['priceBandPct']:g}%"], ["Person approves above", usd(d["stepUpAboveUsd"])]],
+            "symbols": d["symbols"], "extra": extra, "kept": [s for s in d["symbols"] if s not in extra],
+            "fits_parent": bool(row["fits"]), "parent_per_order": usd(PARENT_BODY["maxOrderNotionalUsd"]),
+            "parent_daily": usd(PARENT_BODY["maxDailyNotionalUsd"]),
+            "flag": f"{row['flag_score']:.2f}", "scope_match": f"{row['scope_match']:.2f}",
+            "concern": f"{extra[0]} {CONCERN_TEXT.get(row['concern'], 'does not fit the purpose')}" if extra else "",
+            "src": "results/review/copilot.json"}
+
+
 # ---------------------------------------------------------------------------------------------------------------- the theater copy
 THEATER_FILES = ("theme.js", "app.css", "theater.css", "ui.js", "theater.js")
 
@@ -1086,6 +1185,9 @@ def build() -> tuple[dict, dict[str, bytes]]:
         "models": models(r),
         "console": console_replay(r),
         "snippets": snippets(r),
+        "flows": flows(r),
+        "mandate_demo": mandate_demo(r),
+        "film": {"clip": "fits", "steps": [{"t": t, "text": x} for t, x in FILM_STEPS]},
     }
     doc["compare"] = compare(doc)
     theater = theater_files(r)
