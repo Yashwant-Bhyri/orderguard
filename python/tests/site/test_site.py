@@ -169,7 +169,7 @@ def test_every_binding_resolves_in_data_json(data):
         if kind == "data-f":
             assert {"text", "src"} <= set(node)
         if kind == "data-check":
-            assert page.h1.strip() == node, "the hero headline must be the README's promise, word for word"
+            assert page.h1.strip() == node.rstrip("."), "the hero headline must be the README's promise, word for word (no trailing period on a headline)"
 
 
 DATA_LIKE = re.compile(r"\$\s?\d|\d,\d{3}|\d+(?:\.\d+)?\s*(?:%|µs|ms|x\b|M\b|k\b)|\b\d+\s+(?:of|agents|orders|reviews|rounds|processes|steps|seeds|days)\b")
