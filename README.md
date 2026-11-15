@@ -78,7 +78,7 @@ Whichever surface you use, give the agent no money-movement tool and make the re
 ## Scope of this release
 
 - **Venues and ledgers.** This release runs against simulated markets, recorded public market data and paper ledgers. Connecting a live venue is an adapter on top of the receiver, which is already the single path to the ledger.
-- **Scale of the evidence.** Every result here was produced on one laptop with a small model budget: live model trials used one low-cost model family, the red-team campaign ran all 336 planned rounds with two cheap attacker models, and the million-agent simulation materialises a sample of each population's orders. Each document states its sample sizes; larger runs are a matter of compute and budget, and every runner takes the scale as a parameter.
+- **Scale of the evidence.** Every result here was produced on one laptop with a small model budget: live model trials used one low-cost model family, the red-team campaign ran all 336 planned rounds with two cheap attacker models, and the heaviest million-agent simulation materialised 616,500 orders per arm (3 seeds, 12.9 million authority decisions) for one scenario; the other scenarios run at 10,000 agents. Each document states its sample sizes; larger runs are a matter of compute and budget, and every runner takes the scale as a parameter.
 - **No affiliation.** OrderGuard has no affiliation with any brokerage or exchange.
 
 ## Learn more

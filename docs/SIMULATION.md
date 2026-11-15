@@ -85,7 +85,22 @@ The crowded-momentum frontier makes the cost visible. Throughput is honest notio
 
 These are candidate points, not a universal recommendation. For this stress and this generated order rate, moving from base to open capacity buys 5.4x honest filled notional and raises worst drawdown 5.4x. A desk should choose a loss budget first, then use the frontier to select the loosest signed caps that remain within it. The daily cap is shared, so per-agent counts alone are a poor sizing rule: the activity rate, envelope sharing ratio, symbol concentration and positions determine the needed headroom.
 
-At one million agents, 1,000 envelopes and 16 steps, the collusion-ring run emitted 7,992 orders per arm. The full path sustained **6,640 order decisions/s** in this single-seed run and processed about **13.3 million agent-steps/s**. Gate only sustained 12,485 decisions/s. The independent order-log auditor checked 7,992 rows per arm and found zero breaches. See [the million-agent result](../results/sim/collusion_ring-k1000000-s99.json) and its compressed logs in `results/sim/logs/`.
+### 4. One million agents, heavy profile
+
+The `heavy` profile runs the fake-headline (tremor) scenario at **1,000,000 agents**, 1,000 signed envelopes, 64 steps and 3 seeds (99, 100, 101), through all seven arms: wide-open control, gate only, gate + portfolio, full, and the three sizing candidates. Ordinary activity is 1% of agents per step, so each arm materialised **616,500 orders on average (about 1.85 million per arm across the three seeds)**, and every one went through `Authority.authorize()` individually: 12,946,507 authority decisions in all. Compare the quick profile's roughly 600 orders per arm.
+
+| Arm (mean of 3 seeds, 616,500 orders each) | Bad dollars executed | Honest fills lost vs wide-open | Symbols over 2 sigma | Half-life | Worst drawdown | Independent-auditor breaches |
+|---|---:|---:|---:|---:|---:|---:|
+| Wide-open signed envelope | $268.9m | 0% | 14 | none | $452.6k | 0 |
+| Gate only | $37.9m | 41.4% | 12 | 21 steps | $1.80m | 0 |
+| Gate + portfolio limits | $37.9m | 41.4% | 12 | 21 steps | $1.80m | 0 |
+| Full | $6.2m | 54.4% | 9 | 7 steps | $1.14m | 0 |
+
+What the larger sample says: at this scale the full path cuts executed bad flow by 97.7% against the wide-open control and gate only by 85.9%; the full path shortens the contagion half-life from 21 to 7 steps and the spread from 14 to 9 symbols. The portfolio limits do not bind in this scenario, so gate-only and gate + portfolio decide identically. Gate-only and the full path show a larger worst mark-to-market drawdown than the control ($1.80m and $1.14m against $453k) (mark-to-market equity of the filled flow, which the guarded arms still build in the shocked direction); the full path cuts that drawdown 37% relative to gate only; the honest cost is the 54.4% of honest fills held back.
+
+Scale of the run: 1,000,000 agents, 616,500 materialised orders per arm, 3 seeds, 7 arms, 12.9 million authority decisions and 12.9 million audited order-log rows (0 breaches, auditor replaying per-order, daily, per-symbol and position caps from the raw decision logs). It ran on one laptop with 6 worker processes in 5,341 s (89 minutes), an aggregate of **2,424 decisions/s**; the machine was shared and memory-constrained during the run, and a quiet single process sustained about 10,000 full-path and 45,000 wide-open decisions/s in a short trial. Worker count changes only wall time: digests are identical for any `--workers` value (tested). See [the result](../results/sim/fake_headline-k1000000-s99.json). The 12.9 million-row logs are audited from scratch copies and not committed; each arm's digest is in the result so a rerun can be compared byte for byte.
+
+Crowding, collusion, real-crash and stale-feed runs at this scale are a matter of compute: the same command with `--scenario crowded_momentum` (and so on) writes `results/sim/<scenario>-k1000000-s99.json`, and the quick-profile tables above remain the evidence for those scenarios until those runs are added.
 
 ## Limits and reproduction
 
@@ -98,7 +113,13 @@ og-sim run --scenario all --profile quick --seed 7
 og-sim report
 ```
 
-Longer runs are marked slow and can take minutes:
+Longer runs are marked slow and can take minutes. The heavy profile (1,000,000 agents, 64 steps, 3 seeds, 1% activity per step, attack activity 6%) materialises over 600,000 orders per arm; it takes about 90 minutes per scenario on a shared laptop with `--workers 6` and far less on an idle multi-core machine. Logs are audited from scratch copies unless `--log-dir` is given:
+
+```bash
+og-sim run --scenario fake_headline --profile heavy --seed 99 --workers 6
+```
+
+The slow profile:
 
 ```bash
 og-sim run --scenario collusion_ring --profile slow --agents 1000000 --steps 256 --seed 99 --replicates 3

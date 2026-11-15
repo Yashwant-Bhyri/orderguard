@@ -98,7 +98,10 @@ def build_report(directory: str | Path = SIM_DIR, out: str | Path | None = None)
 
 def _profiles(profile: str) -> dict:
     return {"quick": {"agents": 10_000, "steps": 64, "replicates": 3, "activity": 0.0005, "attack_activity": 0.04},
-            "slow": {"agents": 100_000, "steps": 256, "replicates": 5, "activity": 0.0005, "attack_activity": 0.025}}[profile]
+            "slow": {"agents": 100_000, "steps": 256, "replicates": 5, "activity": 0.0005, "attack_activity": 0.025},
+            # heavy: about 0.64 million proposals per arm per seed from ordinary flow alone (agents x activity x steps),
+            # every one decided individually by the real Authority. Sized for a laptop with several cores.
+            "heavy": {"agents": 1_000_000, "steps": 64, "replicates": 3, "activity": 0.01, "attack_activity": 0.06}}[profile]
 
 
 def cmd_run(args) -> int:
@@ -109,11 +112,25 @@ def cmd_run(args) -> int:
                     envelopes=args.envelopes or 0, steps_per_day=args.steps_per_day or 0, risk_model=args.risk_model)
     output = Path(args.out_dir) if args.out_dir else SIM_DIR
     output.mkdir(parents=True, exist_ok=True)
-    log_dir = None if args.no_logs else output / "logs"
+    tmp = None
+    if args.no_logs:
+        log_dir = None
+    elif args.log_dir:
+        log_dir = Path(args.log_dir)
+    elif args.profile == "heavy":
+        # Heavy order logs are hundreds of megabytes: audit them from a scratch copy, keep the digests in the result.
+        import tempfile
+        tmp = tempfile.TemporaryDirectory(prefix="og-sim-logs-")
+        log_dir = Path(tmp.name)
+    else:
+        log_dir = output / "logs"
     scenarios = list(SCENARIOS) if args.scenario == "all" else [args.scenario]
     failed = False
     for name in scenarios:
-        result = run_scenario(cfg, name, log_dir=log_dir)
+        result = run_scenario(cfg, name, log_dir=log_dir, workers=max(1, args.workers))
+        if tmp is not None:
+            for stale in log_dir.glob("*.jsonl.gz"):
+                stale.unlink()
         out = output / f"{name}-k{cfg.agents}-s{cfg.seed}.json"
         out.write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
         valid = all(m["auditor_valid"] for m in result["arms"].values())
@@ -122,6 +139,9 @@ def cmd_run(args) -> int:
         for arm in ("unguarded", "gate_only", "gate_portfolio", "full"):
             m = result["arms"][arm]
             print(f"  {arm:16s} honest fills {m['honest_fills']:.1f}, bad $ {m['bad_dollars_executed']:,.0f}, drawdown ${m['worst_case_loss_usd']:,.0f}, spread {m['spread_symbols_over_2sigma']:.1f} symbols")
+        sc = result["scale"]
+        print(f"  scale: {sc['orders_per_arm_mean']:,.0f} orders/arm, {sc['orders_total']:,} total, {sc['wall_s']:,.0f}s on {sc['workers']} worker(s), "
+              f"{sc['aggregate_decisions_per_s']:,.0f} decisions/s aggregate")
         print(f"  wrote {out}")
     if not args.no_report:
         report = build_report(output)
@@ -138,13 +158,15 @@ def main(argv=None) -> int:
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int, default=7)
     run.add_argument("--replicates", type=int)
-    run.add_argument("--profile", choices=("quick", "slow"), default="quick")
+    run.add_argument("--profile", choices=("quick", "slow", "heavy"), default="quick")
     run.add_argument("--activity", type=float)
     run.add_argument("--attack-activity", type=float)
     run.add_argument("--envelopes", type=int, default=0)
     run.add_argument("--steps-per-day", type=int, default=0)
     run.add_argument("--risk-model")
     run.add_argument("--out-dir")
+    run.add_argument("--workers", type=int, default=1, help="processes for independent (seed, arm) jobs; changes wall time only")
+    run.add_argument("--log-dir", help="keep the gzip order logs here (heavy profile otherwise audits scratch logs and discards them)")
     run.add_argument("--no-logs", action="store_true")
     run.add_argument("--no-report", action="store_true")
     report = sub.add_parser("report", help="build the self-contained offline HTML report from results/sim/*.json")

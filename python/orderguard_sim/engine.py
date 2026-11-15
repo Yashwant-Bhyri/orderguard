@@ -221,7 +221,7 @@ def run_arm(cfg: SimConfig, scenario: Scenario, arm: str, *, log_path: str | Pat
     shock_base = None
     spread_by_step: list[int] = []
     peak_spread = 0
-    events: list[dict] = [] if log_path is None else []
+    events: list[dict] = []
     digest = hashlib.sha256()
     log_file = None
     if log_path is not None:
@@ -380,23 +380,57 @@ def _pareto(points: list[dict]) -> list[dict]:
     return sorted(result, key=lambda p: p["worst_case_loss_usd"])
 
 
-def run_scenario(cfg: SimConfig, scenario_name: str, *, log_dir: str | Path | None = None) -> dict:
-    """Run paired seeds through four guard arms plus two cap-sizing candidates."""
-    all_runs: list[dict] = []
+def _arm_job(job: tuple) -> tuple[int, str, dict]:
+    """Top-level so a process pool can run one (seed, arm) pair; arms never share state."""
+    cfg_dict, scenario_name, seed, arm, path = job
+    cfg = SimConfig(**cfg_dict)
+    scenario = build_scenario(scenario_name, cfg.steps, attack_activity=cfg.attack_activity, seed=seed)
+    return seed, arm, run_arm(cfg, scenario, arm, log_path=path)
+
+
+def run_scenario(cfg: SimConfig, scenario_name: str, *, log_dir: str | Path | None = None, workers: int = 1) -> dict:
+    """Run paired seeds through four guard arms plus three cap-sizing candidates.
+
+    Every (seed, arm) pair is an independent process-safe job with its own authority, so ``workers`` changes only
+    wall time: decisions, digests and audits are identical for any worker count.
+    """
+    wall0 = time.perf_counter()
+    jobs = []
     for rep in range(cfg.replicates):
         seed = cfg.seed + rep
-        scenario = build_scenario(scenario_name, cfg.steps, attack_activity=cfg.attack_activity, seed=seed)
-        run_rows = {}
         for arm in ARMS:
             path = None
             if log_dir is not None:
-                path = Path(log_dir) / f"{scenario_name}-k{cfg.agents}-s{seed}-{arm}.jsonl.gz"
-            run_rows[arm] = run_arm(SimConfig(**(asdict(cfg) | {"seed": seed, "replicates": 1})), scenario, arm, log_path=path)
+                path = str(Path(log_dir) / f"{scenario_name}-k{cfg.agents}-s{seed}-{arm}.jsonl.gz")
+            jobs.append((asdict(cfg) | {"seed": seed, "replicates": 1}, scenario_name, seed, arm, path))
+    done: dict[tuple[int, str], dict] = {}
+    if workers > 1 and len(jobs) > 1:
+        import os
+        from concurrent.futures import ProcessPoolExecutor
+        # One BLAS thread per worker: the jobs are the parallelism, and oversubscribed threads slow the risk scorer badly.
+        for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ.setdefault(var, "1")
+        with ProcessPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+            for seed, arm, row in pool.map(_arm_job, jobs):
+                done[(seed, arm)] = row
+    else:
+        for job in jobs:
+            seed, arm, row = _arm_job(job)
+            done[(seed, arm)] = row
+    all_runs: list[dict] = []
+    for rep in range(cfg.replicates):
+        seed = cfg.seed + rep
+        run_rows = {arm: done[(seed, arm)] for arm in ARMS}
         base_fills = run_rows["unguarded"]["honest_fills"]
         for row in run_rows.values():
             row["honest_fills_lost_vs_unguarded"] = max(0, base_fills - row["honest_fills"])
             row["honest_fills_lost_pct_vs_unguarded"] = round(max(0, base_fills - row["honest_fills"]) / max(base_fills, 1), 6)
         all_runs.append({"seed": seed, "arms": run_rows})
+    total_orders = sum(int(r["proposals"]) for run in all_runs for r in run["arms"].values())
+    wall = max(time.perf_counter() - wall0, 1e-9)
+    scale = {"agents": cfg.agents, "steps": cfg.steps, "seeds": cfg.replicates, "arms": len(ARMS), "workers": int(max(1, workers)),
+             "orders_per_arm_mean": round(total_orders / max(1, cfg.replicates * len(ARMS)), 1),
+             "orders_total": total_orders, "wall_s": round(wall, 2), "aggregate_decisions_per_s": round(total_orders / wall, 1)}
 
     arms_summary = {}
     metric_keys = ("proposals", "fills", "allow", "hold", "refuse", "honest_proposals", "honest_fills", "honest_filled_usd",
@@ -426,7 +460,7 @@ def run_scenario(cfg: SimConfig, scenario_name: str, *, log_dir: str | Path | No
     safe_cfg = asdict(cfg)
     if safe_cfg["risk_model"]:
         safe_cfg["risk_model"] = Path(safe_cfg["risk_model"]).name
-    return {"schema": "orderguard-impact-sim/1", "scenario": build_scenario(scenario_name, cfg.steps, attack_activity=cfg.attack_activity, seed=cfg.seed).as_dict(),
+    return {"schema": "orderguard-impact-sim/1", "scale": scale, "scenario": build_scenario(scenario_name, cfg.steps, attack_activity=cfg.attack_activity, seed=cfg.seed).as_dict(),
             "config": safe_cfg | {"effective_envelopes": cfg.effective_envelopes(), "steps_per_day_effective": cfg.day_steps()},
             "arms": arms_summary, "runs": all_runs, "frontier": _pareto(candidates), "frontier_candidates": candidates,
             "method": {"authority": "Every emitted order receives one individual orderguard_arena.authority.Authority decision.",

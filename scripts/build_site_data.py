@@ -618,7 +618,7 @@ def simulation(r: Reader) -> dict:
                 "src": [CR], "points": pts,
                 "x_ticks": log_ticks(min(p["x"] for p in pts), max(p["x"] for p in pts), tick_money),
                 "y_ticks": log_ticks(min(p["y"] for p in pts), max(p["y"] for p in pts), tick_money)}
-    MR = "results/sim/collusion_ring-k1000000-s99.json"
+    MR = "results/sim/fake_headline-k1000000-s99.json"
     mr = r.json(MR)
     facts = {
         "ring_unguarded": fact(ring["arms"]["unguarded"]["bad_dollars_executed"], usd_short(ring["arms"]["unguarded"]["bad_dollars_executed"]),
@@ -628,9 +628,12 @@ def simulation(r: Reader) -> dict:
         "ring_seeds": fact([x["seed"] for x in ring["runs"]], ", ".join(str(x["seed"]) for x in ring["runs"][:-1]) + f" and {ring['runs'][-1]['seed']}",
                            "results/sim/collusion_ring-k10000-s7.json", "/runs/*/seed"),
         "million_agents": fact(mr["config"]["agents"], num(mr["config"]["agents"]), MR, "/config/agents"),
-        "million_dps": fact(mr["arms"]["full"]["orders_per_s"], num(mr["arms"]["full"]["orders_per_s"]), MR, "/arms/full/orders_per_s"),
-        "million_breaches": fact(sum(x["arms"]["full"]["audit"]["cap_breaches"] for x in mr["runs"]),
-                                 num(sum(x["arms"]["full"]["audit"]["cap_breaches"] for x in mr["runs"])), MR, "/runs/*/arms/full/audit/cap_breaches"),
+        "million_orders": fact(mr["scale"]["orders_per_arm_mean"], num(mr["scale"]["orders_per_arm_mean"]), MR, "/scale/orders_per_arm_mean"),
+        "million_orders_total": fact(mr["scale"]["orders_total"], num(mr["scale"]["orders_total"]), MR, "/scale/orders_total"),
+        "million_seeds": fact(mr["scale"]["seeds"], num(mr["scale"]["seeds"]), MR, "/scale/seeds"),
+        "million_dps": fact(mr["scale"]["aggregate_decisions_per_s"], num(mr["scale"]["aggregate_decisions_per_s"]), MR, "/scale/aggregate_decisions_per_s"),
+        "million_breaches": fact(sum(x["audit"]["cap_breaches"] for run in mr["runs"] for x in run["arms"].values()),
+                                 num(sum(x["audit"]["cap_breaches"] for run in mr["runs"] for x in run["arms"].values())), MR, "/runs/*/arms/*/audit/cap_breaches"),
         "crowd_slip_open": fact(cm["arms"]["unguarded"]["slippage_usd"], usd(cm["arms"]["unguarded"]["slippage_usd"]), CR, "/arms/unguarded/slippage_usd"),
         "crowd_slip_full": fact(cm["arms"]["full"]["slippage_usd"], usd(cm["arms"]["full"]["slippage_usd"]), CR, "/arms/full/slippage_usd"),
     }

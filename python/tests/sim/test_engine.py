@@ -46,3 +46,24 @@ def test_scale_smoke_uses_compact_population_for_100k_agents():
     assert result["audit"]["valid"]
     assert result["agents_per_s"] > 0
 
+
+
+def test_worker_processes_change_only_wall_time():
+    import pytest
+    cfg = SimConfig(agents=2_000, steps=12, seed=5, replicates=2, activity=0.02, attack_activity=0.1)
+    serial = run_scenario(cfg, "collusion_ring")
+    try:
+        parallel = run_scenario(cfg, "collusion_ring", workers=2)
+    except PermissionError:
+        pytest.skip("process pools are not permitted in this environment")
+    for a, b in zip(serial["runs"], parallel["runs"]):
+        for arm in a["arms"]:
+            assert a["arms"][arm]["digest"] == b["arms"][arm]["digest"]
+    assert serial["scale"]["orders_total"] == parallel["scale"]["orders_total"] > 0
+
+
+def test_heavy_profile_materialises_over_half_a_million_orders_per_arm():
+    from orderguard_sim.cli import _profiles
+    h = _profiles("heavy")
+    assert h["agents"] == 1_000_000
+    assert h["agents"] * h["activity"] * h["steps"] >= 500_000
