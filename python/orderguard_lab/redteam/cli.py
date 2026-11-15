@@ -32,16 +32,26 @@ def _config(a) -> C.Config:
     return cfg
 
 
-def _note_spend() -> None:
-    from orderguard_guard.llm import SPEND
+def _note_spend(rounds_added: int = 0) -> None:
+    """Accumulate live spend by provider in results/redteam/spend.json (replays add nothing). Rounds are those added to campaign.json by this session."""
+    from orderguard_guard.llm import SPEND, provider
     if SPEND.calls <= 0:
         return
     prev = json.loads(SPEND_NOTE.read_text()) if SPEND_NOTE.exists() else {"live_spend_usd": 0.0, "live_calls": 0, "sessions": 0}
     prev["live_spend_usd"] = round(prev["live_spend_usd"] + SPEND.spent_usd, 4)
     prev["live_calls"] += SPEND.calls
     prev["sessions"] += 1
+    bp = prev.setdefault("by_provider", {"openrouter": {"live_spend_usd": round(prev["live_spend_usd"] - SPEND.spent_usd, 4), "live_calls": prev["live_calls"] - SPEND.calls, "rounds_added": None}})
+    p = bp.setdefault(provider(), {"live_spend_usd": 0.0, "live_calls": 0, "rounds_added": 0})
+    p["live_spend_usd"] = round(p["live_spend_usd"] + SPEND.spent_usd, 4)
+    p["live_calls"] += SPEND.calls
+    p["rounds_added"] = (p["rounds_added"] or 0) + rounds_added
     SPEND_NOTE.parent.mkdir(parents=True, exist_ok=True)
     SPEND_NOTE.write_text(json.dumps(prev, indent=1, sort_keys=True) + "\n")
+
+
+def _rounds_on_disk() -> int:
+    return sum(len(u["rounds"]) for u in json.loads(C.CAMPAIGN.read_text())["units"]) if C.CAMPAIGN.exists() else 0
 
 
 def cmd_run(a) -> int:
@@ -54,8 +64,9 @@ def cmd_run(a) -> int:
         return 0
     prog = (lambda m, f, s, r, core: print(f"[{m.split('/')[-1]} {f} s{s} r{r}] hard={core['kinds']} bad=${core['bad_usd']:,.0f}", file=sys.stderr)) if a.verbose else None
     out = C.REDTEAM_DIR / "smoke.json" if a.smoke and not a.out else (None if not a.out else __import__("pathlib").Path(a.out))
+    before = _rounds_on_disk()
     camp = C.run(cfg, only=only, progress=prog, out=out)
-    _note_spend()
+    _note_spend(max(0, _rounds_on_disk() - before) if out is None else 0)
     S = camp["summary"]
     print(f"{S['units']} campaigns, {S['rounds']} rounds (+{S['failed_rounds']} failed), hard breaches {S['hard_breach_count']}, "
           f"round rate {R.fmt_ci(S['round_rate'])}, complete={camp['complete']}; billed this process US${SPEND.spent_usd:.4f} over {SPEND.calls} live calls; {camp['_wall_s']}s")

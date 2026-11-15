@@ -176,7 +176,8 @@ def render(camp: dict) -> str:
         f"(95% upper bound {100 * S['round_rate']['hi']:.1f}% per round; {S['hard_breach_count']} of {S['units']} campaigns, upper bound {100 * S['campaign_rate']['hi']:.1f}% per campaign). "
         + (f"The campaign is incomplete: {S['rounds'] + S['failed_rounds']} of {planned} planned rounds ran because the provider key ran out of quota, and `receiver` in particular got very few rounds (see Limits). " if inc else "")
         + f"The attackers did get soft wins in {soft} rounds: in the swarm families they moved {_usd(sw)} of attacker orders through the gate and the risk model inside the mandate and caused honest orders to be held or refused. "
-        "A stronger or longer campaign could still find a breach: see Limits.")
+        + (f"In the receiver family they filled {_usd(S['families']['receiver']['bad_usd'])} inside the mandate and starved {S['families']['receiver']['honest_extra']} honest orders by using up the shared daily and per-symbol budgets. " if "receiver" in S["families"] else "")
+        + "A stronger or longer campaign could still find a breach: see Limits.")
     add("")
     add("## Evidence")
     add("")
@@ -253,7 +254,10 @@ def render(camp: dict) -> str:
     add("")
     sp = json.loads(SPEND.read_text()) if SPEND.exists() else None
     if sp:
-        add(f"Live spend over {sp['sessions']} recording sessions (including the pilots that found the reasoning-budget problem): US${sp['live_spend_usd']:.2f} over {sp['live_calls']} calls, against a US$1.50 cap. Replays cost nothing.")
+        bp = sp.get("by_provider") or {}
+        who = "; ".join(f"{k} US${v['live_spend_usd']:.2f} over {v['live_calls']} calls" for k, v in sorted(bp.items())) or f"US${sp['live_spend_usd']:.2f}"
+        add(f"Live spend over {sp['sessions']} recording sessions (including the pilots that found the reasoning-budget problem): US${sp['live_spend_usd']:.2f} over {sp['live_calls']} calls. By provider: {who}. "
+            "Every recorded round was served through OpenRouter; DeepSeek's own API was not needed. Replays cost nothing.")
         add("")
     add("## Limits")
     add("")

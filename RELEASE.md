@@ -39,7 +39,7 @@ Everything runs offline from recordings by default. Live model calls need a prov
 ## Scope of this release
 
 - Runs against simulated markets, recorded public market data and paper ledgers; a live venue connects as an adapter behind the receiver.
-- Evidence was produced on one laptop with a small model budget: one low-cost model family for live trials, 236 of 336 planned red-team rounds (the API budget ran out), and sampled order materialisation in the million-agent simulation. Every runner takes its scale as a parameter, so larger runs need only compute and budget.
+- Evidence was produced on one laptop with a small model budget: one low-cost model family for live trials, a red-team campaign of 336 rounds with two cheap attacker models, and sampled order materialisation in the million-agent simulation. Every runner takes its scale as a parameter, so larger runs need only compute and budget.
 - Shadow running is done by calling the check endpoint and logging the verdict ([docs/PRODUCT.md](docs/PRODUCT.md#how-a-desk-would-roll-it-out)).
 - The dashboard binds to localhost by default; exposing it takes `ORDERGUARD_APP_TOKEN` and a TLS proxy.
 - OrderGuard has no affiliation with any brokerage or exchange.

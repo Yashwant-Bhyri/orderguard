@@ -335,14 +335,14 @@ Recorded model spend across logged requests from `results/spend.jsonl`. Provider
 |---|---|---|---|---|---|
 | deepseek/deepseek-v4.1-flash | deepseek | 3455 | 22,089,794 | 970,704 | 1.6770 |
 | deepseek/deepseek-v4.1-flash-1017 | deepseek | 2 | 72 | 28 | 0.0001 |
-| deepseek/deepseek-v4.1-flash-1017 | openrouter | 11040 | 53,321,743 | 3,296,212 | 3.7554 |
+| deepseek/deepseek-v4.1-flash-1017 | openrouter | 11223 | 53,984,031 | 3,390,261 | 3.8428 |
 | liquid/lfm-2.5-24b-a2b | openrouter | 696 | 549,498 | 637,641 | 0.4738 |
 | qwen/qwen3.7-flash | openrouter | 267 | 205,958 | 188,083 | 0.0304 |
-| qwen/qwen3.8-flash | openrouter | 390 | 709,876 | 380,173 | 0.2526 |
+| qwen/qwen3.8-flash | openrouter | 436 | 927,559 | 405,246 | 0.2858 |
 | typesafe/jev-1.14 | openrouter-decisions | 1533 | 2,638,350 | 144,769 | 0.1108 |
 | z-ai/glm-5.3-flash | openrouter | 275 | 197,831 | 32,508 | 0.0307 |
 
-Total US$6.3309.
+Total US$6.4514.
 
 ## Limits
 

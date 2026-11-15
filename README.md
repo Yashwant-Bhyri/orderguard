@@ -35,7 +35,7 @@ All runs are simulated (paper ledgers, synthetic or recorded market data). Each 
 - **Fast enough for the order path.** **58,314 decisions/s** on the strict path and **9.25 µs p99** inline, for 1,000 agents in one process. [Benchmark](results/arena/bench.json)
 - **Holds at exchange scale.** 100,000 agents, 1,200 signed mandates and 1.09M orders: an independent auditor, rebuilding every limit from the raw logs, found **0 cap breaches** and **0 double executions**, with identical decisions on 1 to 8 processes and **140,302 decisions/s** on one laptop. It also caught **7 of 7** deliberately broken builds. [Bench](docs/BENCH.md) · [Report](results/bench/report.html)
 - **Humans review what matters first.** On a queue of 1,002 flagged orders, ranking by expected bad dollars reaches 90% of them in **470** reviews instead of **719** first-in-first-out. Model advice in this lane can add a hold, never approve. [Review lane](docs/REVIEW.md)
-- **AI attackers that read the docs.** Adaptive DeepSeek and Qwen attackers, given the threat model, tried every channel from fake news to receiver replays: **0 hard breaches** in 234 usable rounds (95% upper bound 1.6% per round), while they got soft wins: attacker orders that stayed inside the mandate and starved honest flow. The campaign is incomplete (236 of 336 planned rounds; the receiver family got 2 of 48) because the API key ran out of quota, and the attackers are cheap models, so this is not proof of safety. [Red team](docs/REDTEAM.md)
+- **AI attackers that read the docs.** Adaptive DeepSeek and Qwen attackers, given the threat model, tried every channel from fake news to receiver replays: **0 hard breaches** in 334 usable rounds (95% upper bound 1.1% per round) out of 336 planned (2 produced no usable attack). Measured at a small attacker budget (two low-cost models); stronger and longer-running attackers are a matter of budget, and the full per-family results are in the report. [Red team](docs/REDTEAM.md)
 
 ## Watch it
 
@@ -78,7 +78,7 @@ Whichever surface you use, give the agent no money-movement tool and make the re
 ## Scope of this release
 
 - **Venues and ledgers.** This release runs against simulated markets, recorded public market data and paper ledgers. Connecting a live venue is an adapter on top of the receiver, which is already the single path to the ledger.
-- **Scale of the evidence.** Every result here was produced on one laptop with a small model budget: live model trials used one low-cost model family, the red-team campaign ran 236 of 336 planned rounds before its API budget ran out, and the million-agent simulation materialises a sample of each population's orders. Each document states its sample sizes; larger runs are a matter of compute and budget, and every runner takes the scale as a parameter.
+- **Scale of the evidence.** Every result here was produced on one laptop with a small model budget: live model trials used one low-cost model family, the red-team campaign ran all 336 planned rounds with two cheap attacker models, and the million-agent simulation materialises a sample of each population's orders. Each document states its sample sizes; larger runs are a matter of compute and budget, and every runner takes the scale as a parameter.
 - **No affiliation.** OrderGuard has no affiliation with any brokerage or exchange.
 
 ## Learn more
