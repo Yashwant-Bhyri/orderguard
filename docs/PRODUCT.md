@@ -1,6 +1,6 @@
 # OrderGuard product brief
 
-**Let AI agents trade, inside limits a human signed and code enforces.**
+**A thousand AI agents. One signed mandate. Nothing outside it reaches the market.**
 
 OrderGuard lets one person safely authorise thousands of AI trading agents. Code enforces the limits they signed, a risk model catches the bad flow that breaks no single rule (one position split across agents, runaway loops, colluding groups draining a shared budget), and people review only the orders most likely to cost money. It sits between the agents (any model, any tools) and the ledger. It is a working prototype on paper ledgers, not a hosted service.
 

@@ -602,9 +602,12 @@ function heroSetup() {
   // columns, as fractions of the width: market | agents | mandate check | risk layer | human review | ledger
   const X = { mk: 0.20, ag0: 0.22, ag1: 0.37, gate: 0.425, risk: 0.555, rv0: 0.595, rv1: 0.795, led: 0.815 };
   const TOP = 46, BOT = 14;
-  let W = 0, H = 0, dpr = 1, agents = [], byRow = [], dots = [], out = [], ledger = 0, queue = [], colors = {}, curBin = 0, small = false;
+  let W = 0, H = 0, dpr = 1, agents = [], byRow = [], dots = [], out = [], ledger = 0, queue = [], colors = {}, curBin = 0, small = false, CW = 7, CH = 14, ledgerPer = 1;
+  const cs = getComputedStyle(cv), tok = (n) => cs.getPropertyValue(n).trim();
+  const allowTotal = sw.counts.reduce((a, r) => a + r[K("allow")], 0);
+  // the hero is drawn as a character grid: every mark snaps to a cell, like a terminal
+  const glyph = (ch, x, y, color, a) => { ctx.globalAlpha = a; ctx.fillStyle = color; ctx.fillText(ch, Math.round(x / CW) * CW, Math.round(y / CH) * CH); };
   const flash = new Array(NR).fill(0), flashDir = new Array(NR).fill(0);
-  const ledgerPer = Math.max(1, Math.round(sw.counts.reduce((a, r) => a + r[K("allow")], 0) / 1400));
   const rowY = (i) => TOP + (i + 0.5) * ((H - TOP - BOT) / NR);
   const laneY = (y) => TOP + 6 + ((y - TOP) / (H - TOP - BOT)) * (H * 0.5 - TOP - 6);
   const rvTop = () => H * 0.56;
@@ -622,8 +625,12 @@ function heroSetup() {
       a.row = Math.max(0, Math.min(NR - 1, Math.floor(((y - TOP) / (H - TOP - BOT)) * NR)));
       agents.push(a); byRow[a.row].push(a);
     }
-    colors = { allowBg: css("--allow-bg"), holdBg: css("--hold-bg"), riskBg: css("--risk-bg"), refuseBg: css("--refuse-bg"), text: css("--text"), text2: css("--text-2"), text3: css("--text-3"), dot: css("--dot"),
-      allow: css("--allow"), hold: css("--hold"), refuse: css("--refuse"), risk: css("--risk"), line: css("--line"), lineStrong: css("--line-strong"), surface2: css("--surface-2"), sans: css("--sans") };
+    colors = { allowBg: tok("--allow-bg"), holdBg: tok("--hold-bg"), riskBg: tok("--risk-bg"), refuseBg: tok("--refuse-bg"), text: tok("--text"), text2: tok("--text-2"), text3: tok("--text-3"), dot: tok("--dot"),
+      allow: tok("--allow"), hold: tok("--hold"), refuse: tok("--refuse"), risk: tok("--risk"), line: tok("--line"), lineStrong: tok("--line-strong"), accent: tok("--accent"), mono: tok("--mono") };
+    ctx.font = (small ? "11px " : "12px ") + colors.mono; ctx.textBaseline = "middle";
+    CW = ctx.measureText("M").width; CH = small ? 13 : 14;
+    const lcols = Math.max(1, Math.floor((W - X.led * W - 22) / CW)), lrows = Math.max(1, Math.floor((H - TOP - BOT - 4) / CH));
+    ledgerPer = Math.max(1, Math.ceil(allowTotal / (lcols * lrows)));
   }
   const LOOP = 56000, binDur = LOOP / sw.bins;
   let t0 = performance.now(), last = -1, spawnQ = [], nextReview = 0;
@@ -664,80 +671,70 @@ function heroSetup() {
     ctx.fillStyle = color; ctx.textAlign = align || "left"; ctx.fillText(text, x, y);
   }
   function drawMarket(now) {
-    const x0 = 12, x1 = X.mk * W - 8, rh = (H - TOP - BOT) / NR;
-    ctx.font = "500 11px " + colors.sans;
+    const x0 = 12, x1 = X.mk * W - 8, rh = (H - TOP - BOT) / NR, cols = Math.max(4, Math.floor((x1 - x0) / CW));
     for (let i = 0; i < NR; i++) {
       const m = M[i], cy = rowY(i);
       if (flash[i] > 0.01) {
-        ctx.globalAlpha = flash[i] * 0.9; ctx.fillStyle = flashDir[i] < 0 ? colors.refuseBg : colors.allowBg;
-        ctx.fillRect(0, cy - rh / 2 + 1, X.ag1 * W, rh - 2); ctx.globalAlpha = 1;
+        ctx.globalAlpha = flash[i] * 0.85; ctx.fillStyle = flashDir[i] < 0 ? colors.refuseBg : colors.allowBg;
+        ctx.fillRect(0, cy - rh / 2 + 1, X.ag1 * W, rh - 2);
         if (!reduce.matches) flash[i] *= 0.965;
       }
-      let lo = Math.min(-2, ...m.pct), hi = Math.max(2, ...m.pct);
-      const sy = (v) => cy + rh * 0.36 - ((v - lo) / (hi - lo)) * rh * 0.62;
-      const n = m.pct.length, sx = (j) => x0 + (j / (n - 1)) * (x1 - x0);
-      ctx.strokeStyle = colors.lineStrong; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
-      ctx.beginPath(); ctx.moveTo(x0, sy(0)); ctx.lineTo(x1, sy(0)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.strokeStyle = colors.text2; ctx.lineWidth = 1.4; ctx.beginPath();
-      for (let j = 0; j <= curBin; j++) { const x = sx(j), y = sy(m.pct[j]); if (j) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
-      ctx.stroke();
-      const v = m.pct[curBin], cx = sx(curBin), cyy = sy(v);
-      ctx.fillStyle = v < 0 ? colors.refuse : colors.allow; ctx.beginPath(); ctx.arc(cx, cyy, 2.6, 0, 6.2832); ctx.fill();
-      label(m.sym, x0, cy - rh * 0.5 + 13, colors.text3);
-      if (!small) label((v >= 0 ? "+" : "") + v.toFixed(1) + "%", x1, cy - rh * 0.5 + 13, v < 0 ? colors.refuse : colors.allow, "right");
+      const lo = Math.min(-2, ...m.pct), hi = Math.max(2, ...m.pct);
+      const sy = (v) => cy + rh * 0.34 - ((v - lo) / (hi - lo)) * rh * 0.58;
+      const n = m.pct.length;
+      for (let c = 0; c < cols; c++) glyph("┈", x0 + c * CW, sy(0), colors.lineStrong, 0.5);
+      const upto = Math.floor((curBin / (n - 1)) * (cols - 1));
+      for (let c = 0; c <= upto; c++) {
+        const j = Math.round((c / (cols - 1)) * (n - 1)), v = m.pct[j];
+        glyph(c === upto ? "●" : "·", x0 + c * CW, sy(v), c === upto ? (v < 0 ? colors.refuse : colors.allow) : colors.text2, c === upto ? 1 : 0.9);
+      }
+      const v = m.pct[curBin];
+      ctx.globalAlpha = 1;
+      label(m.sym, x0, cy - rh * 0.5 + 10, colors.text3);
+      if (!small) label((v >= 0 ? "+" : "") + v.toFixed(1) + "%", x1, cy - rh * 0.5 + 10, v < 0 ? colors.refuse : colors.allow, "right");
     }
-    ctx.textAlign = "left";
+    ctx.textAlign = "left"; ctx.globalAlpha = 1;
   }
   function drawStatic(now) {
-    ctx.clearRect(0, 0, W, H);
+    ctx.globalAlpha = 1; ctx.fillStyle = tok("--bg"); ctx.fillRect(0, 0, W, H);
     drawMarket(now);
-    // agents: brighter where their market row just shook
-    ctx.fillStyle = colors.dot;
+    // agents: brighter, and restless, where their market row just shook
     for (const a of agents) {
-      const j = reduce.matches ? 0 : Math.sin(now / 900 + a.ph) * 1.1;
-      ctx.globalAlpha = 0.45 + 0.5 * flash[a.row];
-      ctx.fillRect(a.x + j, a.y - j, 1.7, 1.7);
+      const f = flash[a.row];
+      glyph(f > 0.25 && Math.sin(now / 120 + a.ph) > 0.3 ? ":" : "·", a.x, a.y, f > 0.25 ? colors.text2 : colors.dot, 0.55 + 0.45 * f);
     }
-    ctx.globalAlpha = 1;
     // ledger, review box, the two checks
-    ctx.fillStyle = colors.allowBg; ctx.fillRect(X.led * W, 0, W - X.led * W, H);
+    ctx.globalAlpha = 1; ctx.fillStyle = colors.allowBg; ctx.fillRect(X.led * W, 0, W - X.led * W, H);
     const r0 = X.rv0 * W, r1 = X.rv1 * W, rt = rvTop();
     ctx.fillStyle = colors.holdBg; ctx.fillRect(r0, rt, r1 - r0, H - rt - BOT + 6);
-    ctx.lineWidth = 2; ctx.strokeStyle = colors.text; ctx.globalAlpha = 0.85;
-    ctx.beginPath(); ctx.moveTo(X.gate * W, TOP - 4); ctx.lineTo(X.gate * W, H - BOT); ctx.stroke();
-    ctx.setLineDash([5, 5]); ctx.strokeStyle = colors.risk;
-    ctx.beginPath(); ctx.moveTo(X.risk * W, TOP - 4); ctx.lineTo(X.risk * W, H - BOT); ctx.stroke();
-    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    for (let y = TOP; y <= H - BOT; y += CH) { glyph("│", X.gate * W, y, colors.text, 0.8); glyph("┆", X.risk * W, y, colors.risk, 0.85); }
     // column heads
-    ctx.font = "500 12px " + colors.sans;
-    const heads = [["Market", 12, small ? "" : "recorded prices"], ["Agents", X.ag0 * W + 4, small ? "" : sw.agents + " simulated"], ["Mandate", X.gate * W - 6, small ? "" : "signed, in code"],
-      ["Risk", X.risk * W - 6, small ? "" : "model, tighten only"], ["Review", r0 + 6, small ? "" : "ranked, a person decides"], ["Ledger", X.led * W + 10, small ? "" : "committed"]];
+    const heads = [["market", 12, small ? "" : "recorded prices"], ["agents", X.ag0 * W + 4, small ? "" : "simulated"], ["mandate", X.gate * W - 8, small ? "" : "signed, in code"],
+      ["risk", X.risk * W - 8, small ? "" : "swarm model"], ["review", r0 + 8, small ? "" : "ranked, a person decides"], ["ledger", X.led * W + 10, small ? "" : "committed"]];
     for (const [h, x, sub] of heads) {
-      if (small && h === "Agents") continue;
-      const al = h === "Mandate" || h === "Risk" ? "right" : "left";
-      label(small && h === "Mandate" ? "Gate" : h, x, 18, colors.text2, al);
-      if (sub) { ctx.font = "400 11px " + colors.sans; label(sub, x, 33, colors.text3, al); ctx.font = "500 12px " + colors.sans; }
+      if (small && h === "agents") continue;
+      const al = h === "mandate" || h === "risk" ? "right" : "left";
+      ctx.globalAlpha = 1;
+      label(small && h === "mandate" ? "gate" : h, x, 14, colors.text, al);
+      if (sub) label(sub, x, 30, colors.text3, al);
     }
     ctx.textAlign = "left";
-    // ledger blocks
-    const lx0 = X.led * W + 10, lx1 = W - 12, ly0 = TOP + 4, ly1 = H - BOT;
-    const cell = small ? 4 : 5, cols = Math.max(1, Math.floor((lx1 - lx0) / cell)), rows = Math.floor((ly1 - ly0) / cell);
-    const blocks = Math.min(cols * rows, Math.floor(ledger / ledgerPer));
-    ctx.fillStyle = colors.allow;
+    // ledger cells
+    const lx0 = X.led * W + 12, ly1 = H - BOT, lcols = Math.max(1, Math.floor((W - lx0 - 10) / CW));
+    const blocks = Math.min(lcols * Math.floor((ly1 - TOP - 4) / CH), Math.floor(ledger / ledgerPer));
     for (let i = 0; i < blocks; i++) {
-      const r = Math.floor(i / cols), c = i % cols;
-      ctx.globalAlpha = i > blocks - cols ? 0.95 : 0.4;
-      ctx.fillRect(lx0 + c * cell, ly1 - (r + 1) * cell, cell - 1, cell - 1);
+      const r = Math.floor(i / lcols), c = i % lcols;
+      ctx.globalAlpha = i >= blocks - lcols ? 0.95 : 0.38; ctx.fillStyle = colors.allow;
+      ctx.fillText("▓", lx0 + c * CW, ly1 - r * CH - CH / 2);
     }
-    ctx.globalAlpha = 1;
     // the review queue, riskiest first
-    const qx0 = r0 + 8, qx1 = r1 - 8, qy0 = rt + 10, qc = Math.max(1, Math.floor((qx1 - qx0) / 6)), qr = Math.max(1, Math.floor((H - BOT - qy0) / 6));
+    const qx0 = r0 + 10, qc = Math.max(1, Math.floor((r1 - r0 - 20) / CW)), qy0 = rt + CH, qr = Math.max(1, Math.floor((H - BOT - qy0) / CH));
     const ranked = queue.filter((x) => x).concat(queue.filter((x) => !x)).slice(0, qc * qr);
-    ranked.forEach((bad, i) => { ctx.fillStyle = bad ? colors.risk : colors.hold; ctx.fillRect(qx0 + (i % qc) * 6, qy0 + Math.floor(i / qc) * 6, 4, 4); });
+    ranked.forEach((bad, i) => { ctx.globalAlpha = 1; ctx.fillStyle = bad ? colors.risk : colors.hold; ctx.fillText("■", qx0 + (i % qc) * CW, qy0 + Math.floor(i / qc) * CH); });
+    ctx.globalAlpha = 1;
   }
-  function shape(d, x, y, r) {
-    if (d.bad) { ctx.beginPath(); ctx.moveTo(x, y - r - 1); ctx.lineTo(x + r + 1, y); ctx.lineTo(x, y + r + 1); ctx.lineTo(x - r - 1, y); ctx.closePath(); ctx.fill(); }
-    else { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); }
+  function shape(d, color, a) {
+    glyph(d.phase === 2 ? (d.k === "dup" ? "·" : "x") : d.bad ? "◆" : "o", d.x, d.y, color, a);
   }
   const toward = (d, k) => { const dx = d.tx - d.x, dy = d.ty - d.y, dist = Math.hypot(dx, dy), step = d.v * 16 * (W / 700) * k; if (dist <= step) { d.x = d.tx; d.y = d.ty; return true; } d.x += (dx / dist) * step; d.y += (dy / dist) * step; return false; };
   function review(now) {
@@ -790,9 +787,7 @@ function heroSetup() {
       }
       const decided = d.phase >= 1 && !(d.k === "risk" && d.phase === 1);
       const c = d.phase <= 0 ? (d.bad ? colors.text2 : colors.dot) : !decided ? colors.text2 : d.k === "allow" ? colors.allow : d.k === "hold" ? colors.hold : d.k === "risk" ? colors.risk : d.k === "dup" ? colors.lineStrong : colors.refuse;
-      ctx.fillStyle = d.phase === 2 ? (d.k === "dup" ? colors.lineStrong : colors.refuse) : c;
-      ctx.globalAlpha = d.phase === 2 ? Math.max(0, d.fade) : d.phase === -1 ? 0.75 : d.k === "allow" && decided ? 0.7 : 0.95;
-      shape(d, d.x, d.y, d.bad ? 2.6 : 2);
+      shape(d, d.phase === 2 ? (d.k === "dup" ? colors.lineStrong : colors.refuse) : c, d.phase === 2 ? Math.max(0, d.fade) : d.phase === -1 ? 0.75 : d.k === "allow" && decided ? 0.75 : 1);
       next.push(d);
     }
     dots = next;
@@ -800,11 +795,10 @@ function heroSetup() {
     for (const r of out) {
       if (r.kind === "reject") {
         r.fade -= 0.03; if (r.fade <= 0) continue;
-        ctx.globalAlpha = r.fade; ctx.strokeStyle = colors.refuse; ctx.lineWidth = 1.6;
-        ctx.beginPath(); ctx.moveTo(r.x - 4, r.y - 4 - (1 - r.fade) * 10); ctx.lineTo(r.x + 4, r.y + 4 - (1 - r.fade) * 10); ctx.moveTo(r.x + 4, r.y - 4 - (1 - r.fade) * 10); ctx.lineTo(r.x - 4, r.y + 4 - (1 - r.fade) * 10); ctx.stroke();
+        glyph("✕", r.x, r.y - (1 - r.fade) * 16, colors.refuse, r.fade);
       } else {
         if (toward(r, 1)) { ledger += 1; continue; }
-        ctx.globalAlpha = 1; ctx.fillStyle = colors.allow; ctx.beginPath(); ctx.arc(r.x, r.y, 2.4, 0, 6.2832); ctx.fill();
+        glyph("o", r.x, r.y, colors.allow, 1);
       }
       keep.push(r);
     }
@@ -826,6 +820,35 @@ function heroSetup() {
   });
   new IntersectionObserver((es) => { hero.visible = es[0].isIntersecting; }).observe(cv);
   document.addEventListener("visibilitychange", () => { hero.visible = !document.hidden; });
+}
+
+/* ---------------------------------------------------------------- decision tape: real recorded decisions, streamed */
+function tapeSetup() {
+  const log = $("#tape-log"), btn = $("#tape-pause");
+  if (!log || !D.tape) return;
+  const rows = D.tape.rows, keep = 16;
+  let i = 0, paused = false, visible = false, timer = 0;
+  const line = (r) => el("li", { cls: r.layer === "risk model" ? "risk" : "" }, [
+    el("span", { cls: "t", text: r.t }), el("span", { cls: "ag", text: r.agent }), el("span", { cls: "what", text: r.what }),
+    el("span", { cls: "px", text: r.tp }), el("span", { cls: "v " + r.v, text: r.v }), el("span", { cls: "ly", text: r.layer }), el("span", { cls: "why", text: r.why, title: r.why })]);
+  function push() {
+    log.append(line(rows[i % rows.length])); i += 1;
+    while (log.children.length > keep) log.firstElementChild.remove();
+  }
+  for (let k = 0; k < keep - 4; k++) push();
+  function tick() {
+    if (!paused && visible && !document.hidden) push();
+    timer = setTimeout(tick, 700);
+  }
+  if (reduce.matches) { btn.hidden = true; return; }
+  new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(log);
+  log.addEventListener("mouseenter", () => { paused = true; });
+  log.addEventListener("mouseleave", () => { paused = btn.getAttribute("aria-pressed") === "true"; });
+  btn.addEventListener("click", () => {
+    const p = btn.getAttribute("aria-pressed") !== "true";
+    btn.setAttribute("aria-pressed", String(p)); btn.textContent = p ? "Play" : "Pause"; paused = p;
+  });
+  tick();
 }
 
 /* ---------------------------------------------------------------- film chapters */
@@ -880,6 +903,7 @@ async function boot() {
   theme();
   drawAll();
   heroSetup();
+  tapeSetup();
   film();
   new IntersectionObserver((es) => { pipeVisible = es[0].isIntersecting; }, { threshold: 0.3 }).observe($("#pipe"));
   requestAnimationFrame(pipeTick);

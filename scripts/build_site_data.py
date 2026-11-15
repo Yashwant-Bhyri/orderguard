@@ -751,6 +751,124 @@ def lab(r: Reader) -> dict:
             "honest": {"value": pv["home honest"], "text": h[0], "bare": h[1], "src": "results/sweeps/20261110T230155.jsonl"}}
 
 
+
+# ---------------------------------------------------------------------------------------------------------------- launch: tape, models, failures
+TAPE_REASON = {
+    "daily": ("REFUSE", "shared budget", "the envelope's daily budget is spent: every agent on it now has less room"),
+    "band": ("REFUSE", "mandate", "limit price outside the signed band around the trusted price"),
+    "ticker": ("REFUSE", "mandate", "symbol not in the signed mandate, or a look-alike ticker"),
+    "per_order": ("REFUSE", "mandate", "over the per-order cap once sized at the trusted price"),
+    "money": ("REFUSE", "mandate", "a transfer, not an order: moving money is outside every mandate"),
+    "l7": ("HOLD", "sources", "acts on news no second independent source confirms"),
+    "stepup": ("HOLD", "sign-off", "above the size the owner signs off in person"),
+}
+RISK_REASON = {
+    "collusion": "one position split across agents into slices just under the cap",
+    "runaway": "a runaway loop: the same small order, again and again",
+    "compromised": "sizes jumped to the top of the envelope, unlike this agent",
+    "fat_finger": "size far outside this agent's own history",
+    "stale_price": "limit priced off a stale quote",
+}
+
+
+def tape(r: Reader) -> dict:
+    """A deterministic sample of real decisions from the recorded run, for the scrolling decision tape: the order, the gate's verdict and
+    the risk layer's, with the reason in words."""
+    tl = r.json("results/theater/timeline.json")
+    raw = base64.b64decode(tl["events"])
+    states = [tl["states"][struct.unpack_from("<H", raw, 2 * i)[0] >> 10] for i in range(len(raw) // 2)]
+    reasons = {it["row"]: it["model_reason"] for it in tl["queue"]["items"]}
+    spd = tl["run"]["steps_per_day"]
+    rows, i = [], 0
+    with r.path("results/arena/arena-s7-k1000-t2000.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("type") == "meta":
+                continue
+            row["_state"] = states[i]
+            i += 1
+            rows.append(row)
+    picks, seen = [], {}
+    quota = {"allow": 130, "refuse": 90, "hold": 40, "risk": 70}
+    for n, row in enumerate(rows):
+        st = row["_state"]
+        kind = "risk" if st in ("stopped_by_risk", "honest_tightened") else "allow" if row["d"] == "allow" and st != "duplicate" else row["d"] if st != "duplicate" else None
+        if kind is None:
+            continue
+        seen[kind] = seen.get(kind, 0) + 1
+        total = {"allow": 17828, "refuse": 1777, "hold": 230, "risk": 566}[kind]
+        if (seen[kind] * quota[kind]) // total != ((seen[kind] - 1) * quota[kind]) // total:
+            picks.append((n, kind, row))
+    out = []
+    for n, kind, row in picks:
+        o = row["order"]
+        step = row["step"]
+        mins = int((step % spd) * 390 / spd)
+        clock = f"D{step // spd + 1} {9 + (30 + mins) // 60:02d}:{(30 + mins) % 60:02d}"
+        if o.get("type") == "transfer":
+            what = f"TRANSFER {usd(o['amount_usd'])} to {o['destination_account']}"
+        else:
+            what = f"{o['side'].upper()} {num(o['quantity'])} {o['ticker']} @ {o['limit_price']:,.2f}"
+        if kind == "allow":
+            v, layer, why = "ALLOW", "mandate", "inside the signed mandate at the trusted price"
+        elif kind == "risk":
+            v, layer = "HOLD", "risk model"
+            fam = next((k for k in RISK_REASON if row["label"].startswith(k.split("_")[0])), None)
+            why = reasons.get(n) or (RISK_REASON[fam] if fam else "unusual for this agent and this swarm")
+            why = why.split(":")[0] if len(why) > 110 else why
+        else:
+            v, layer, why = TAPE_REASON[row["code"]]
+        tp = row.get("tp")
+        out.append({"t": clock, "agent": f"agent-{row['agent']:04d}", "what": what, "tp": f"{tp:,.2f}" if isinstance(tp, (int, float)) else "",
+                    "v": v, "layer": layer, "why": why})
+    return {"src": "results/arena/arena-s7-k1000-t2000.jsonl", "rows": out}
+
+
+def models(r: Reader) -> dict:
+    """The models we trained, read from their committed artifacts, and the advisory decision model's measured results."""
+    orisk = r.json("data/models/order_risk.json")
+    mrisk = r.json("data/models/mandate_risk.json")
+    clf = r.json("data/models/injection_clf.json")
+    cop = r.json("results/review/copilot.json")
+    scope = r.json("results/review/scope.json")
+    m = orisk["metrics_held_out_seeds"]
+    risk_doc = r.text("docs/RISK.md")
+    runs = int(re.search(r"runs the arena engine (\d+) times", risk_doc).group(1))
+    trees = int(re.search(r"(\d+) monotone trees", risk_doc).group(1))
+    clf_all = clf["metrics"]["held_out"]["methods"]["v1_single"]["all"]
+    mr = "data/models/mandate_risk.json"
+    return {
+        "risk": {
+            "file": "data/models/order_risk.json",
+            "corpus": fact(orisk["training"]["corpus_rows"], num(orisk["training"]["corpus_rows"]), "data/models/order_risk.json", "/training/corpus_rows"),
+            "runs": fact(runs, num(runs), "docs/RISK.md"),
+            "trees": fact(trees, num(trees), "docs/RISK.md"),
+            "features": fact(len(orisk["feature_names"]), num(len(orisk["feature_names"])), "data/models/order_risk.json", "/feature_names"),
+            "usd_recall": fact(m["usd_recall"], pct(m["usd_recall"], 2), "data/models/order_risk.json", "/metrics_held_out_seeds/usd_recall"),
+            "honest_hold": fact(m["honest_hold_rate"], pct(m["honest_hold_rate"], 2), "data/models/order_risk.json", "/metrics_held_out_seeds/honest_hold_rate"),
+            "collusion": fact(m["by_family"]["collusion"], pct(m["by_family"]["collusion"], 0), "data/models/order_risk.json", "/metrics_held_out_seeds/by_family/collusion"),
+            "runaway": fact(m["by_family"]["runaway"], pct(m["by_family"]["runaway"], 0), "data/models/order_risk.json", "/metrics_held_out_seeds/by_family/runaway"),
+        },
+        "mandate": {
+            "file": mr,
+            "coverage": fact(mrisk["coverage_target"], pct(mrisk["coverage_target"], 0), mr, "/coverage_target"),
+            "outcomes": fact(len(mrisk["metrics"]), num(len(mrisk["metrics"])), mr, "/metrics"),
+        },
+        "screen": {
+            "file": "data/models/injection_clf.json",
+            "chunks": fact(clf_all["n_attack"] + clf_all["n_clean"], num(clf_all["n_attack"] + clf_all["n_clean"]), "data/models/injection_clf.json", "/metrics/held_out"),
+            "auc": fact(clf_all["auc"], f"{clf_all['auc']:.2f}", "data/models/injection_clf.json", "/metrics/held_out/methods/v1_single/all/auc"),
+        },
+        "decision": {
+            "drafts_auc": fact(cop["auc"], f"{cop['auc']:.3f}", "results/review/copilot.json", "/auc"),
+            "drafts_heldout": fact(cop["calibration"]["heldout_recall_on_inappropriate"], pct(cop["calibration"]["heldout_recall_on_inappropriate"], 0),
+                                   "results/review/copilot.json", "/calibration/heldout_recall_on_inappropriate"),
+            "scope_auc": fact(scope["auc"], f"{scope['auc']:.2f}", "results/review/scope.json", "/auc"),
+            "scope_held": fact(scope["hold_rate_on_mismatching"], pct(scope["hold_rate_on_mismatching"], 0), "results/review/scope.json", "/hold_rate_on_mismatching"),
+            "scope_false": fact(scope["hold_rate_on_matching"], pct(scope["hold_rate_on_matching"], 0), "results/review/scope.json", "/hold_rate_on_matching"),
+        },
+    }
+
 # ---------------------------------------------------------------------------------------------------------------- the theater copy
 THEATER_FILES = ("theme.js", "app.css", "theater.css", "ui.js", "theater.js")
 
@@ -824,6 +942,8 @@ def build() -> tuple[dict, dict[str, bytes]]:
         "swarm_results": swarm_results(r),
         "review": review(r),
         "lab": lab(r),
+        "tape": tape(r),
+        "models": models(r),
     }
     theater = theater_files(r)
     doc["inputs"] = [{"path": p, "sha256": h} for p, h in sorted(r.used.items())]
