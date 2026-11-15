@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OrderGuard: a pre-trade guard for AI trading agents</title>
-<meta name="description" content="A thousand AI agents. One signed mandate. Nothing outside it reaches the market. A signed mandate checked in code at trusted prices, a risk layer that can only tighten, and a human review lane. Every number on this page is rebuilt from committed results.">
+<title>OrderGuard · Pre-trade risk control for AI trading agents</title>
+<meta name="description" content="Every order passed. The swarm didn't. OrderGuard is pre-trade risk control for AI trading agents: signed limits enforced in code on every order, and a risk model that stops what agents do together before it reaches the market.">
 <meta name="color-scheme" content="light dark">
 <meta name="og-repo" content="">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z' fill='%233355E6'/%3E%3Cpath d='m6.8 10 2.4 2.4L13.4 8' fill='none' stroke='white' stroke-width='1.8'/%3E%3C/svg%3E">
@@ -21,401 +21,308 @@
       <span>OrderGuard</span>
     </a>
     <nav class="nav" aria-label="Sections">
-      <a href="#problem">Why</a>
-      <a href="#models">Models</a>
+      <a href="#compare">Why</a>
       <a href="#how">How it works</a>
-      <a href="#connect">Connect</a>
-      <a href="#proof">Proof</a>
-      <a href="#desks">For desks</a>
+      <a href="#models">Models</a>
+      <a href="#start">Developers</a>
+      <a href="#film">Film</a>
     </nav>
     <span class="grow"></span>
-    <a class="bar-link" data-repo-link href="#">Source</a>
+    <a class="bar-link" data-repo-link href="#">GitHub</a>
     <button type="button" class="theme" id="theme" aria-label="Colour theme: follow the system. Activate to change.">
       <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>
       <span id="theme-label">System</span>
     </button>
+    <a class="btn primary sm" href="#start">Get started</a>
   </div>
 </header>
 
 <main id="main" tabindex="-1">
 
 <!-- ===================================================================== hero -->
-<section class="hero term" aria-labelledby="h-hero">
+<section class="hero" aria-labelledby="h-hero">
   <div class="wrap">
-    <pre class="wordmark" aria-hidden="true"> ██████╗ ██████╗ ██████╗ ███████╗██████╗  ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗
-██╔═══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗
-██║   ██║██████╔╝██║  ██║█████╗  ██████╔╝██║  ███╗██║   ██║███████║██████╔╝██║  ██║
-██║   ██║██╔══██╗██║  ██║██╔══╝  ██╔══██╗██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║
-╚██████╔╝██║  ██║██████╔╝███████╗██║  ██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝
- ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝</pre>
-    <p class="kicker"><span class="prompt">$</span> pre-trade authority for AI trading agents<span class="caret" aria-hidden="true"></span></p>
     <div class="hero-copy">
-      <h1 id="h-hero" data-check="readme.promise">A thousand AI agents. One signed mandate. Nothing outside it reaches the market</h1>
-      <div class="hero-side">
-        <p class="lead" data-t="readme.intro"></p>
-        <p class="ctas">
-          <a class="btn primary" href="theater/">Watch a swarm get caught</a>
-          <a class="btn" href="#watch">See the film</a>
-        </p>
-      </div>
+      <p class="eyebrow">Pre-trade risk control for AI trading agents</p>
+      <h1 id="h-hero" data-check="readme.promise">Every order passed. The swarm didn't.</h1>
+      <p class="lead">OrderGuard sits between your AI agents and your broker. Every order is checked against limits you signed, and a risk model watches what the agents are doing together, so a coordinated mistake is stopped before it reaches the market.</p>
+      <p class="ctas">
+        <a class="btn primary" href="#start">Get started</a>
+        <a class="btn" href="theater/">Watch the full replay <span aria-hidden="true">→</span></a>
+      </p>
     </div>
-    <figure class="stage" aria-labelledby="stage-cap">
-      <div class="stage-frame">
-        <canvas id="swarm" role="img" aria-label="Animated replay of the recorded run, left to right: market prices move and shake, agents read them and propose orders, the signed mandate check refuses some in code, the risk model turns more into holds, held orders queue for a person with the riskiest first, and approved orders reach the ledger."></canvas>
+
+    <figure class="console" aria-labelledby="console-cap">
+      <div class="c-top">
+        <span class="c-brand"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="currentColor"/></svg>OrderGuard</span>
+        <span class="c-crumb">Book <b data-t="console.envelope.name"></b></span>
+        <span class="grow"></span>
+        <span class="c-live"><i></i>Replay</span>
+        <span class="c-clock" id="c-clock"></span>
       </div>
-      <p class="stage-legend" aria-hidden="true"><span class="g">o</span>order <span class="g bad">◆</span>bad order <span class="g allow">o</span>allowed <span class="g refuse">x</span>refused <span class="g risk">◆</span>stopped by the risk model <span class="g hold">■</span>held for a person</p>
-      <dl class="meters" id="meters" aria-live="off">
-        <div><dt>Simulated day</dt><dd><span id="m-day"></span><span class="of" id="m-days"></span></dd></div>
-        <div><dt>Orders decided</dt><dd id="m-orders"></dd></div>
-        <div><dt>Bad dollars that reached the guard</dt><dd id="m-bad"></dd></div>
-        <div><dt>Let through after every layer</dt><dd class="good" id="m-leak"></dd></div>
-      </dl>
-      <ul class="stage-envs" id="stage-envs" aria-label="The signed envelopes in this run"></ul>
-      <figcaption id="stage-cap">
-        <span data-t="swarm.caption"></span>
-        <a class="src" data-src="swarm.src"></a>
-        <button type="button" class="link" id="stage-pause" aria-pressed="false">Pause</button>
-      </figcaption>
+      <ul class="c-strip" id="c-strip" aria-label="Market"></ul>
+      <div class="c-body">
+        <div class="c-main">
+          <div class="c-chart-head"><b data-t="console.sym"></b><span class="c-px" id="c-px"></span><span class="grow"></span><span class="c-key"><i class="k allowed"></i>allowed <i class="k stopped"></i>stopped by risk model <i class="k refused"></i>refused</span></div>
+          <canvas id="c-chart" role="img" aria-label="Price of the symbol over the replay window, with each agent order marked where it was placed and coloured by its verdict."></canvas>
+          <div class="c-swarm">
+            <div class="c-swarm-head"><span>Near-limit <b data-t="console.sym"></b> buying across all agents, rolling window</span><span class="c-swarm-v"><b id="c-comb"></b> from <b id="c-ags"></b> agents</span></div>
+            <div class="c-bar"><span id="c-fill"></span><i class="c-mark" id="c-mark"></i></div>
+            <div class="c-swarm-foot"><span>Every one of these orders is under the <b data-t="console.envelope.per_order"></b> per-order limit and the <b data-t="console.envelope.step_up"></b> approval threshold</span><span>Daily budget <b data-t="console.envelope.daily"></b></span></div>
+          </div>
+        </div>
+        <aside class="c-side" aria-label="Decisions">
+          <p class="c-side-head">Decisions</p>
+          <ol class="c-feed" id="c-feed"></ol>
+          <div class="c-alert" id="c-alert" hidden>
+            <p class="c-alert-k"><span class="pill stopped">Stopped</span> Risk model · <b data-t="console.focus.risk"></b></p>
+            <p class="c-alert-t" data-t="console.title"></p>
+            <p class="c-alert-d" data-t="console.focus.rule"></p>
+            <ul class="c-checks" id="c-checks" aria-label="Every mandate check passed"></ul>
+          </div>
+        </aside>
+      </div>
+      <figcaption id="console-cap">Replay of a recorded run of a thousand agents on a simulated market. Every order, price and verdict is from the recording. <a class="src" data-src="console.src"></a> <button type="button" class="link" id="c-pause" aria-pressed="false">Pause</button></figcaption>
     </figure>
   </div>
 </section>
 
-<!-- ===================================================================== tape -->
-<section class="sec tape-sec" id="tape" aria-labelledby="h-tape">
+<!-- ===================================================================== outcomes -->
+<section class="outcomes" aria-label="Outcomes">
   <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-tape">Every decision, in words</h2>
-      <p>Real decisions from the recorded run, as they happened: the order, the price OrderGuard trusted, the verdict, the layer that made it and why. No decision is a black box, including the ones the model makes.</p>
-    </header>
-    <div class="term tape" id="tape-box">
-      <div class="tape-bar" aria-hidden="true"><span class="dots"><i></i><i></i><i></i></span><span class="tape-title">orderguard decisions --follow</span><button type="button" class="link" id="tape-pause" aria-pressed="false">Pause</button></div>
-      <ol class="tape-log" id="tape-log" aria-label="Recent decisions from the recorded run"></ol>
-    </div>
-    <p class="src-line">Source: <a class="src" data-src="tape.src"></a></p>
+    <dl class="o-grid">
+      <div><dt>in harmful orders that passed every per-order limit, stopped before reaching the market</dt><dd data-f="swarm.facts.fit_mandate"></dd></div>
+      <div><dt>of harmful order value stopped, on agent swarms the model had never seen</dt><dd data-f="models.risk.usd_recall"></dd></div>
+      <div><dt>of legitimate orders sent to a person for review</dt><dd data-f="swarm.facts.honest_tightened"></dd></div>
+      <div><dt>fewer reviews needed to catch nine in ten harmful dollars</dt><dd data-f="review.facts.saved"></dd></div>
+    </dl>
   </div>
 </section>
 
-<!-- ===================================================================== watch -->
-<section class="sec watch alt" id="watch" aria-labelledby="h-watch">
+<!-- ===================================================================== compare -->
+<section class="sec" id="compare" aria-labelledby="h-compare">
   <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-watch">The film, in five chapters</h2>
-      <p>Cut from the launch film. Each chapter stands on its own, with captions on screen. Pick one, or let them play in order.</p>
+    <header class="sec-head center">
+      <p class="eyebrow">Full trading scope, or OrderGuard in the middle</p>
+      <h2 id="h-compare">The same agents, with and without OrderGuard</h2>
+      <p>We gave the same agents full trading access, then ran them again behind OrderGuard: fed poisoned web pages, colluding with each other, crowding into the same trade. This is what reached the market each time.</p>
     </header>
-    <div class="watch-grid">
-      <div class="player">
-        <video id="film" controls playsinline preload="none" poster="media/og-problem.jpg" src="media/og-problem.mp4" aria-describedby="film-now"></video>
-        <p class="film-now" id="film-now" aria-live="polite">The problem</p>
-      </div>
-      <ol class="chapters" id="chapters">
-        <li><button type="button" data-clip="problem" aria-current="true"><span class="ch-t">The problem</span><span class="ch-d">An agent reads one planted line, and the damage spreads through the portfolio</span></button></li>
-        <li><button type="button" data-clip="what"><span class="ch-t">What OrderGuard is</span><span class="ch-d">Not a box asking you to confirm every order</span></button></li>
-        <li><button type="button" data-clip="fits"><span class="ch-t">How it fits together</span><span class="ch-d">Beside your agent, plain code at the core, and the agent never holds the key</span></button></li>
-        <li><button type="button" data-clip="order"><span class="ch-t">One order, slowed down</span><span class="ch-d">Every check from proposal to ledger, and a lie stopped at the front door</span></button></li>
-        <li><button type="button" data-clip="attack"><span class="ch-t">Attacked before it is trusted</span><span class="ch-d">The account is forked and attacked with simulated futures</span></button></li>
-      </ol>
+    <div class="flow" aria-hidden="true">
+      <span class="f-node">Your agents<small>any model, chat assistant or research swarm</small></span>
+      <span class="f-arrow"></span>
+      <span class="f-node og"><svg viewBox="0 0 20 20"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="currentColor"/></svg>OrderGuard<small>checks every order before it leaves</small></span>
+      <span class="f-arrow"></span>
+      <span class="f-node">Your broker<small>or exchange, with every fill on the ledger</small></span>
     </div>
-  </div>
-</section>
-
-<!-- ===================================================================== breaks -->
-<section class="sec" id="problem" aria-labelledby="h-problem">
-  <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-problem">Six questions agent trading can't answer yet</h2>
-      <p>Every desk putting AI agents near money will be asked these. Today most stacks answer them with a prompt. OrderGuard answers them in code, with a model trained for the job, and with a record you can replay.</p>
-    </header>
-    <ol class="breaks">
-      <li class="brk">
-        <p class="brk-q">A thousand agents read the same market. Does any of them know what the other nine hundred and ninety-nine just did?</p>
-        <p class="brk-a">They share one signed budget, reserved atomically before any order commits, so when one agent spends risk every other agent has less room that same instant. A risk model trained on swarms scores every order against what the whole swarm is doing.</p>
-        <p class="brk-s"><b data-f="swarm.facts.fit_mandate"></b> of bad orders fit every per-order limit in the recorded run. <b data-f="swarm.facts.leak_after"></b> got through.</p>
-        <a class="src" data-src="swarm.facts.fit_mandate"></a>
-      </li>
-      <li class="brk">
-        <p class="brk-q">Whose price is the agent using?</p>
-        <p class="brk-a">Its own, usually, and agents hallucinate prices and get fed forged ones. OrderGuard sizes every order at a trusted market price, never the one in the order, so a fooled agent's arithmetic can't move money.</p>
-        <p class="brk-s">A forged split notice produced an order at <b data-t="split.ratio"></b> the cap. Refused in code.</p>
-        <a class="src" data-src="split.src"></a>
-      </li>
-      <li class="brk">
-        <p class="brk-q">Did that headline really happen?</p>
-        <p class="brk-a">Agents pull from the open web. Text is screened before they read it, figures an order cites are checked against SEC filings, and an order that acts on news needs two independent sources first.</p>
-        <p class="brk-s"><b data-f="swarm.facts.fake_news_orders"></b> orders acted on unconfirmed news, worth <b data-f="swarm.facts.fake_news_usd"></b>. All held.</p>
-        <a class="src" data-src="swarm.facts.fake_news_orders"></a>
-      </li>
-      <li class="brk">
-        <p class="brk-q">Is the agent doing what it said it would?</p>
-        <p class="brk-a">Agents don't know when they've drifted. A calibrated decision model reads the agent's stated intent next to the order it produced and holds the ones that don't match. It returns probabilities, not prose.</p>
-        <p class="brk-s"><b data-f="models.decision.scope_held"></b> of mismatched orders held, <b data-f="models.decision.scope_false"></b> of matching ones.</p>
-        <a class="src" data-src="models.decision.scope_held"></a>
-      </li>
-      <li class="brk">
-        <p class="brk-q">Who checks the mandate before someone signs it?</p>
-        <p class="brk-a">People mistype limits, and agents drafting mandates do worse. Code proves a draft fits inside the signed parent. The decision model flags drafts that are too broad or wrong for their purpose, and a forecaster shows what the draft would let through before anyone signs.</p>
-        <p class="brk-s"><b data-f="models.decision.drafts_heldout"></b> of bad drafts flagged on held-out cases.</p>
-        <a class="src" data-src="models.decision.drafts_heldout"></a>
-      </li>
-      <li class="brk">
-        <p class="brk-q">What happens when the market moves against all of them at once?</p>
-        <p class="brk-a">Agents pile into the same names and their own fills move the price. OrderGuard was run inside an impact-aware market where shocks spread across symbols, with every order still decided by the real authority.</p>
-        <p class="brk-s"><b data-f="sim.facts.ring_unguarded"></b> of executed bad flow from a collusion ring became <b data-f="sim.facts.ring_full"></b>.</p>
-        <a class="src" data-src="sim.facts.ring_unguarded"></a>
-      </li>
-    </ol>
-
-    <div class="sub-head">
-      <h3>One failure, up close</h3>
-      <p>Agents act on what they read. Here is one forged notice, the order it produced, and what that order is really worth.</p>
-    </div>
-    <ol class="story">
-      <li class="story-card">
-        <p class="story-step">What the agent read</p>
-        <blockquote class="feed"><span class="feed-tag">News feed</span><span data-t="split.notice"></span></blockquote>
-      </li>
-      <li class="story-card">
-        <p class="story-step">What the agent proposed</p>
-        <p class="order-line"><span class="mono" data-t="split.order_text"></span></p>
-        <p class="calc"><span data-t="split.claimed_calc"></span></p>
-        <p class="calc-note">By its own numbers, the order fits under the <b data-t="split.cap"></b> per-order cap.</p>
-      </li>
-      <li class="story-card refused">
-        <p class="story-step">What OrderGuard trusts</p>
-        <p class="calc big"><span data-t="split.trusted_calc"></span></p>
-        <p class="verdict"><span class="vmark" aria-hidden="true">✕</span><span>Refused by <span data-t="split.decided_by"></span>, at <b data-t="split.ratio"></b> the cap</span></p>
-        <ul class="reasons" id="split-reasons"></ul>
-      </li>
-    </ol>
-    <figure class="chart" id="c-split"></figure>
-  </div>
-</section>
-
-<!-- ===================================================================== models -->
-<section class="sec alt" id="models" aria-labelledby="h-models">
-  <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-models">Trained here. Weights in the repo</h2>
-      <p>OrderGuard ships its own models, trained on financial-agent decision data: hundreds of thousands of labelled orders from simulated swarms of honest, colluding, runaway and compromised agents. Every artifact is a plain file you can open, hash and replay. No model can approve an order; every one of them can make a decision stricter.</p>
-    </header>
-    <div class="mcards">
-      <article class="mcard lead-card">
-        <p class="m-kind">swarm risk model</p>
-        <h3>Sees the swarm, not just the order</h3>
-        <p><b data-f="models.risk.trees"></b> monotone gradient-boosted trees over <b data-f="models.risk.features"></b> behaviour features, plus hand-written signals for mandate semantics, combined so any one of them can raise the risk. Trained on <b data-f="models.risk.corpus"></b> labelled agent orders from <b data-f="models.risk.runs"></b> simulated swarms.</p>
-        <dl class="m-stats">
-          <div><dt>bad dollars stopped, unseen swarms</dt><dd data-f="models.risk.usd_recall"></dd></div>
-          <div><dt>honest orders held</dt><dd data-f="models.risk.honest_hold"></dd></div>
-          <div><dt>collusion caught</dt><dd data-f="models.risk.collusion"></dd></div>
-          <div><dt>runaway loops caught</dt><dd data-f="models.risk.runaway"></dd></div>
-        </dl>
-        <p class="m-file"><a data-doc="data/models/order_risk.json">order_risk.json</a> · <a data-doc="docs/RISK.md">model card</a></p>
-      </article>
-      <article class="mcard">
-        <p class="m-kind">calibrated decision model</p>
-        <h3>Judges intent, ranks the queue</h3>
-        <p>Typed questions in, calibrated probabilities out. It reads an agent's stated intent against its order, flags mandate drafts that don't fit their purpose, and ranks held orders by expected bad dollars. Advisory by construction: it can add a hold, never release one.</p>
-        <dl class="m-stats">
-          <div><dt>bad drafts flagged, held out</dt><dd data-f="models.decision.drafts_heldout"></dd></div>
-          <div><dt>intent mismatch, AUC</dt><dd data-f="models.decision.scope_auc"></dd></div>
-        </dl>
-        <p class="m-file"><a data-doc="docs/REVIEW.md">review lane</a></p>
-      </article>
-      <article class="mcard">
-        <p class="m-kind">mandate forecaster</p>
-        <h3>Shows what a mandate allows before it's signed</h3>
-        <p>Forecasts <b data-f="models.mandate.outcomes"></b> outcomes for a draft (bad dollars let through, honest flow, false refusals, holds per day) with calibrated <b data-f="models.mandate.coverage"></b> intervals.</p>
-        <p class="m-file"><a data-doc="data/models/mandate_risk.json">mandate_risk.json</a> · <a data-doc="docs/ARENA.md">envelope lab</a></p>
-      </article>
-      <article class="mcard">
-        <p class="m-kind">input screen</p>
-        <h3>Reads before the agent does</h3>
-        <p>An offline, explainable classifier for injected and manipulative text, trained on <b data-f="models.screen.chunks"></b> labelled chunks, AUC <b data-f="models.screen.auc"></b> held out. Pure Python at runtime, no pickle.</p>
-        <p class="m-file"><a data-doc="data/models/injection_clf.json">injection_clf.json</a> · <a data-doc="docs/CLASSIFIER.md">model card</a></p>
-      </article>
+    <div class="cmp" id="cmp">
+      <div class="cmp-head" aria-hidden="true"><span></span><span class="w-o">Full trading scope</span><span class="w-g">With OrderGuard</span><span></span></div>
     </div>
   </div>
 </section>
 
 <!-- ===================================================================== how -->
-<section class="sec" id="how" aria-labelledby="h-how">
+<section class="sec alt" id="how" aria-labelledby="h-how">
   <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-how">Eight layers. Only code says yes</h2>
-      <p>Models read text, score behaviour and rank the queue. Whether an order reaches the ledger is decided by a signed mandate, a trusted price and plain code, in that order.</p>
+    <header class="sec-head center">
+      <p class="eyebrow">How it works</p>
+      <h2 id="h-how">How OrderGuard decides every order</h2>
+      <p>Your limits are enforced in code, so no model can approve an order. Models can only make a decision stricter.</p>
     </header>
-    <figure class="pipe" id="pipe" aria-labelledby="pipe-cap">
-      <svg id="pipe-svg" role="img" aria-labelledby="pipe-t pipe-d"><title id="pipe-t">The order path</title><desc id="pipe-d">An order passes the signed mandate check at a trusted price, then a risk model that can only tighten, then a human review lane for held orders, and finally the receiver writes the ledger.</desc></svg>
-      <p class="pipe-now" id="pipe-now" aria-hidden="true"></p>
-      <figcaption id="pipe-cap" class="sr">Three example orders move along the path: an honest order reaches the ledger, the forged-split order is refused at the mandate check, and a colluding slice that fits the limits is held by the risk model for a person.</figcaption>
-    </figure>
-    <ol class="stations">
-      <li><h3>The owner signs a mandate</h3><p>Symbols, sides, per-order and daily caps, a price band and a sign-off size, signed with the owner's key. Change one character and every order is refused.</p></li>
-      <li><h3>Prices come from venues, not agents</h3><p>Every order is sized at a trusted market price, the median across venues, never at the price the agent claims.</p></li>
-      <li><h3>The mandate check decides</h3><p>Allow, hold or refuse in microseconds, each with reasons in plain words. Shared budgets and portfolio caps stop many agents from splitting one big position.</p></li>
-      <li><h3>The risk model can only tighten</h3><p>It scores every allowed order against the whole swarm. It can turn an allow into a hold or a refusal, never the other way; a property test checks that over thousands of random decisions.</p></li>
-      <li><h3>People review what matters first</h3><p>Held orders queue by expected bad dollars, with the risk model's reasons and the decision model's estimate attached. There is no code path from advice to an approval.</p></li>
-      <li><h3>The receiver writes the ledger</h3><p>The final authority re-checks the signature at commit time, with idempotency, revocation and a hash-chained ledger anyone can replay.</p></li>
+    <ol class="steps">
+      <li class="step">
+        <div class="tile t-mandate">
+          <p class="t-head"><span>Mandate</span><span class="pill allowed">Signed</span></p>
+          <dl class="kv" id="t-mandate"></dl>
+          <p class="t-sym" id="t-syms"></p>
+        </div>
+        <h3>You sign the limits</h3>
+        <p>Choose the symbols, order sizes, daily budget, price band, and the size above which a person has to approve. The mandate is signed with your key, so no agent or model can quietly loosen it.</p>
+      </li>
+      <li class="step">
+        <div class="tile t-check">
+          <p class="t-head"><span class="mono" data-t="console.focus.order"></span><span class="pill allowed">All checks pass</span></p>
+          <ul class="checks" id="t-checks"></ul>
+        </div>
+        <h3>Every order is checked</h3>
+        <p>Each order is valued at a trusted market price, not the price the agent quotes, and checked against your mandate in microseconds.</p>
+      </li>
+      <li class="step">
+        <div class="tile t-risk">
+          <p class="t-head"><span data-t="console.title"></span><span class="pill stopped">Stopped</span></p>
+          <p class="score"><span>Risk</span><b data-t="console.focus.risk"></b></p>
+          <p class="t-why" data-t="console.focus.detail"></p>
+        </div>
+        <h3>The swarm is watched as a whole</h3>
+        <p>A risk model scores each approved order against what every other agent is doing, so it sees one position split across several agents, a loop resending the same order, or an agent that suddenly acts out of character.</p>
+      </li>
+      <li class="step">
+        <div class="tile t-queue">
+          <p class="t-head"><span>Review queue</span><span class="t-sub">by expected loss</span></p>
+          <ol class="queue" id="t-queue"></ol>
+        </div>
+        <h3>Risky orders go to a person</h3>
+        <p>Held orders arrive in a queue ranked by how much money is at stake, with the reasons attached. Your team approves or rejects them, and any incident can be replayed in simulation.</p>
+      </li>
     </ol>
-    <p class="aside-note"><b>Before any of this, what agents read is screened.</b> Hidden characters and look-alike tickers are exposed in code (L1), manipulative text is caught and its repeats quarantined (L2, L3), cited figures are checked against SEC filings (L6), and a "sell if it crashes" rule fires only when two independent sources agree (L7).</p>
   </div>
 </section>
 
-<!-- ===================================================================== connect -->
-<section class="sec alt" id="connect" aria-labelledby="h-connect">
-  <div class="wrap">
+<!-- ===================================================================== catches -->
+<section class="sec" id="catches" aria-labelledby="h-catches">
+  <div class="wrap split">
     <header class="sec-head">
-      <h2 id="h-connect">Let the agent be wrong. Only the right orders come out</h2>
-      <p>OrderGuard is the cushion between any agent and any venue. Plug in a research agent, a chat assistant or a swarm over MCP or HTTP. Let it hallucinate, read poisoned pages and get talked into things. What comes out the other side is grounded, inside the signed mandate and on the record; everything else is held with a reason a person can act on.</p>
+      <p class="eyebrow">What it catches</p>
+      <h2 id="h-catches">Every one of these was tried. None reached the market</h2>
+      <p>Each of these failure patterns was injected into one recorded run of a thousand agents. The count is how many orders it produced.</p>
     </header>
-    <div class="connect-grid">
-      <pre class="term diagram" aria-label="Upstream agents connect over MCP or HTTP to OrderGuard, which screens inputs, checks the mandate, scores risk and queues holds for people; only the receiver writes to the ledger and the venue adapter.">  <span class="d-dim">upstream</span>                     <span class="d-acc">orderguard</span>                         <span class="d-dim">downstream</span>
- ┌──────────────────┐      ┌──────────────────────────────┐      ┌──────────────────┐
- │ research agent   │      │ <span class="d-dim">screen</span>    what agents read   │      │                  │
- │ chat assistant   │─MCP─▶│ <span class="d-acc">mandate</span>   signed, trusted px │      │ receiver         │
- │ agent swarm      │─HTTP▶│ <span class="d-risk">risk</span>      whole-swarm model  │─────▶│ ledger, chained  │
- │ your own loop    │      │ <span class="d-hold">review</span>    ranked, human      │      │ venue adapter    │
- └──────────────────┘      └──────────────┬───────────────┘      └──────────────────┘
-                                          │ <span class="d-refuse">refused · held</span>
-                                          ▼
-                                 reasons in plain words</pre>
-      <div class="bench-claims">
-        <p class="m-kind">the benchmark</p>
-        <h3>A live model agent, fed attacks on purpose</h3>
-        <ul class="ledger">
-          <li><span class="lv" data-t="lab.attacks.value"></span><span class="ll">attack goals reached with OrderGuard in the loop. <span data-t="lab.attacks.bare"></span></span><a class="src" data-src="lab.attacks.src"></a></li>
-          <li><span class="lv" data-t="lab.honest.value"></span><span class="ll">honest tasks still completed. <span data-t="lab.honest.bare"></span></span><a class="src" data-src="lab.honest.src"></a></li>
-          <li><span class="lv" data-f="redteam.facts.hard"></span><span class="ll">hard breaches in <span data-f="redteam.facts.rounds"></span> rounds against adaptive AI attackers that were handed the threat model.</span><a class="src" data-src="redteam.facts.rounds"></a></li>
+    <ul class="fam" id="fam"></ul>
+  </div>
+</section>
+
+<!-- ===================================================================== prompts vs controls -->
+<section class="sec alt" id="prompts" aria-labelledby="h-prompts">
+  <div class="wrap">
+    <header class="sec-head center">
+      <p class="eyebrow">The status quo</p>
+      <h2 id="h-prompts">A prompt is not a risk control</h2>
+    </header>
+    <div class="vs">
+      <div class="vs-col">
+        <p class="vs-k">Today</p>
+        <ul>
+          <li>"Never exceed the position limit," in the system prompt</li>
+          <li>The price the agent read, wherever it read it</li>
+          <li>Per-order checks that pass every slice of a split position</li>
+          <li>A person approving every order, or none</li>
+          <li>Logs you hope explain what happened</li>
         </ul>
-        <p class="caveat">Venues plug in as adapters behind the receiver. This release commits to paper ledgers and has been run on recorded Binance market data. <a data-doc="docs/MCP.md">MCP tools</a> · <a data-doc="docs/API.md">HTTP API</a></p>
+      </div>
+      <div class="vs-col og">
+        <p class="vs-k">With OrderGuard</p>
+        <ul>
+          <li>Limits a person signed, enforced in code on every order</li>
+          <li>A trusted market price, checked across venues</li>
+          <li>A risk model that sees the whole swarm at once</li>
+          <li>People review only what the model ranks as risky</li>
+          <li>A hash-chained ledger every decision can be replayed from</li>
+        </ul>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ===================================================================== proof -->
+<!-- ===================================================================== models -->
+<section class="sec" id="models" aria-labelledby="h-models">
+  <div class="wrap">
+    <header class="sec-head center">
+      <p class="eyebrow">Under the hood</p>
+      <h2 id="h-models">Models built for agent risk</h2>
+      <p>Each one can make a decision stricter. None of them can approve an order.</p>
+    </header>
+    <div class="mgrid">
+      <article class="mcard">
+        <p class="m-kind">Swarm risk model</p>
+        <p class="m-big" data-f="models.risk.usd_recall"></p>
+        <p class="m-cap">of bad dollars stopped on swarms it never trained on, holding <b data-f="models.risk.honest_hold"></b> of honest orders</p>
+        <p class="m-txt">Gradient-boosted trees that read the behaviour of the whole swarm, trained on <b data-f="models.risk.corpus"></b> labelled agent orders from simulated swarms of honest, colluding, runaway and compromised agents.</p>
+        <a class="m-link" data-doc="data/models/order_risk.json">Model weights</a>
+      </article>
+      <article class="mcard">
+        <p class="m-kind">Decision adapter</p>
+        <p class="m-big" data-f="models.decision.drafts_heldout"></p>
+        <p class="m-cap">of unsafe mandate drafts flagged on held-out cases</p>
+        <p class="m-txt">Post-trained on an underlying decision model. It answers specific questions with calibrated probabilities: does this order match what the agent said it would do, does this mandate suit its stated purpose, and how urgently should a person look at this hold.</p>
+        <a class="m-link" data-doc="docs/REVIEW.md">How it is used</a>
+      </article>
+      <article class="mcard">
+        <p class="m-kind">Input screen</p>
+        <p class="m-big" data-f="models.screen.auc"></p>
+        <p class="m-cap">accuracy score (AUC) on text it was not trained on, running offline</p>
+        <p class="m-txt">Reads every web page, news feed and filing before the agent does, and removes hidden instructions, look-alike tickers and manipulative text. Figures an order relies on are checked against company filings.</p>
+        <a class="m-link" data-doc="data/models/injection_clf.json">Model weights</a>
+      </article>
+    </div>
+    <p class="m-scale">Stress-tested on <b data-f="sim.facts.million_orders_total"></b> orders from simulations of up to <b data-f="sim.facts.million_agents"></b> agents, and against adaptive AI attackers given the full threat model: <b data-f="redteam.facts.hard"></b> breaches in <b data-f="redteam.facts.rounds"></b> rounds.</p>
+  </div>
+</section>
+
+<!-- ===================================================================== developers -->
+<section class="sec alt" id="start" aria-labelledby="h-start">
+  <div class="wrap split">
+    <header class="sec-head">
+      <p class="eyebrow">For developers</p>
+      <h2 id="h-start">Add it beside any agent</h2>
+      <p>Use the MCP server with any MCP client, wrap your own agent loop in Python, or make one HTTP call per order. Whichever you choose, orders reach your ledger only through OrderGuard.</p>
+      <p class="ctas"><a class="btn primary" data-doc="docs/QUICKSTART.md">Quickstart</a><a class="btn" data-doc="docs/MCP.md">MCP tools</a></p>
+    </header>
+    <div class="code" id="code">
+      <div class="code-tabs" role="tablist" aria-label="Integration">
+        <button type="button" role="tab" aria-selected="true" data-k="mcp">MCP</button>
+        <button type="button" role="tab" aria-selected="false" data-k="python">Python</button>
+        <button type="button" role="tab" aria-selected="false" data-k="http">HTTP</button>
+      </div>
+      <pre><code id="code-body"></code></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== film -->
+<section class="sec" id="film" aria-labelledby="h-film">
+  <div class="wrap">
+    <header class="sec-head center">
+      <h2 id="h-film">Watch the launch film</h2>
+    </header>
+    <div class="player">
+      <video id="film-v" controls playsinline preload="none" poster="media/og-problem.jpg" src="media/og-problem.mp4" aria-describedby="film-now"></video>
+    </div>
+    <ol class="chapters" id="chapters" aria-label="Chapters">
+      <li><button type="button" data-clip="problem" aria-current="true">The problem</button></li>
+      <li><button type="button" data-clip="what">What it is</button></li>
+      <li><button type="button" data-clip="fits">How it fits</button></li>
+      <li><button type="button" data-clip="order">One order</button></li>
+      <li><button type="button" data-clip="attack">Under attack</button></li>
+    </ol>
+    <p class="sr" id="film-now" aria-live="polite"></p>
+  </div>
+</section>
+
+<!-- ===================================================================== who -->
+<section class="sec alt" id="who" aria-labelledby="h-who">
+  <div class="wrap">
+    <header class="sec-head center">
+      <h2 id="h-who">Built for the teams who answer for the money</h2>
+    </header>
+    <div class="who">
+      <article><h3>Exchanges and brokers</h3><p>Accept order flow from customers' agents with a control that doesn't depend on the agent being honest or well built.</p></article>
+      <article><h3>Trading desks</h3><p>Run swarms of agents on one book without a person approving every order, and without the swarm doing together what no agent was allowed to do alone.</p></article>
+      <article><h3>Risk and compliance</h3><p>Every decision explained in plain words, signed limits you can audit, and a ledger you can replay order by order.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== evidence -->
 <section class="sec" id="proof" aria-labelledby="h-proof">
   <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-proof">The proof, rebuilt from committed results</h2>
-      <p data-seg="readme.proof_note"></p>
+    <header class="sec-head center">
+      <p class="eyebrow">Evidence</p>
+      <h2 id="h-proof">Every number links to the run it came from</h2>
     </header>
-
-    <ul class="ledger" aria-label="Headline results">
-      <li><span class="lv" data-f="arena_speed.p99"></span><span class="ll">per inline decision, <span data-f="arena_speed.strict"></span> decisions/s on the strict path, for <span data-f="arena_speed.agents"></span> agents in one process.</span><a class="src" data-src="arena_speed.p99"></a></li>
-    </ul>
-
-    <!-- exchange scale -->
-    <article class="proof" id="p-bench" aria-labelledby="h-bench">
-      <header class="proof-head">
-        <h3 id="h-bench">Holds at exchange scale</h3>
-        <p class="claim" data-seg="readme.proof.Holds at exchange scale"></p>
-      </header>
-      <div class="kpis">
-        <div><span class="k-v" data-f="bench.facts.breaches"></span><span class="k-l">cap breaches found by the independent auditor</span></div>
-        <div><span class="k-v" data-f="bench.facts.dps"></span><span class="k-l">decisions/s at <span data-f="bench.facts.procs_hi"></span> processes, one laptop</span></div>
-        <div><span class="k-v"><span data-f="bench.facts.caught"></span><span class="k-of"> of </span><span data-f="bench.facts.mutations"></span></span><span class="k-l">deliberately broken builds caught</span></div>
-      </div>
-      <div class="grid2">
-        <figure class="chart" id="c-scaling"></figure>
-        <figure class="chart" id="c-latency"></figure>
-      </div>
-      <figure class="chart" id="c-mutations"></figure>
-      <p class="caveat">Measured on one laptop with interpreted runtimes and simulated flow; scaling flattens past four processes because the laptop has four performance cores. More cores and compiled runtimes scale it further. <a data-doc="docs/BENCH.md">Bench write-up</a></p>
-    </article>
-
-    <!-- red team -->
-    <article class="proof" id="p-redteam" aria-labelledby="h-redteam">
-      <header class="proof-head">
-        <h3 id="h-redteam">AI attackers that read the docs</h3>
-        <p class="claim" data-seg="readme.proof.AI attackers that read the docs"></p>
-      </header>
-      <div class="grid2 wide-left">
-        <div>
-          <figure class="chart" id="c-bound"></figure>
-          <figure class="chart" id="c-families"></figure>
-        </div>
-        <figure class="chart" id="c-layers"></figure>
-      </div>
-      <p class="caveat"><span data-t="redteam.soft_text"></span> <a data-doc="docs/REDTEAM.md">Red-team report, by family and layer</a></p>
-    </article>
-
-    <!-- simulation -->
-    <article class="proof" id="p-sim" aria-labelledby="h-sim">
-      <header class="proof-head">
-        <h3 id="h-sim">Contained in a market that moves</h3>
-        <p class="claim">An impact-aware simulator lets agents' fills move prices, and those prices feed later orders. Every order still goes through the real authority. Below, a three-name collusion ring runs without a guard, with the mandate check alone, and with the full guard. Averaged over seeds <span data-f="sim.facts.ring_seeds"></span>, <b data-f="sim.facts.ring_unguarded"></b> of executed bad flow becomes <b data-f="sim.facts.ring_full"></b>.</p>
-      </header>
-      <figure class="chart" id="c-tremor"></figure>
-      <div class="grid2">
-        <figure class="chart" id="c-scenarios"></figure>
-        <figure class="chart" id="c-frontier"></figure>
-      </div>
-      <figure class="chart" id="c-crowding"></figure>
-      <p class="caveat">A synchronous impact model sized for one laptop; the crash and stale venue are scenario inputs, and longer calibrated runs are a matter of compute. The heaviest run used <span data-f="sim.facts.million_agents"></span> agents and materialised <span data-f="sim.facts.million_orders"></span> orders per arm across <span data-f="sim.facts.million_seeds"></span> seeds, each decided one by one by the real authority (<span data-f="sim.facts.million_orders_total"></span> in all, <span data-f="sim.facts.million_dps"></span> decisions/s on one laptop), with <span data-f="sim.facts.million_breaches"></span> breaches found by the independent auditor. <a data-doc="docs/SIMULATION.md">Simulation write-up</a></p>
-    </article>
-
-    <!-- swarm results -->
-    <article class="proof" id="p-swarm" aria-labelledby="h-swarm">
-      <header class="proof-head">
-        <h3 id="h-swarm">Swarm-scale bad flow stopped</h3>
-        <p class="claim" data-seg="readme.proof.Swarm-scale bad flow stopped"></p>
-      </header>
+    <div class="grid2">
       <figure class="chart" id="c-swarm"></figure>
-      <p class="caveat">Replayed over recorded decision streams; a desk calibrates review load on its own flow during shadow mode. <a data-doc="docs/RISK.md">Risk layer write-up</a></p>
-    </article>
-
-    <!-- review lane -->
-    <article class="proof" id="p-review" aria-labelledby="h-review">
-      <header class="proof-head">
-        <h3 id="h-review">Humans review what matters first</h3>
-        <p class="claim" data-seg="readme.proof.Humans review what matters first"></p>
-      </header>
       <figure class="chart" id="c-review"></figure>
-      <p class="caveat">Measured on one recorded stream; model advice in this lane is advisory and never releases a hold. <a data-doc="docs/REVIEW.md">Review lane write-up</a></p>
-    </article>
+    </div>
+    <div class="grid2">
+      <figure class="chart" id="c-crowding"></figure>
+      <figure class="chart" id="c-layers"></figure>
+    </div>
   </div>
 </section>
 
-<!-- ===================================================================== desks -->
-<section class="sec alt" id="desks" aria-labelledby="h-desks">
+<!-- ===================================================================== close -->
+<section class="close" aria-labelledby="h-close">
   <div class="wrap">
-    <header class="sec-head">
-      <h2 id="h-desks">Built for desks</h2>
-      <p>Start from a policy pack, watch it in shadow, send holds to people, then enforce. The owner signs the limits at every stage; nothing widens them without a new signature.</p>
-    </header>
-
-    <h3 class="sub">Rollout path</h3>
-    <ol class="rollout" id="rollout"></ol>
-
-    <h3 class="sub">Policy packs to size and sign</h3>
-    <div class="table-wrap">
-      <table class="packs" id="packs">
-        <caption class="sr">The four policy packs and their limits</caption>
-        <thead><tr><th scope="col">Pack</th><th scope="col">Per order</th><th scope="col">Per day</th><th scope="col">Per name per day</th><th scope="col">Net position</th><th scope="col">Orders/day</th><th scope="col">Band</th><th scope="col">Step-up above</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-    <p class="caveat">Unsigned templates, starting points rather than advice: size them to your account. <a data-doc="policies/README.md">Policy packs</a></p>
-
-    <h3 class="sub">Integrate it</h3>
-    <ul class="integ" id="integ"></ul>
-    <p class="aside-note" data-seg="readme.integrations_note"></p>
-
-    <div class="try" id="try" tabindex="-1">
-      <h3 data-t="readme.try_heading"></h3>
-      <p data-seg="readme.try_needs"></p>
-      <div id="try-blocks"></div>
-      <p data-seg="readme.try_after"></p>
-      <p class="hint">To watch the theater from your own install: <code data-t="readme.watch_cmd"></code></p>
-    </div>
-  </div>
-</section>
-
-<!-- ===================================================================== scope -->
-<section class="sec" id="scope" aria-labelledby="h-scope">
-  <div class="wrap narrow">
-    <h2 id="h-scope">Scope of this release</h2>
-    <ul class="scope" id="scope-list"></ul>
+    <h2 id="h-close">Ship agent trading without the midnight phone call</h2>
+    <p class="ctas center"><a class="btn primary" href="#start">Get started</a><a class="btn" href="theater/">Watch the full replay <span aria-hidden="true">→</span></a></p>
   </div>
 </section>
 
@@ -425,8 +332,8 @@
   <div class="wrap foot-grid">
     <div>
       <p class="brand-sm">OrderGuard</p>
+      <p class="hint">Pre-trade risk control for AI trading agents.</p>
       <p class="hint" data-seg="readme.licence"></p>
-      <p class="hint">Every number on this page is read from <code>data.json</code>, built by <code>scripts/build_site_data.py</code> from the committed results.</p>
     </div>
     <nav aria-label="Documentation"><ul class="learn" id="learn"></ul></nav>
   </div>

@@ -1,6 +1,6 @@
 # OrderGuard
 
-**A thousand AI agents. One signed mandate. Nothing outside it reaches the market.**
+**Every order passed. The swarm didn't.**
 
 One person signs the limits; hundreds or thousands of AI agents trade under them and share one daily budget. The costly orders often break no rule on their own: a position split across agents into slices just under the cap, a runaway loop of small legal orders, a colluding group draining the budget honest agents need. OrderGuard sits between the agents and the money: code enforces the signed limits at a trusted price, a risk model catches the bad flow that fits them, and people review only the orders most likely to cost money.
 
@@ -8,7 +8,7 @@ One person signs the limits; hundreds or thousands of AI agents trade under them
 
 - **A mandate a human signs, enforced by code.** Symbols, sides, per-order and daily caps, a price band and a "get a human above this size" threshold, signed with the owner's key. Every order is sized at a trusted market price, never at the price the agent claims. No model can loosen it.
 - **A risk model for the orders that fit the limits.** A behavioural model scores every allowed order across the whole swarm, the way a card network scores payments: one position split across agents, bursts, runaway loops, sudden jumps in size. It can turn an allow into a hold or a refusal, never the other way, so a wrong model costs some honest flow but cannot authorise anything.
-- **A review lane that spends people's time where it matters.** Held orders queue by expected bad dollars. A calibrated decision model adds its estimate to the ranking and can add a hold; it cannot approve.
+- **A review lane that spends people's time where it matters.** Held orders queue by expected bad dollars. A decision adapter, post-trained on an underlying decision model, adds a calibrated estimate to the ranking and can add a hold; it cannot approve.
 - **Shared budgets, portfolio limits and policy packs.** One daily budget per signed envelope, shared atomically by every agent that draws on it, plus optional caps per symbol, position and day. Four ready-made packs give a desk a starting point to sign, and the envelope lab replays recorded traffic through candidate limits so a desk sees what each would refuse, hold and let through before signing.
 - **Screening of what agents read.** Agents can be fooled too: a forged split notice, a hidden instruction, a planted rumour. Hidden characters, look-alike tickers and manipulative text are caught before the agent sees them; figures an order cites are checked against SEC filings; a "sell if it crashes" rule fires only when two independent sources agree.
 

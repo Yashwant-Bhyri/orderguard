@@ -868,6 +868,146 @@ def models(r: Reader) -> dict:
             "scope_false": fact(scope["hold_rate_on_matching"], pct(scope["hold_rate_on_matching"], 0), "results/review/scope.json", "/hold_rate_on_matching"),
         },
     }
+FAMILY_TEXT = {
+    "homoglyph": "Tickers spelled with look-alike letters", "fake_news": "Orders based on news no second source confirmed",
+    "stale_price": "Limit prices taken from a stale quote", "fat_finger": "Order sizes far outside the agent's normal range",
+    "off_list": "Symbols outside the signed mandate", "runaway_loop": "Agents stuck resending the same order",
+    "compromised_unlisted": "Hijacked agents trading unlisted symbols", "compromised_oversize": "Hijacked agents sizing orders off a fake price",
+    "compromised_transfer": "Hijacked agents trying to move money out", "compromised_sell_all": "Hijacked agents trying to sell the whole book",
+    "collusion": "Agents splitting one large position into small orders", "runaway_dup": "The same order delivered twice",
+}
+ORDER_WHY = {"daily": "daily budget used up", "band": "price outside the signed band", "per_order": "over the per-order limit",
+             "ticker": "symbol not in the mandate", "stepup": "above the approval threshold", "l7": "news not confirmed", "money": "transfer attempt"}
+
+
+def console_replay(r: Reader) -> dict:
+    """The hero's product replay: one real episode from the recorded run (five agents splitting one AAPL position), with the market
+    around it, every AAPL order in the window and its verdict, and the swarm's combined near-cap position as it builds."""
+    tl = r.json("results/theater/timeline.json")
+    raw = base64.b64decode(tl["events"])
+    states = [tl["states"][struct.unpack_from("<H", raw, 2 * i)[0] >> 10] for i in range(len(raw) // 2)]
+    focus = next(f for f in tl["focus"] if f["id"].startswith("collusion"))
+    env = next(e for e in tl["envelopes"] if e["name"] == focus["ledger"]["envelope"])
+    s0, s1, sym = 980, 1160, focus["order"]["ticker"]
+    strip = ("AAPL", "MSFT", "NVDA", "TSLA", "SPY", "BTC-USD")
+    last = {k: None for k in strip}
+    px = {k: [] for k in strip}
+    orders, i = [], 0
+    rows = []
+    with r.path("results/arena/arena-s7-k1000-t2000.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("type") == "meta":
+                continue
+            row["_state"] = states[i]
+            i += 1
+            if row["step"] < s1:
+                rows.append(row)
+    by_step = {}
+    for row in rows:
+        by_step.setdefault(row["step"], []).append(row)
+    for st in range(0, s1):
+        for row in by_step.get(st, []):
+            t = row["order"].get("ticker")
+            if t in last and isinstance(row.get("tp"), (int, float)):
+                last[t] = row["tp"]
+        if st >= s0:
+            for k in strip:
+                px[k].append(round(last[k], 4) if last[k] else None)
+    near = 0.7 * env["per_order"]
+    window = []
+    for st in range(s0, s1):
+        for row in by_step.get(st, []):
+            o = row["order"]
+            if o.get("ticker") != sym:
+                continue
+            notional = round(o["quantity"] * row["tp"], 2)
+            stt = row["_state"]
+            verdict = "stopped" if stt in ("stopped_by_risk", "honest_tightened") else "allowed" if row["d"] == "allow" else "held" if row["d"] == "hold" else "refused"
+            orders.append({"s": st - s0, "agent": f"agent-{row['agent']:04d}", "side": o["side"], "qty": o["quantity"], "limit": o["limit_price"],
+                           "usd": usd(notional), "near": notional >= near, "v": verdict,
+                           "why": "one position split across agents" if verdict == "stopped" else ORDER_WHY.get(row["code"], "")})
+    # combined near-cap buys on the symbol over the risk model's 60-step lookback, step by step
+    combined, agents_n = [], []
+    for st in range(s0, s1):
+        tot, ags = 0.0, set()
+        for k in range(st - 59, st + 1):
+            for row in by_step.get(k, []):
+                o = row["order"]
+                if o.get("ticker") == sym and o.get("side") == "buy" and o["quantity"] * row["tp"] >= near:
+                    tot += o["quantity"] * row["tp"]
+                    ags.add(row["agent"])
+        combined.append(round(tot))
+        agents_n.append(len(ags))
+    rule = focus["rule"]
+    return {
+        "src": "results/arena/arena-s7-k1000-t2000.jsonl",
+        "title": focus["title"], "sym": sym, "steps": s1 - s0, "first_step": s0, "focus_step": focus["step"] - s0,
+        "strip": [{"sym": k, "px": px[k]} for k in strip],
+        "orders": orders,
+        "combined": combined, "agents": agents_n,
+        "envelope": {"name": env["name"], "per_order": usd(env["per_order"]), "per_order_n": env["per_order"], "daily": usd_m(env["daily"], 0), "daily_n": env["daily"],
+                     "band": f"±{env['band_pct']:g}%", "step_up": usd(env["step_up"]), "step_up_n": env["step_up"], "symbols": env["symbols"], "id": env["id"]},
+        "focus": {"agent": f"agent-{focus['agent']:04d}", "order": f"BUY {focus['order']['quantity']} {sym} @ {focus['order']['limit_price']:,.2f}",
+                  "checks": focus["gate_checks"], "risk": f"{rule['risk']:.5f}", "rule": rule["text"].split(":")[0], "then": focus["then"],
+                  "detail": rule["text"].split(": ", 1)[1] if ": " in rule["text"] else ""},
+        "queue": [{"order": f"{q['order']['side'].upper()} {q['order']['quantity']} {q['order']['ticker']}", "usd": usd(q["rank_key_usd"]),
+                   "p": f"{q['p_bad']:.2f}", "why": q["model_reason"].split(":")[0]} for q in tl["queue"]["items"][:4]],
+        "families": [{"text": FAMILY_TEXT.get(f["id"], f["text"]), "orders": num(f["orders"])} for f in tl["families"]],
+    }
+
+
+def compare(doc: dict) -> dict:
+    """Full trading scope against the same agents behind OrderGuard, from facts already in the document (each keeps its source)."""
+    def of(t: str) -> tuple[int, int]:
+        m = re.search(r"(\d[\d,]*) of (\d[\d,]*)", t)
+        return int(m.group(1).replace(",", "")), int(m.group(2).replace(",", ""))
+    a_with, a_n = of(doc["lab"]["attacks"]["value"])
+    a_without, _ = of(doc["lab"]["attacks"]["bare"])
+    h_with, h_n = of(doc["lab"]["honest"]["value"])
+    h_without, _ = of(doc["lab"]["honest"]["bare"])
+    sf, sim = doc["swarm"]["facts"], doc["sim"]["facts"]
+    crowd = {p["metric"]: {r["arm"]: r for r in p["rows"]} for p in doc["sim"]["crowding"]["panels"]}
+    dd, slip = crowd["Worst portfolio drawdown"], crowd["Modeled slippage"]
+    rows = [
+        {"what": "Attacks that succeeded against a live AI agent fed poisoned inputs", "better": "lower",
+         "without": a_without / a_n, "without_t": f"{a_without} of {a_n}", "with": a_with / a_n, "with_t": f"{a_with} of {a_n}", "src": doc["lab"]["attacks"]["src"]},
+        {"what": "Legitimate tasks the same agent still completed", "better": "higher",
+         "without": h_without / h_n, "without_t": f"{h_without} of {h_n}", "with": h_with / h_n, "with_t": f"{h_with} of {h_n}", "src": doc["lab"]["honest"]["src"]},
+        {"what": "Harmful orders a 1,000-agent swarm sent to market", "better": "lower",
+         "without": sf["bad_reached"]["value"], "without_t": sf["bad_reached"]["text"], "with": sf["leak_after"]["value"], "with_t": sf["leak_after"]["text"], "src": sf["leak_after"]["src"]},
+        {"what": "Harmful trades executed by a colluding group, in a market their own trades move", "better": "lower",
+         "without": sim["ring_unguarded"]["value"], "without_t": sim["ring_unguarded"]["text"], "with": sim["ring_full"]["value"], "with_t": sim["ring_full"]["text"], "src": sim["ring_full"]["src"]},
+        {"what": "Worst portfolio loss when agents crowd into the same trade", "better": "lower",
+         "without": dd["unguarded"]["v"], "without_t": dd["unguarded"]["label"], "with": dd["full"]["v"], "with_t": dd["full"]["label"], "src": doc["sim"]["crowding"]["src"][0]},
+        {"what": "Price slippage caused by that crowding", "better": "lower",
+         "without": slip["unguarded"]["v"], "without_t": slip["unguarded"]["label"], "with": slip["full"]["v"], "with_t": slip["full"]["label"], "src": doc["sim"]["crowding"]["src"][0]},
+    ]
+    for r in rows:
+        if r["better"] == "lower":
+            r["delta"] = "100% less" if r["with"] == 0 else f"{(1 - r['with'] / r['without']) * 100:.0f}% less"
+        else:
+            r["delta"] = f"+{(r['with'] - r['without']) * 100:.0f} points"
+    return {"rows": rows}
+
+
+def snippets(r: Reader) -> dict:
+    """Integration snippets, taken from the docs that document them (the Python one is the documented run_agent call shape)."""
+    mcp = r.text("docs/MCP.md")
+    m = re.search(r"```json\n(\{\n  \"mcpServers\".*?)```", mcp, re.S)
+    api = r.text("docs/API.md")
+    h = re.search(r"### POST /api/check-order.*?```sh\n(.*?)```", api, re.S)
+    r.path("docs/GUIDE.md")
+    py = ("from orderguard_guard.agent import run_agent\n"
+          "from orderguard_guard import gate as G\n\n"
+          "# your model, your tools, your broker: OrderGuard sits between them\n"
+          "transcript = run_agent(model, \"Rebalance the core book.\", env, arm=\"full\",\n"
+          "                       public_key=G.public_key_from_b64(owner_pub))\n\n"
+          "for call in transcript[\"calls\"]:\n"
+          "    print(call[\"name\"], call[\"gate\"][\"decision\"], call[\"gate\"][\"reasons\"])\n")
+    return {"mcp": m.group(1).strip(), "python": py, "http": h.group(1).strip(),
+            "src": {"mcp": "docs/MCP.md", "python": "docs/GUIDE.md", "http": "docs/API.md"}}
+
 
 # ---------------------------------------------------------------------------------------------------------------- the theater copy
 THEATER_FILES = ("theme.js", "app.css", "theater.css", "ui.js", "theater.js")
@@ -944,7 +1084,10 @@ def build() -> tuple[dict, dict[str, bytes]]:
         "lab": lab(r),
         "tape": tape(r),
         "models": models(r),
+        "console": console_replay(r),
+        "snippets": snippets(r),
     }
+    doc["compare"] = compare(doc)
     theater = theater_files(r)
     doc["inputs"] = [{"path": p, "sha256": h} for p, h in sorted(r.used.items())]
     return doc, theater

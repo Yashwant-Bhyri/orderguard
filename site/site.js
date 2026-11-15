@@ -76,34 +76,8 @@ function bind() {
 
 /* ---------------------------------------------------------------- lists built from data.json */
 function lists() {
-  const sp = D.split;
-  const ul = $("#split-reasons");
-  for (const r of sp.reasons) ul.append(el("li", { text: r }));
-
-  const envs = $("#stage-envs");
-  for (const e of D.swarm.envelopes) envs.append(el("li", { title: "Signed envelope " + e.id }, [el("b", { text: e.name }), " " + e.per_order + " per order, " + e.daily + " a day, band " + e.band]));
-
-  const ro = $("#rollout");
-  for (const s of D.product.rollout) ro.append(el("li", {}, [el("h4", { text: s.name }), el("p", {}, segs(s.text))]));
-
-  const tb = $("#packs tbody");
-  for (const p of D.policies.packs) {
-    tb.append(el("tr", {}, [
-      el("td", {}, [el("a", { href: fileHref(p.src) }, el("code", { text: p.name })), el("span", { cls: "about", text: p.about })]),
-      ...[p.per_order, p.daily, p.per_name, p.position, p.orders, p.band, p.step_up].map((t) => el("td", { text: t }))]));
-  }
-
-  const ig = $("#integ");
-  for (const i of D.readme.integrations) ig.append(el("li", {}, [el("h4", { text: i.surface }), el("p", { text: i.use }), el("p", { cls: "start" }, segs(i.start))]));
-
-  const tbk = $("#try-blocks");
-  for (const b of D.readme.try_blocks) tbk.append(el("pre", {}, el("code", { text: b })));
-
-  const sc = $("#scope-list");
-  for (const s of D.readme.scope) sc.append(el("li", {}, [el("b", { text: s.lead }), segs(s.text)]));
-
   const ln = $("#learn");
-  for (const l of D.readme.learn) ln.append(el("li", {}, segs(l)));
+  if (ln) for (const l of D.readme.learn) ln.append(el("li", {}, segs(l)));
 }
 
 /* ---------------------------------------------------------------- tooltip */
@@ -497,363 +471,167 @@ C.review = () => {
   });
 };
 
-/* ---------------------------------------------------------------- the order path diagram */
-function pipe() {
-  const svg = $("#pipe-svg");
-  while (svg.childNodes.length > 2) svg.lastChild.remove();
-  const w = Math.max(300, svg.parentNode.clientWidth), narrow = w < 640;
-  const h = narrow ? 290 : 280;
-  svg.setAttribute("viewBox", [0, 0, w, h].join(" "));
-  svg.setAttribute("height", h);
-  const fs = narrow ? 11 : 13;
-  const my = narrow ? 130 : 120;
-  const X = { agent: w * 0.07, check: w * (narrow ? 0.34 : 0.36), risk: w * (narrow ? 0.64 : 0.62), ledger: w * 0.92 };
-  const line = css("--line-strong"), txt = css("--text"), t2 = css("--text-2");
-  const g = S("g");
-  svg.append(g);
-  const path = (d, o) => g.append(S("path", Object.assign({ d, fill: "none", stroke: line, "stroke-width": 2 }, o || {})));
-  path(["M", X.agent, my, "H", X.ledger].join(" "));
-  // inputs into the check
-  const inX = narrow ? [w * 0.14, w * 0.56] : [X.check - 120, X.check + 120];
-  const inputs = [["Signed mandate", css("--accent")], ["Trusted price", css("--accent")]];
-  inputs.forEach(([name, c], i) => {
-    const x = inX[i], y = 34, tw = textW(name, fs) + 22;
-    g.append(S("rect", { x: x - tw / 2, y: y - 14, width: tw, height: 28, rx: 14, fill: css("--accent-bg"), stroke: c }));
-    g.append(S("text", { x, y: y + 4.5, "text-anchor": "middle", "font-size": fs, fill: txt, "font-weight": 600, text: name }));
-    path(["M", x, y + 14, "C", x, my - 50, X.check, y + 40, X.check, my - 24].join(" "), { stroke: c, "stroke-dasharray": "4 4", "stroke-width": 1.5 });
-  });
-  // sinks below
-  const sinkY = my + (narrow ? 118 : 112);
-  const refX = narrow ? w * 0.17 : X.check - 90, revX = narrow ? w * 0.7 : (X.check + X.risk) / 2 + 30;
-  const cv = (x0, x1, c) => path(["M", x0, my + 18, "C", x0 + (x1 - x0) * 0.6, my + 40, x1, sinkY - 50, x1, sinkY - 14].join(" "), { stroke: c, "stroke-width": 1.5 });
-  cv(X.check - 14, refX, css("--refuse"));
-  cv(X.check + 14, revX - 12, css("--hold"));
-  cv(X.risk - 14, revX + 12, css("--risk"));
-  const pills = {};
-  const pill = (x, y, name, c, bg) => { const tw = textW(name, fs) + 20; pills[name] = x - tw / 2; g.append(S("rect", { x: x - tw / 2, y: y - 13, width: tw, height: 26, rx: 6, fill: bg, stroke: c })); g.append(S("text", { x, y: y + 4.5, "text-anchor": "middle", "font-size": fs, fill: txt, text: name })); };
-  pill(refX, sinkY, narrow ? "Refused" : "Refused, with reasons", css("--refuse"), css("--refuse-bg"));
-  pill(revX, sinkY, "Human review", css("--hold"), css("--hold-bg"));
-  // nodes
-  const node = (x, name, sub, c) => {
-    g.append(S("circle", { cx: x, cy: my, r: 22, fill: css("--surface"), stroke: c, "stroke-width": 2 }));
-    const halo = { stroke: css("--surface"), "stroke-width": 5, "paint-order": "stroke", "stroke-linejoin": "round" };
-    g.append(S("text", Object.assign({ x, y: my + 42, "text-anchor": "middle", "font-size": fs, fill: txt, "font-weight": 600, text: name }, halo)));
-    if (sub && !narrow) g.append(S("text", Object.assign({ x, y: my + 59, "text-anchor": "middle", "font-size": fs - 1, fill: t2, text: sub }, halo)));
-  };
-  node(X.agent, "Agent order", "any model", line);
-  node(X.check, "Mandate check", "code, L5", css("--text"));
-  node(X.risk, "Risk layer", "can only tighten", css("--risk"));
-  node(X.ledger, "Ledger", "receiver, L8", css("--allow"));
-  g.append(S("text", { x: X.agent, y: my + 5, "text-anchor": "middle", "font-size": 14, fill: t2, text: "◆" }));
-  g.append(S("text", { x: X.check, y: my + 5, "text-anchor": "middle", "font-size": 13, fill: txt, "font-weight": 700, text: "L5" }));
-  g.append(S("text", { x: X.ledger, y: my + 6, "text-anchor": "middle", "font-size": 16, fill: css("--allow"), text: "✓" }));
-  g.append(S("text", { x: X.risk, y: my + 5, "text-anchor": "middle", "font-size": 14, fill: css("--risk"), text: "↓" }));
-  // tokens
-  const tokens = S("g");
-  svg.append(tokens);
-  const label = $("#pipe-now");
-  const trips = [
-    { name: "An honest order inside the limits reaches the ledger.", stops: [[X.agent, my], [X.check, my], [X.risk, my], [X.ledger, my]], end: css("--allow"), shape: "c" },
-    { name: "The forged-split order is refused at the trusted price.", stops: [[X.agent, my], [X.check, my], [refX, sinkY - 28]], end: css("--refuse"), shape: "d" },
-    { name: "A colluding slice fits the limits, so the risk layer holds it for a person.", stops: [[X.agent, my], [X.check, my], [X.risk, my], [revX + 12, sinkY - 28]], end: css("--risk"), shape: "d" },
-  ];
-  pipe.state = { trips, tokens, label, t0: performance.now(), w };
-  if (reduce.matches) {
-    trips.forEach((tr, i) => drawToken(tokens, tr.stops[tr.stops.length - 1], tr.end, tr.shape, i));
-    label.textContent = "Honest orders reach the ledger; the forged split is refused; a colluding slice is held for a person.";
-  }
-}
-function drawToken(g, p, color, shape) {
-  const n = shape === "d" ? S("path", { d: ["M", p[0], p[1] - 8, "l", 8, 8, "l", -8, 8, "l", -8, -8, "Z"].join(" "), fill: color, stroke: css("--surface"), "stroke-width": 2 })
-    : S("circle", { cx: p[0], cy: p[1], r: 7, fill: color, stroke: css("--surface"), "stroke-width": 2 });
-  g.append(n);
-}
-let pipeVisible = false;
-function pipeTick(now) {
-  const st = pipe.state;
-  if (st && pipeVisible && !reduce.matches) {
-    const per = 3600, t = (now - st.t0) % (per * st.trips.length);
-    const k = Math.floor(t / per), u = (t % per) / per;
-    const tr = st.trips[k];
-    st.tokens.textContent = "";
-    const legs = tr.stops.length - 1, travel = Math.min(1, u / 0.75), pos = travel * legs;
-    const i = Math.min(legs - 1, Math.floor(pos)), f = pos - i;
-    const a = tr.stops[i], b = tr.stops[i + 1];
-    const ease = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2;
-    const p = [a[0] + (b[0] - a[0]) * ease, a[1] + (b[1] - a[1]) * ease];
-    drawToken(st.tokens, p, travel >= 1 ? tr.end : css("--text-2"), tr.shape);
-    if (st.label.textContent !== tr.name) st.label.textContent = tr.name;
-  }
-  requestAnimationFrame(pipeTick);
-}
+/* ---------------------------------------------------------------- shared formatting */
+const NF = new Intl.NumberFormat("en-US"), MF = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usdShort = (v) => (v >= 1e6 ? "$" + MF.format(v / 1e6) + "M" : "$" + NF.format(Math.round(v)));
+const pad2 = (n) => String(n).padStart(2, "0");
 
-/* ---------------------------------------------------------------- hero: the recorded run, replayed from market to ledger */
-const hero = { running: true, visible: true, userPaused: false };
-function heroSetup() {
-  const sw = D.swarm, cv = $("#swarm"), ctx = cv.getContext("2d");
-  const keys = sw.keys, K = (k) => keys.indexOf(k);
-  const cum = { orders: [], bad: [], leak: [] };
-  let o = 0, b = 0, l = 0;
-  sw.counts.forEach((row, i) => { o += row.reduce((a, x) => a + x, 0); b += sw.bad_usd_cents[i]; l += sw.leak_usd_cents[i]; cum.orders.push(o); cum.bad.push(b); cum.leak.push(l); });
-  const nf = new Intl.NumberFormat("en-US"), mf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const money = (cents) => (cents >= 1e8 ? "$" + mf.format(cents / 1e8) + "M" : "$" + nf.format(Math.round(cents / 100)));
-  $("#m-days").textContent = " of " + sw.days;
-  const M = sw.market, NR = M.length;
-  // columns, as fractions of the width: market | agents | mandate check | risk layer | human review | ledger
-  const X = { mk: 0.20, ag0: 0.22, ag1: 0.37, gate: 0.425, risk: 0.555, rv0: 0.595, rv1: 0.795, led: 0.815 };
-  const TOP = 46, BOT = 14;
-  let W = 0, H = 0, dpr = 1, agents = [], byRow = [], dots = [], out = [], ledger = 0, queue = [], colors = {}, curBin = 0, small = false, CW = 7, CH = 14, ledgerPer = 1;
-  const cs = getComputedStyle(cv), tok = (n) => cs.getPropertyValue(n).trim();
-  const allowTotal = sw.counts.reduce((a, r) => a + r[K("allow")], 0);
-  // the hero is drawn as a character grid: every mark snaps to a cell, like a terminal
-  const glyph = (ch, x, y, color, a) => { ctx.globalAlpha = a; ctx.fillStyle = color; ctx.fillText(ch, Math.round(x / CW) * CW, Math.round(y / CH) * CH); };
-  const flash = new Array(NR).fill(0), flashDir = new Array(NR).fill(0);
-  const rowY = (i) => TOP + (i + 0.5) * ((H - TOP - BOT) / NR);
-  const laneY = (y) => TOP + 6 + ((y - TOP) / (H - TOP - BOT)) * (H * 0.5 - TOP - 6);
-  const rvTop = () => H * 0.56;
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+/* ---------------------------------------------------------------- hero console: a recorded episode, replayed */
+function consoleSetup() {
+  const R = D.console, cv = $("#c-chart"), ctx = cv.getContext("2d");
+  const N = R.steps, main = R.strip[0].px, spd = D.swarm.steps_per_day, env = R.envelope;
+  const byStep = Array.from({ length: N }, () => []);
+  R.orders.forEach((o) => byStep[o.s].push(o));
+  // the strip
+  const strip = $("#c-strip"), sparks = [];
+  R.strip.forEach((m) => {
+    const sc = el("canvas", { "aria-hidden": "true" }), p = el("span", { cls: "p" }), ch = el("span", { cls: "ch" });
+    strip.append(el("li", {}, [el("span", { cls: "s", text: m.sym }), sc, el("span", {}, [p, " ", ch])]));
+    sparks.push({ m, sc, p, ch });
+  });
+  $$("#c-checks").forEach((ul) => { for (const c of R.focus.checks) ul.append(el("li", { text: c })); });
+  const feed = $("#c-feed"), alert = $("#c-alert"), btn = $("#c-pause");
+  let k = 0, running = !reduce.matches, visible = true, timer = 0, W = 0, H = 0;
+  const lo = Math.min(...main) * 0.996, hi = Math.max(...main) * 1.004;
   function size() {
-    dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = cv.clientWidth; H = cv.clientHeight; small = W < 640;
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    seed = 7; agents = []; byRow = Array.from({ length: NR }, () => []);
-    const n = small ? 360 : 1000, x0 = X.ag0 * W + 6, x1 = X.ag1 * W - 6;
-    for (let i = 0; i < n; i++) {
-      const y = TOP + 6 + rnd() * (H - TOP - BOT - 12), a = { x: x0 + rnd() * (x1 - x0), y, ph: rnd() * 6.28 };
-      a.row = Math.max(0, Math.min(NR - 1, Math.floor(((y - TOP) / (H - TOP - BOT)) * NR)));
-      agents.push(a); byRow[a.row].push(a);
-    }
-    colors = { allowBg: tok("--allow-bg"), holdBg: tok("--hold-bg"), riskBg: tok("--risk-bg"), refuseBg: tok("--refuse-bg"), text: tok("--text"), text2: tok("--text-2"), text3: tok("--text-3"), dot: tok("--dot"),
-      allow: tok("--allow"), hold: tok("--hold"), refuse: tok("--refuse"), risk: tok("--risk"), line: tok("--line"), lineStrong: tok("--line-strong"), accent: tok("--accent"), mono: tok("--mono") };
-    ctx.font = (small ? "11px " : "12px ") + colors.mono; ctx.textBaseline = "middle";
-    CW = ctx.measureText("M").width; CH = small ? 13 : 14;
-    const lcols = Math.max(1, Math.floor((W - X.led * W - 22) / CW)), lrows = Math.max(1, Math.floor((H - TOP - BOT - 4) / CH));
-    ledgerPer = Math.max(1, Math.ceil(allowTotal / (lcols * lrows)));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  const LOOP = 56000, binDur = LOOP / sw.bins;
-  let t0 = performance.now(), last = -1, spawnQ = [], nextReview = 0;
-  const sample = () => (W < 640 ? 3 : W < 1000 ? 2 : 1);
-  function spawnBin(bi) {
-    const row = sw.counts[bi], list = [];
-    keys.forEach((k, ki) => { for (let i = 0; i < row[ki]; i++) list.push(k); });
-    const rows = [];
-    sw.sym_counts[bi].forEach((c, ri) => { for (let i = 0; i < c; i++) rows.push(ri); });
-    const s = sample();
-    for (let i = 0; i < list.length; i += s) {
-      const r = rows.length ? rows[(i * 7 + bi) % rows.length] : NR;
-      spawnQ.push({ at: bi * binDur + (i / list.length) * binDur, k: list[i], r });
+  const col = { allowed: "--allow", stopped: "--risk", refused: "--refuse", held: "--hold" };
+  function drawChart() {
+    const padL = 8, padR = 56, padT = 8, padB = 22;
+    const x = (i) => padL + (i / (N - 1)) * (W - padL - padR), y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = "11px " + css("--sans"); ctx.textBaseline = "middle";
+    ctx.strokeStyle = css("--grid"); ctx.fillStyle = css("--text-3"); ctx.lineWidth = 1;
+    for (let g = 0; g <= 4; g++) {
+      const v = lo + ((hi - lo) * g) / 4, yy = Math.round(y(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+      ctx.textAlign = "left"; ctx.fillText(MF.format(v), W - padR + 8, yy);
     }
-  }
-  function startBin(bi) {
-    if (bi === 0) { ledger = 0; queue = []; dots = []; out = []; }
-    curBin = bi;
-    if (bi > 0) M.forEach((m, i) => { const d = m.pct[bi] - m.pct[bi - 1]; if (Math.abs(d) >= 0.6) { flash[i] = Math.min(1, Math.abs(d) / 2 + 0.4); flashDir[i] = Math.sign(d); } });
-    spawnBin(bi);
-    const day = Math.min(Number(sw.days), Math.floor((bi * sw.steps / sw.bins) / sw.steps_per_day) + 1);
-    $("#m-day").textContent = String(day);
-    $("#m-orders").textContent = nf.format(cum.orders[bi]);
-    $("#m-bad").textContent = money(cum.bad[bi]);
-    $("#m-leak").textContent = money(cum.leak[bi]);
-  }
-  function final() {
-    curBin = sw.bins - 1;
-    $("#m-day").textContent = sw.days;
-    $("#m-orders").textContent = sw.orders;
-    $("#m-bad").textContent = sw.bad_total;
-    $("#m-leak").textContent = D.swarm.facts.leak_after.text;
-    ledger = sw.counts.reduce((a, r) => a + r[K("allow")], 0);
-    queue = [];
-    sw.counts.forEach((r) => { for (let i = 0; i < r[K("risk")]; i++) queue.push(true); for (let i = 0; i < r[K("hold")]; i++) queue.push(false); });
-  }
-  function label(text, x, y, color, align) {
-    ctx.fillStyle = color; ctx.textAlign = align || "left"; ctx.fillText(text, x, y);
-  }
-  function drawMarket(now) {
-    const x0 = 12, x1 = X.mk * W - 8, rh = (H - TOP - BOT) / NR, cols = Math.max(4, Math.floor((x1 - x0) / CW));
-    for (let i = 0; i < NR; i++) {
-      const m = M[i], cy = rowY(i);
-      if (flash[i] > 0.01) {
-        ctx.globalAlpha = flash[i] * 0.85; ctx.fillStyle = flashDir[i] < 0 ? colors.refuseBg : colors.allowBg;
-        ctx.fillRect(0, cy - rh / 2 + 1, X.ag1 * W, rh - 2);
-        if (!reduce.matches) flash[i] *= 0.965;
-      }
-      const lo = Math.min(-2, ...m.pct), hi = Math.max(2, ...m.pct);
-      const sy = (v) => cy + rh * 0.34 - ((v - lo) / (hi - lo)) * rh * 0.58;
-      const n = m.pct.length;
-      for (let c = 0; c < cols; c++) glyph("┈", x0 + c * CW, sy(0), colors.lineStrong, 0.5);
-      const upto = Math.floor((curBin / (n - 1)) * (cols - 1));
-      for (let c = 0; c <= upto; c++) {
-        const j = Math.round((c / (cols - 1)) * (n - 1)), v = m.pct[j];
-        glyph(c === upto ? "●" : "·", x0 + c * CW, sy(v), c === upto ? (v < 0 ? colors.refuse : colors.allow) : colors.text2, c === upto ? 1 : 0.9);
-      }
-      const v = m.pct[curBin];
-      ctx.globalAlpha = 1;
-      label(m.sym, x0, cy - rh * 0.5 + 10, colors.text3);
-      if (!small) label((v >= 0 ? "+" : "") + v.toFixed(1) + "%", x1, cy - rh * 0.5 + 10, v < 0 ? colors.refuse : colors.allow, "right");
+    // orders, where each was priced
+    for (let i = 0; i <= k; i++) {
+      byStep[i].forEach((o, j) => {
+        ctx.globalAlpha = i > k - 3 ? 1 : 0.55; ctx.fillStyle = css(col[o.v]);
+        ctx.beginPath(); ctx.arc(x(i) + ((j % 3) - 1) * 1.5, y(o.limit), o.v === "allowed" ? 2 : 2.6, 0, 6.2832); ctx.fill();
+      });
     }
-    ctx.textAlign = "left"; ctx.globalAlpha = 1;
-  }
-  function drawStatic(now) {
-    ctx.globalAlpha = 1; ctx.fillStyle = tok("--bg"); ctx.fillRect(0, 0, W, H);
-    drawMarket(now);
-    // agents: brighter, and restless, where their market row just shook
-    for (const a of agents) {
-      const f = flash[a.row];
-      glyph(f > 0.25 && Math.sin(now / 120 + a.ph) > 0.3 ? ":" : "·", a.x, a.y, f > 0.25 ? colors.text2 : colors.dot, 0.55 + 0.45 * f);
-    }
-    // ledger, review box, the two checks
-    ctx.globalAlpha = 1; ctx.fillStyle = colors.allowBg; ctx.fillRect(X.led * W, 0, W - X.led * W, H);
-    const r0 = X.rv0 * W, r1 = X.rv1 * W, rt = rvTop();
-    ctx.fillStyle = colors.holdBg; ctx.fillRect(r0, rt, r1 - r0, H - rt - BOT + 6);
-    for (let y = TOP; y <= H - BOT; y += CH) { glyph("│", X.gate * W, y, colors.text, 0.8); glyph("┆", X.risk * W, y, colors.risk, 0.85); }
-    // column heads
-    const heads = [["market", 12, small ? "" : "recorded prices"], ["agents", X.ag0 * W + 4, small ? "" : "simulated"], ["mandate", X.gate * W - 8, small ? "" : "signed, in code"],
-      ["risk", X.risk * W - 8, small ? "" : "swarm model"], ["review", r0 + 8, small ? "" : "ranked, a person decides"], ["ledger", X.led * W + 10, small ? "" : "committed"]];
-    for (const [h, x, sub] of heads) {
-      if (small && h === "agents") continue;
-      const al = h === "mandate" || h === "risk" ? "right" : "left";
-      ctx.globalAlpha = 1;
-      label(small && h === "mandate" ? "gate" : h, x, 14, colors.text, al);
-      if (sub) label(sub, x, 30, colors.text3, al);
-    }
-    ctx.textAlign = "left";
-    // ledger cells
-    const lx0 = X.led * W + 12, ly1 = H - BOT, lcols = Math.max(1, Math.floor((W - lx0 - 10) / CW));
-    const blocks = Math.min(lcols * Math.floor((ly1 - TOP - 4) / CH), Math.floor(ledger / ledgerPer));
-    for (let i = 0; i < blocks; i++) {
-      const r = Math.floor(i / lcols), c = i % lcols;
-      ctx.globalAlpha = i >= blocks - lcols ? 0.95 : 0.38; ctx.fillStyle = colors.allow;
-      ctx.fillText("▓", lx0 + c * CW, ly1 - r * CH - CH / 2);
-    }
-    // the review queue, riskiest first
-    const qx0 = r0 + 10, qc = Math.max(1, Math.floor((r1 - r0 - 20) / CW)), qy0 = rt + CH, qr = Math.max(1, Math.floor((H - BOT - qy0) / CH));
-    const ranked = queue.filter((x) => x).concat(queue.filter((x) => !x)).slice(0, qc * qr);
-    ranked.forEach((bad, i) => { ctx.globalAlpha = 1; ctx.fillStyle = bad ? colors.risk : colors.hold; ctx.fillText("■", qx0 + (i % qc) * CW, qy0 + Math.floor(i / qc) * CH); });
     ctx.globalAlpha = 1;
-  }
-  function shape(d, color, a) {
-    glyph(d.phase === 2 ? (d.k === "dup" ? "·" : "x") : d.bad ? "◆" : "o", d.x, d.y, color, a);
-  }
-  const toward = (d, k) => { const dx = d.tx - d.x, dy = d.ty - d.y, dist = Math.hypot(dx, dy), step = d.v * 16 * (W / 700) * k; if (dist <= step) { d.x = d.tx; d.y = d.ty; return true; } d.x += (dx / dist) * step; d.y += (dy / dist) * step; return false; };
-  function review(now) {
-    // a person works the queue from the top: risky orders first. Approved orders go on to the ledger; rejected ones stop here.
-    if (!queue.length || now < nextReview) return;
-    nextReview = now + Math.max(140, 700 - queue.length * 25);
-    const i = queue.indexOf(true), bad = i >= 0, idx = bad ? i : 0;
-    queue.splice(idx, 1);
-    const x = X.rv0 * W + 12, y = rvTop() + 12;
-    out.push(bad ? { kind: "reject", x, y, fade: 1 } : { kind: "approve", x, y, tx: X.led * W + 14, ty: laneY(y - 40), v: 0.5 });
-  }
-  function frame(now) {
-    requestAnimationFrame(frame);
-    if (!hero.running || !hero.visible) { t0 += 16; return; }
-    const t = (((now - t0) % LOOP) + LOOP) % LOOP;
-    const bi = Math.floor(t / binDur);
-    if (bi !== last) { if (bi < last) spawnQ = []; startBin(bi); last = bi; }
-    while (spawnQ.length && spawnQ[0].at <= t) {
-      const s = spawnQ.shift();
-      const bad = s.k === "gate" || s.k === "risk" || s.k === "leak" || s.k === "dup";
-      const pool = s.r < NR ? byRow[s.r] : agents, a = pool[Math.floor(rnd() * pool.length)] || agents[0];
-      const fromMarket = s.r < NR;
-      const sx = fromMarket ? X.mk * W - 8 : a.x, sy = fromMarket ? rowY(s.r) : a.y;
-      dots.push({ k: s.k, bad, x: sx, y: sy, tx: a.x, ty: a.y, v: 0.24 + rnd() * 0.08, phase: fromMarket ? -1 : 0, fade: 1 });
-      if (!fromMarket) { const d = dots[dots.length - 1]; d.tx = X.gate * W; d.ty = d.k === "refuse" || d.k === "gate" || d.k === "dup" ? a.y : laneY(a.y); }
+    // the focus moment
+    if (k >= R.focus_step) {
+      const fx = Math.round(x(R.focus_step)) + 0.5;
+      ctx.strokeStyle = css("--risk"); ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(fx, padT); ctx.lineTo(fx, H - padB); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = css("--risk"); ctx.textAlign = "left"; ctx.fillText(R.title, fx + 6, padT + 8);
     }
-    drawStatic(now);
-    review(now);
-    const next = [];
-    for (const d of dots) {
-      if (d.phase === -1) {
-        if (toward(d, 1.6)) { d.phase = 0; d.tx = X.gate * W; d.ty = d.k === "hold" || d.k === "risk" || d.k === "allow" || d.k === "leak" ? laneY(d.y) : d.y; }
-      } else if (d.phase === 0) {
-        if (toward(d, 1)) {
-          if (d.k === "allow" || d.k === "leak" || d.k === "risk") { d.phase = 1; d.tx = X.risk * W; d.ty = d.y; }
-          else if (d.k === "hold") { d.phase = 3; d.tx = X.rv0 * W + 10 + rnd() * (X.rv1 - X.rv0) * W * 0.8; d.ty = rvTop() + 8; }
-          else { d.phase = 2; d.vx = -(1.1 + rnd()); d.vy = (rnd() - 0.5) * 1.6; }
-        }
-      } else if (d.phase === 1) {
-        if (toward(d, 1)) {
-          if (d.k === "risk") { d.phase = 3; d.tx = X.rv0 * W + 10 + rnd() * (X.rv1 - X.rv0) * W * 0.8; d.ty = rvTop() + 8; }
-          else { d.phase = 4; d.tx = X.led * W + 8; d.ty = d.y; }
-        }
-      } else if (d.phase === 4) {
-        if (toward(d, 1)) { if (d.k === "allow") ledger += sample(); continue; }
-      } else if (d.phase === 2) {
-        d.x += d.vx; d.y += d.vy; d.fade -= 0.025; if (d.fade <= 0) continue;
-      } else if (d.phase === 3) {
-        if (toward(d, 1.2)) { queue.push(d.k === "risk"); continue; }
-      }
-      const decided = d.phase >= 1 && !(d.k === "risk" && d.phase === 1);
-      const c = d.phase <= 0 ? (d.bad ? colors.text2 : colors.dot) : !decided ? colors.text2 : d.k === "allow" ? colors.allow : d.k === "hold" ? colors.hold : d.k === "risk" ? colors.risk : d.k === "dup" ? colors.lineStrong : colors.refuse;
-      shape(d, d.phase === 2 ? (d.k === "dup" ? colors.lineStrong : colors.refuse) : c, d.phase === 2 ? Math.max(0, d.fade) : d.phase === -1 ? 0.75 : d.k === "allow" && decided ? 0.75 : 1);
-      next.push(d);
+    // the price
+    ctx.beginPath();
+    for (let i = 0; i <= k; i++) { const xx = x(i), yy = y(main[i]); if (i) ctx.lineTo(xx, yy); else ctx.moveTo(xx, yy); }
+    ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2; ctx.stroke();
+    ctx.lineTo(x(k), H - padB); ctx.lineTo(x(0), H - padB); ctx.closePath(); ctx.globalAlpha = 0.07; ctx.fillStyle = css("--accent"); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.fillStyle = css("--accent"); ctx.beginPath(); ctx.arc(x(k), y(main[k]), 4, 0, 6.2832); ctx.fill();
+  }
+  function drawSpark(sp) {
+    const c = sp.sc, w = c.clientWidth, h = c.clientHeight;
+    if (!w) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), g = c.getContext("2d");
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const v = sp.m.px.filter((x) => x != null), a = Math.min(...v), b = Math.max(...v);
+    const up = sp.m.px[k] >= sp.m.px[0];
+    g.beginPath();
+    for (let i = 0; i <= k; i++) { const xx = (i / (N - 1)) * w, yy = h - 2 - ((sp.m.px[i] - a) / (b - a || 1)) * (h - 4); if (i) g.lineTo(xx, yy); else g.moveTo(xx, yy); }
+    g.strokeStyle = css(up ? "--allow" : "--refuse"); g.lineWidth = 1.5; g.stroke();
+  }
+  function feedPush(i) {
+    const list = byStep[i];
+    if (!list.length) return;
+    const o = list.find((x) => x.v !== "allowed" && i % 2) || list[i % list.length];
+    feed.prepend(el("li", {}, [
+      el("span", { cls: "o", text: o.side.toUpperCase() + " " + o.qty + " " + R.sym + " · " + o.usd }),
+      el("span", { cls: "pill " + o.v, text: o.v.charAt(0).toUpperCase() + o.v.slice(1) }),
+      el("span", { cls: "a", text: o.agent + (o.why ? " · " + o.why : "") })]));
+    while (feed.children.length > 9) feed.lastElementChild.remove();
+  }
+  function render() {
+    const st = R.first_step + k, mins = Math.floor(((st % spd) * 390) / spd) + 570;
+    $("#c-clock").textContent = "Day " + (Math.floor(st / spd) + 1) + " · " + pad2(Math.floor(mins / 60)) + ":" + pad2(mins % 60);
+    $("#c-px").textContent = MF.format(main[k]);
+    sparks.forEach((sp) => {
+      const v = sp.m.px[k], d = (v / sp.m.px[0] - 1) * 100;
+      sp.p.textContent = MF.format(v);
+      sp.ch.textContent = (d >= 0 ? "+" : "") + d.toFixed(2) + "%"; sp.ch.className = "ch " + (d >= 0 ? "up" : "down");
+      drawSpark(sp);
+    });
+    $("#c-comb").textContent = usdShort(R.combined[k]);
+    $("#c-ags").textContent = String(R.agents[k]);
+    $("#c-fill").style.width = Math.min(100, (R.combined[k] / env.daily_n) * 100) + "%";
+    alert.hidden = k < R.focus_step;
+    drawChart();
+  }
+  function tick() {
+    if (running && visible && !document.hidden) {
+      k += 1;
+      if (k >= N) { k = 0; feed.textContent = ""; }
+      feedPush(k);
+      render();
     }
-    dots = next;
-    const keep = [];
-    for (const r of out) {
-      if (r.kind === "reject") {
-        r.fade -= 0.03; if (r.fade <= 0) continue;
-        glyph("✕", r.x, r.y - (1 - r.fade) * 16, colors.refuse, r.fade);
-      } else {
-        if (toward(r, 1)) { ledger += 1; continue; }
-        glyph("o", r.x, r.y, colors.allow, 1);
-      }
-      keep.push(r);
-    }
-    out = keep;
-    ctx.globalAlpha = 1;
+    timer = setTimeout(tick, k === N - 1 ? 2600 : 190);
   }
   size();
-  addEventListener("resize", () => { const w = cv.clientWidth; if (Math.abs(w - W) > 2) { size(); if (reduce.matches || hero.userPaused) drawStatic(0); } });
-  const btn = $("#stage-pause");
   if (reduce.matches) {
-    hero.running = false; final(); drawStatic(0);
-    btn.hidden = true;
+    k = N - 1; for (let i = N - 9; i < N; i++) feedPush(i); render(); btn.hidden = true;
   } else {
-    requestAnimationFrame(frame);
+    for (let i = 0; i < 6; i++) { k = i; feedPush(i); }
+    render(); tick();
   }
   btn.addEventListener("click", () => {
-    hero.userPaused = !hero.userPaused; hero.running = !hero.userPaused;
-    btn.textContent = hero.userPaused ? "Play" : "Pause"; btn.setAttribute("aria-pressed", String(hero.userPaused));
+    running = !running; btn.textContent = running ? "Pause" : "Play"; btn.setAttribute("aria-pressed", String(!running));
   });
-  new IntersectionObserver((es) => { hero.visible = es[0].isIntersecting; }).observe(cv);
-  document.addEventListener("visibilitychange", () => { hero.visible = !document.hidden; });
+  new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(cv);
+  addEventListener("resize", () => { size(); render(); });
+  consoleRedraw = render;
+}
+let consoleRedraw = () => {};
+
+/* ---------------------------------------------------------------- full scope against OrderGuard */
+function compareSetup() {
+  const box = $("#cmp"), bars = [];
+  for (const r of D.compare.rows) {
+    const scale = Math.max(r.without, r.with) || 1;
+    const bo = el("i"), bg = el("i");
+    bars.push([bo, (r.without / scale) * 100], [bg, (r.with / scale) * 100]);
+    box.append(el("div", { cls: "cmp-row" }, [
+      el("div", { cls: "cmp-what" }, [r.what, el("a", { cls: "src", href: fileHref(r.src), text: r.src })]),
+      el("div", { cls: "cmp-v o" }, [el("b", { text: r.without_t }), el("span", { cls: "bar" }, bo)]),
+      el("div", { cls: "cmp-v g" }, [el("b", { text: r.with_t }), el("span", { cls: "bar" }, bg)]),
+      el("span", { cls: "cmp-d", text: r.delta })]));
+  }
+  const grow = () => bars.forEach(([i, w]) => { i.style.width = Math.max(w, w > 0 ? 1.5 : 0) + "%"; });
+  if (reduce.matches) { grow(); return; }
+  const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { grow(); io.disconnect(); } }, { threshold: 0.25 });
+  io.observe(box);
 }
 
-/* ---------------------------------------------------------------- decision tape: real recorded decisions, streamed */
-function tapeSetup() {
-  const log = $("#tape-log"), btn = $("#tape-pause");
-  if (!log || !D.tape) return;
-  const rows = D.tape.rows, keep = 16;
-  let i = 0, paused = false, visible = false, timer = 0;
-  const line = (r) => el("li", { cls: r.layer === "risk model" ? "risk" : "" }, [
-    el("span", { cls: "t", text: r.t }), el("span", { cls: "ag", text: r.agent }), el("span", { cls: "what", text: r.what }),
-    el("span", { cls: "px", text: r.tp }), el("span", { cls: "v " + r.v, text: r.v }), el("span", { cls: "ly", text: r.layer }), el("span", { cls: "why", text: r.why, title: r.why })]);
-  function push() {
-    log.append(line(rows[i % rows.length])); i += 1;
-    while (log.children.length > keep) log.firstElementChild.remove();
-  }
-  for (let k = 0; k < keep - 4; k++) push();
-  function tick() {
-    if (!paused && visible && !document.hidden) push();
-    timer = setTimeout(tick, 700);
-  }
-  if (reduce.matches) { btn.hidden = true; return; }
-  new IntersectionObserver((es) => { visible = es[0].isIntersecting; }).observe(log);
-  log.addEventListener("mouseenter", () => { paused = true; });
-  log.addEventListener("mouseleave", () => { paused = btn.getAttribute("aria-pressed") === "true"; });
-  btn.addEventListener("click", () => {
-    const p = btn.getAttribute("aria-pressed") !== "true";
-    btn.setAttribute("aria-pressed", String(p)); btn.textContent = p ? "Play" : "Pause"; paused = p;
-  });
-  tick();
+/* ---------------------------------------------------------------- how it works tiles, catches, code */
+function tiles() {
+  const R = D.console, e = R.envelope;
+  const kv = $("#t-mandate");
+  [["Per-order limit", e.per_order], ["Daily budget", e.daily], ["Price band", e.band], ["Person approves above", e.step_up]].forEach(([k, v]) => kv.append(el("dt", { text: k }), el("dd", { text: v })));
+  e.symbols.forEach((s) => $("#t-syms").append(el("span", { text: s })));
+  R.focus.checks.forEach((c) => $("#t-checks").append(el("li", { text: c })));
+  R.queue.forEach((q, i) => $("#t-queue").append(el("li", {}, [el("span", { cls: "r", text: String(i + 1) }), el("span", { cls: "o", text: q.order }),
+    el("span", { cls: "u", text: q.usd }), el("span", { cls: "w", text: q.why })])));
+  R.families.forEach((f) => $("#fam").append(el("li", {}, [el("span", { text: f.text.charAt(0).toUpperCase() + f.text.slice(1) }), el("span", { cls: "n" }, [el("b", { text: f.orders }), " orders"])])));
+  const body = $("#code-body"), tabs = $$("#code [role=tab]");
+  const show = (k) => { body.textContent = D.snippets[k]; tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.k === k))); };
+  tabs.forEach((t) => t.addEventListener("click", () => show(t.dataset.k)));
+  show("mcp");
 }
 
 /* ---------------------------------------------------------------- film chapters */
 function film() {
-  const v = $("#film"), list = $("#chapters"), now = $("#film-now");
+  const v = $("#film-v"), list = $("#chapters"), now = $("#film-now");
   if (!v || !list) return;
   const btns = [...list.querySelectorAll("button")];
   let cur = 0;
@@ -862,7 +640,7 @@ function film() {
     btns.forEach((b, j) => b.setAttribute("aria-current", String(j === i)));
     const c = btns[i].dataset.clip;
     v.poster = "media/og-" + c + ".jpg"; v.src = "media/og-" + c + ".mp4";
-    now.textContent = "Chapter " + (i + 1) + " of " + btns.length + ": " + btns[i].querySelector(".ch-t").textContent;
+    now.textContent = "Playing: " + btns[i].textContent;
     if (play) v.play().catch(() => {});
   }
   btns.forEach((b, i) => b.addEventListener("click", () => pick(i, true)));
@@ -887,8 +665,8 @@ function theme() {
 
 /* ---------------------------------------------------------------- boot */
 function drawAll() {
-  for (const k of Object.keys(C)) { try { C[k](); } catch (e) { console.error("chart " + k, e); } }
-  pipe();
+  for (const k of Object.keys(C)) { if (!document.getElementById("c-" + k)) continue; try { C[k](); } catch (e) { console.error("chart " + k, e); } }
+  consoleRedraw();
 }
 async function boot() {
   try {
@@ -902,11 +680,10 @@ async function boot() {
   lists();
   theme();
   drawAll();
-  heroSetup();
-  tapeSetup();
+  consoleSetup();
+  compareSetup();
+  tiles();
   film();
-  new IntersectionObserver((es) => { pipeVisible = es[0].isIntersecting; }, { threshold: 0.3 }).observe($("#pipe"));
-  requestAnimationFrame(pipeTick);
   let lastW = innerWidth, tm = 0;
   addEventListener("resize", () => { clearTimeout(tm); tm = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; drawAll(); } }, 150); });
   if (location.hash) { const t = document.getElementById(location.hash.slice(1)); if (t) t.scrollIntoView(); }
