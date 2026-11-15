@@ -1,0 +1,30 @@
+# Publishes site/ to GitHub Pages on every push to main that touches it.
+# One-time setup by the repository owner: Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+# The site is static (no build step); scripts/build_site_data.py writes site/data.json, and python/tests/site checks it is current in CI.
+name: pages
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

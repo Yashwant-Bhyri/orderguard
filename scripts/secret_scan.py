@@ -145,7 +145,8 @@ OPENROUTER_GENERATION_ID_RE = re.compile(r'"id": "gen-(?:dec-)?\d{10}-[A-Za-z0-9
 
 # Packed binary buffers in generated, committed data files: (path suffix, JSON field). Each is base64 of an integer array the
 # app decodes; tests rebuild the file from committed sources, so a real secret could not hide in it unnoticed.
-PACKED_BUFFER_FIELDS = {("results/theater/timeline.json", "events")}
+PACKED_BUFFER_FIELDS = {("results/theater/timeline.json", "events"),
+                        ("site/theater/timeline.json", "events")}   # the launch site's byte-identical copy (python/tests/site checks it)
 
 
 def is_packed_buffer(path: Path, field: str, value: str) -> bool:

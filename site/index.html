@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderGuard: a pre-trade guard for AI trading agents</title>
+<meta name="description" content="Let AI agents trade, inside limits a human signed and code enforces. A signed mandate checked in code at trusted prices, a risk layer that can only tighten, and a human review lane. Every number on this page is rebuilt from committed results.">
+<meta name="color-scheme" content="light dark">
+<meta name="og-repo" content="">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z' fill='%233355E6'/%3E%3Cpath d='m6.8 10 2.4 2.4L13.4 8' fill='none' stroke='white' stroke-width='1.8'/%3E%3C/svg%3E">
+<script>try{var t=localStorage.getItem("og-site-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar" id="top">
+  <div class="wrap bar-in">
+    <a class="brand" href="#top" aria-label="OrderGuard, back to top">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m6.8 10 2.4 2.4L13.4 8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>OrderGuard</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#problem">Problem</a>
+      <a href="#how">How it works</a>
+      <a href="#proof">Proof</a>
+      <a href="#desks">For desks</a>
+      <a href="#scope">Scope</a>
+    </nav>
+    <span class="grow"></span>
+    <a class="bar-link" data-repo-link href="#">Source</a>
+    <button type="button" class="theme" id="theme" aria-label="Colour theme: follow the system. Activate to change.">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" fill="currentColor"/></svg>
+      <span id="theme-label">System</span>
+    </button>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<!-- ===================================================================== hero -->
+<section class="hero" aria-labelledby="h-hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1 id="h-hero" data-check="readme.promise">Let AI agents trade, inside limits a human signed and code enforces.</h1>
+      <p class="lead" data-t="readme.intro"></p>
+      <p class="ctas">
+        <a class="btn primary" href="theater/">Watch a swarm get caught</a>
+        <a class="btn" href="#try" data-t="readme.try_heading"></a>
+      </p>
+      <p class="hint" data-seg="readme.watch_lede"></p>
+    </div>
+    <figure class="stage" aria-labelledby="stage-cap">
+      <div class="stage-frame">
+        <canvas id="swarm" role="img" aria-label="Animated replay of the recorded swarm: orders from many agents arrive at the signed mandate; most pass to the ledger, refused ones bounce back, held ones drop into a human review tray."></canvas>
+        <ol class="stage-cols" aria-hidden="true">
+          <li>Agents</li><li>Mandate<span class="w"> check</span></li><li>Risk<span class="w"> layer</span></li><li>Ledger</li>
+        </ol>
+        <p class="stage-tray" aria-hidden="true">Human review</p>
+      </div>
+      <ul class="stage-envs" id="stage-envs" aria-label="The signed envelopes in this run"></ul>
+      <dl class="meters" id="meters" aria-live="off">
+        <div><dt>Simulated day</dt><dd><span id="m-day"></span><span class="of" id="m-days"></span></dd></div>
+        <div><dt>Orders checked</dt><dd id="m-orders"></dd></div>
+        <div><dt>Bad dollars that reached the gate</dt><dd id="m-bad"></dd></div>
+        <div><dt>Let through after both layers</dt><dd class="good" id="m-leak"></dd></div>
+      </dl>
+      <figcaption id="stage-cap">
+        <span data-t="swarm.caption"></span>
+        <a class="src" data-src="swarm.src"></a>
+        <button type="button" class="link" id="stage-pause" aria-pressed="false">Pause</button>
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ===================================================================== problem -->
+<section class="sec" id="problem" aria-labelledby="h-problem">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="h-problem">A fooled agent does the arithmetic right, on the wrong price</h2>
+      <p>Agents act on what they read. Here is one forged notice, the order it produced, and what that order is really worth.</p>
+    </header>
+    <ol class="story">
+      <li class="story-card">
+        <p class="story-step">What the agent read</p>
+        <blockquote class="feed"><span class="feed-tag">News feed</span><span data-t="split.notice"></span></blockquote>
+      </li>
+      <li class="story-card">
+        <p class="story-step">What the agent proposed</p>
+        <p class="order-line"><span class="mono" data-t="split.order_text"></span></p>
+        <p class="calc"><span data-t="split.claimed_calc"></span></p>
+        <p class="calc-note">By its own numbers, the order fits under the <b data-t="split.cap"></b> per-order cap.</p>
+      </li>
+      <li class="story-card refused">
+        <p class="story-step">What OrderGuard trusts</p>
+        <p class="calc big"><span data-t="split.trusted_calc"></span></p>
+        <p class="verdict"><span class="vmark" aria-hidden="true">✕</span><span>Refused by <span data-t="split.decided_by"></span>, at <b data-t="split.ratio"></b> the cap</span></p>
+        <ul class="reasons" id="split-reasons"></ul>
+      </li>
+    </ol>
+    <figure class="chart" id="c-split"></figure>
+    <div class="multiply">
+      <h3>Now run it across a swarm</h3>
+      <p>Agents share news and run in swarms, so one fooled decision repeats. In the recorded run of <b data-f="swarm.facts.agents"></b> agents, <b data-f="swarm.facts.fake_news_orders"></b> orders acted on news no second source confirmed, worth <b data-f="swarm.facts.fake_news_usd"></b>; the two-source rule held all <span data-f="swarm.facts.fake_news_held"></span>. And <b data-f="swarm.facts.fit_mandate"></b> of bad orders fit the signed limits one order at a time, <b data-f="swarm.facts.collusion"></b> of it from one colluding group. A per-order check cannot see that. The risk layer can.</p>
+      <p class="src-line">Sources: <a class="src" data-src="swarm.facts.fake_news_orders"></a> <a class="src" data-src="swarm.facts.fit_mandate"></a></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== how -->
+<section class="sec alt" id="how" aria-labelledby="h-how">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="h-how">Only code says yes</h2>
+      <p>Models read text and rank the review queue. Whether an order reaches the ledger is decided by a signed mandate, a trusted price and plain code, in that order.</p>
+    </header>
+    <figure class="pipe" id="pipe" aria-labelledby="pipe-cap">
+      <svg id="pipe-svg" role="img" aria-labelledby="pipe-t pipe-d"><title id="pipe-t">The order path</title><desc id="pipe-d">An order passes the signed mandate check at a trusted price, then a risk layer that can only tighten, then a human review lane for held orders, and finally the receiver writes the ledger.</desc></svg>
+      <p class="pipe-now" id="pipe-now" aria-hidden="true"></p>
+      <figcaption id="pipe-cap" class="sr">Three example orders move along the path: an honest order reaches the ledger, the forged-split order is refused at the mandate check, and a colluding slice that fits the limits is held by the risk layer for a person.</figcaption>
+    </figure>
+    <ol class="stations">
+      <li><h3>The owner signs a mandate</h3><p>Symbols, sides, per-order and daily caps, a price band and a "get a human above this size" threshold, signed with the owner's key. Any edit after signing breaks the signature.</p></li>
+      <li><h3>Prices come from venues, not agents</h3><p>Every order is sized at a trusted market price, never at the price the agent claims. That is what caught the forged split.</p></li>
+      <li><h3>The mandate check decides</h3><p>Allow, hold or refuse, each with reasons in plain words. Optional portfolio caps per symbol, position and day stop many agents from splitting one big position.</p></li>
+      <li><h3>The risk layer can only tighten</h3><p>A behavioural model watches the whole swarm for splitting, bursts and runaway loops. It can turn an allow into a hold or a refusal, never the other way.</p></li>
+      <li><h3>People review what matters first</h3><p>Held orders queue by expected bad dollars. Model advice can add a hold or a warning; there is no code path from advice to an approval.</p></li>
+      <li><h3>The receiver writes the ledger</h3><p>The final authority re-checks the signed mandate at commit time, with idempotency, revocation and a hash-chained paper ledger.</p></li>
+    </ol>
+    <p class="aside-note"><b>Before any of this, what agents read is screened.</b> Hidden characters and look-alike tickers are exposed in code (L1), manipulative text is caught and its repeats quarantined (L2, L3), cited figures are checked against SEC filings (L6), and a "sell if it crashes" rule fires only when two independent sources agree (L7).</p>
+  </div>
+</section>
+
+<!-- ===================================================================== proof -->
+<section class="sec" id="proof" aria-labelledby="h-proof">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="h-proof">The proof, rebuilt from committed results</h2>
+      <p data-seg="readme.proof_note"></p>
+    </header>
+
+    <ul class="ledger" aria-label="Headline results">
+      <li><span class="lv" data-t="lab.attacks.value"></span><span class="ll">attack goals reached by a live model agent behind OrderGuard. <span data-t="lab.attacks.bare"></span></span><a class="src" data-src="lab.attacks.src"></a></li>
+      <li><span class="lv" data-t="lab.honest.value"></span><span class="ll">honest sandbox tasks completed with the guard. <span data-t="lab.honest.bare"></span></span><a class="src" data-src="lab.honest.src"></a></li>
+      <li><span class="lv" data-f="arena_speed.p99"></span><span class="ll">per inline decision, <span data-f="arena_speed.strict"></span> decisions/s on the strict path, for <span data-f="arena_speed.agents"></span> agents in one process.</span><a class="src" data-src="arena_speed.p99"></a></li>
+    </ul>
+
+    <!-- exchange scale -->
+    <article class="proof" id="p-bench" aria-labelledby="h-bench">
+      <header class="proof-head">
+        <h3 id="h-bench">Holds at exchange scale</h3>
+        <p class="claim" data-seg="readme.proof.Holds at exchange scale"></p>
+      </header>
+      <div class="kpis">
+        <div><span class="k-v" data-f="bench.facts.breaches"></span><span class="k-l">cap breaches found by the independent auditor</span></div>
+        <div><span class="k-v" data-f="bench.facts.dps"></span><span class="k-l">decisions/s at <span data-f="bench.facts.procs_hi"></span> processes, one laptop</span></div>
+        <div><span class="k-v"><span data-f="bench.facts.caught"></span><span class="k-of"> of </span><span data-f="bench.facts.mutations"></span></span><span class="k-l">deliberately broken builds caught</span></div>
+      </div>
+      <div class="grid2">
+        <figure class="chart" id="c-scaling"></figure>
+        <figure class="chart" id="c-latency"></figure>
+      </div>
+      <figure class="chart" id="c-mutations"></figure>
+      <p class="caveat">Measured on one laptop with interpreted runtimes and simulated flow; scaling flattens past four processes because the laptop has four performance cores. More cores and compiled runtimes scale it further. <a data-doc="docs/BENCH.md">Bench write-up</a></p>
+    </article>
+
+    <!-- red team -->
+    <article class="proof" id="p-redteam" aria-labelledby="h-redteam">
+      <header class="proof-head">
+        <h3 id="h-redteam">AI attackers that read the docs</h3>
+        <p class="claim" data-seg="readme.proof.AI attackers that read the docs"></p>
+      </header>
+      <div class="grid2 wide-left">
+        <div>
+          <figure class="chart" id="c-bound"></figure>
+          <figure class="chart" id="c-families"></figure>
+        </div>
+        <figure class="chart" id="c-layers"></figure>
+      </div>
+      <p class="caveat"><span data-t="redteam.soft_text"></span> <a data-doc="docs/REDTEAM.md">Red-team report, by family and layer</a></p>
+    </article>
+
+    <!-- simulation -->
+    <article class="proof" id="p-sim" aria-labelledby="h-sim">
+      <header class="proof-head">
+        <h3 id="h-sim">Contained in a market that moves</h3>
+        <p class="claim">An impact-aware simulator lets agents' fills move prices, and those prices feed later orders. Every order still goes through the real authority. Below, a three-name collusion ring runs without a guard, with the mandate check alone, and with the full guard. Averaged over seeds <span data-f="sim.facts.ring_seeds"></span>, <b data-f="sim.facts.ring_unguarded"></b> of executed bad flow becomes <b data-f="sim.facts.ring_full"></b>.</p>
+      </header>
+      <figure class="chart" id="c-tremor"></figure>
+      <div class="grid2">
+        <figure class="chart" id="c-scenarios"></figure>
+        <figure class="chart" id="c-frontier"></figure>
+      </div>
+      <figure class="chart" id="c-crowding"></figure>
+      <p class="caveat">A synchronous impact model sized for one laptop; the crash and stale venue are scenario inputs, and longer calibrated runs are a matter of compute. At <span data-f="sim.facts.million_agents"></span> agents the full path sustained <span data-f="sim.facts.million_dps"></span> order decisions/s with <span data-f="sim.facts.million_breaches"></span> audited breaches. <a data-doc="docs/SIMULATION.md">Simulation write-up</a></p>
+    </article>
+
+    <!-- swarm results -->
+    <article class="proof" id="p-swarm" aria-labelledby="h-swarm">
+      <header class="proof-head">
+        <h3 id="h-swarm">Swarm-scale bad flow stopped</h3>
+        <p class="claim" data-seg="readme.proof.Swarm-scale bad flow stopped"></p>
+      </header>
+      <figure class="chart" id="c-swarm"></figure>
+      <p class="caveat">Replayed over recorded decision streams; a desk calibrates review load on its own flow during shadow mode. <a data-doc="docs/RISK.md">Risk layer write-up</a></p>
+    </article>
+
+    <!-- review lane -->
+    <article class="proof" id="p-review" aria-labelledby="h-review">
+      <header class="proof-head">
+        <h3 id="h-review">Humans review what matters first</h3>
+        <p class="claim" data-seg="readme.proof.Humans review what matters first"></p>
+      </header>
+      <figure class="chart" id="c-review"></figure>
+      <p class="caveat">Measured on one recorded stream; model advice in this lane is advisory and never releases a hold. <a data-doc="docs/REVIEW.md">Review lane write-up</a></p>
+    </article>
+  </div>
+</section>
+
+<!-- ===================================================================== desks -->
+<section class="sec alt" id="desks" aria-labelledby="h-desks">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 id="h-desks">Built for desks</h2>
+      <p>Start from a policy pack, watch it in shadow, send holds to people, then enforce. The owner signs the limits at every stage; nothing widens them without a new signature.</p>
+    </header>
+
+    <h3 class="sub">Rollout path</h3>
+    <ol class="rollout" id="rollout"></ol>
+
+    <h3 class="sub">Policy packs to size and sign</h3>
+    <div class="table-wrap">
+      <table class="packs" id="packs">
+        <caption class="sr">The four policy packs and their limits</caption>
+        <thead><tr><th scope="col">Pack</th><th scope="col">Per order</th><th scope="col">Per day</th><th scope="col">Per name per day</th><th scope="col">Net position</th><th scope="col">Orders/day</th><th scope="col">Band</th><th scope="col">Step-up above</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="caveat">Unsigned templates, starting points rather than advice: size them to your account. <a data-doc="policies/README.md">Policy packs</a></p>
+
+    <h3 class="sub">Integrate it</h3>
+    <ul class="integ" id="integ"></ul>
+    <p class="aside-note" data-seg="readme.integrations_note"></p>
+
+    <div class="try" id="try" tabindex="-1">
+      <h3 data-t="readme.try_heading"></h3>
+      <p data-seg="readme.try_needs"></p>
+      <div id="try-blocks"></div>
+      <p data-seg="readme.try_after"></p>
+      <p class="hint">To watch the theater from your own install: <code data-t="readme.watch_cmd"></code></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== scope -->
+<section class="sec" id="scope" aria-labelledby="h-scope">
+  <div class="wrap narrow">
+    <h2 id="h-scope">Scope of this release</h2>
+    <ul class="scope" id="scope-list"></ul>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <div>
+      <p class="brand-sm">OrderGuard</p>
+      <p class="hint" data-seg="readme.licence"></p>
+      <p class="hint">Every number on this page is read from <code>data.json</code>, built by <code>scripts/build_site_data.py</code> from the committed results.</p>
+    </div>
+    <nav aria-label="Documentation"><ul class="learn" id="learn"></ul></nav>
+  </div>
+</footer>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<noscript><p class="noscript">This page draws its numbers and charts from data.json with JavaScript. The same numbers are in the repository's README and docs.</p></noscript>
+<script src="site.js" defer></script>
+</body>
+</html>
