@@ -2,14 +2,15 @@
 
 **Let AI agents trade, inside limits a human signed and code enforces.**
 
-AI trading agents read news, feeds and web pages, and some of what they read is fake: a forged split notice, a hidden instruction, a planted rumour. Agents also run in swarms, so one fooled decision can repeat across hundreds of agents in seconds. Making the model un-foolable does not work well enough, so OrderGuard puts code between the agents and the money.
+One person signs the limits; hundreds or thousands of AI agents trade under them and share one daily budget. The costly orders often break no rule on their own: a position split across agents into slices just under the cap, a runaway loop of small legal orders, a colluding group draining the budget honest agents need. OrderGuard sits between the agents and the money: code enforces the signed limits at a trusted price, a risk model catches the bad flow that fits them, and people review only the orders most likely to cost money.
 
 ## What it does
 
 - **A mandate a human signs, enforced by code.** Symbols, sides, per-order and daily caps, a price band and a "get a human above this size" threshold, signed with the owner's key. Every order is sized at a trusted market price, never at the price the agent claims. No model can loosen it.
-- **Portfolio limits and policy packs.** Optional signed caps per symbol, per position and per day stop many agents from splitting one big position. Four ready-made packs give a desk a starting point to sign.
-- **Screening of what agents read.** Hidden characters, look-alike tickers and manipulative text are caught before the agent sees them; figures an order cites are checked against SEC filings; a "sell if it crashes" rule fires only when two independent sources agree.
-- **A risk layer that can only tighten, and a review lane for humans.** A behavioural model watches the whole swarm for splitting, bursts and runaway loops. It can turn an allow into a hold or a refusal, never the other way. Held orders go to a ranked human queue.
+- **A risk model for the orders that fit the limits.** A behavioural model scores every allowed order across the whole swarm, the way a card network scores payments: one position split across agents, bursts, runaway loops, sudden jumps in size. It can turn an allow into a hold or a refusal, never the other way, so a wrong model costs some honest flow but cannot authorise anything.
+- **A review lane that spends people's time where it matters.** Held orders queue by expected bad dollars. A typed decision model (TypeSafe's Jev) adds its estimate to the ranking and can add a hold; it cannot approve.
+- **Shared budgets, portfolio limits and policy packs.** One daily budget per signed envelope, shared atomically by every agent that draws on it, plus optional caps per symbol, position and day. Four ready-made packs give a desk a starting point to sign, and the envelope lab replays recorded traffic through candidate limits so a desk sees what each would refuse, hold and let through before signing.
+- **Screening of what agents read.** Agents can be fooled too: a forged split notice, a hidden instruction, a planted rumour. Hidden characters, look-alike tickers and manipulative text are caught before the agent sees them; figures an order cites are checked against SEC filings; a "sell if it crashes" rule fires only when two independent sources agree.
 
 ```mermaid
 flowchart LR
@@ -17,9 +18,9 @@ flowchart LR
   S --> A
   A -->|"proposed order"| G["Mandate check<br/>signed limits, trusted price"]
   G -->|"refuse, with reasons"| X["Refused"]
-  G -->|"allow"| R["Risk layer<br/>can only tighten"]
+  G -->|"allow"| R["Risk model<br/>across the swarm,<br/>can only tighten"]
   R -->|"allow"| L[("Ledger<br/>receiver")]
-  G -->|"hold"| H["Human review queue"]
+  G -->|"hold"| H["Human review<br/>ranked by expected bad $"]
   R -->|"hold"| H
 ```
 

@@ -2,7 +2,7 @@
 
 **Let AI agents trade, inside limits a human signed and code enforces.**
 
-OrderGuard is a pre-trade guard that sits between AI trading agents (any model, any tools) and the ledger. It is a working prototype on paper ledgers, not a hosted service.
+OrderGuard lets one person safely authorise thousands of AI trading agents. Code enforces the limits they signed, a risk model catches the bad flow that breaks no single rule (one position split across agents, runaway loops, colluding groups draining a shared budget), and people review only the orders most likely to cost money. It sits between the agents (any model, any tools) and the ledger. It is a working prototype on paper ledgers, not a hosted service.
 
 ## Who it is for
 
@@ -16,8 +16,8 @@ OrderGuard is a pre-trade guard that sits between AI trading agents (any model, 
 |---|---|---|
 | an agent proposes an order | know it is within what the account owner approved | a signed mandate checked in code at a trusted price, with reasons for every refusal |
 | many agents share one budget | stop them from splitting one big position or starving each other | shared daily budgets, per-symbol and position caps, orders-per-day limits |
-| an agent reads news, feeds or filings | stop false or injected text from turning into orders | input screening, filing checks on cited figures, two-source rule for standing triggers |
 | behaviour looks wrong across the swarm | hold it for a person before it reaches the ledger | a risk layer that can only tighten, and a ranked human review queue |
+| an agent reads news, feeds or filings | stop false or injected text from turning into orders | input screening, filing checks on cited figures, two-source rule for standing triggers |
 | a desk writes a new mandate | see what it would allow before anyone signs it | draft review against the signed parent and replay of recorded traffic through candidate limits |
 
 ## How a desk would roll it out
