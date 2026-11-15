@@ -1,6 +1,6 @@
 # The OrderGuard launch site
 
-A static page in this folder: `index.html`, `site.css`, `site.js` and `data.json`, plus `theater/`, a static copy of the Swarm Theater.
+A static page in this folder: `index.html`, `site.css`, `site.js` and `data.json`, plus `theater/`, a static copy of the Swarm Theater, and `media/`, five chapters cut from the launch film (H.264 720p with burned-in captions, a poster each).
 No build step, no CDN, no external fonts or scripts.
 
 ## Where the numbers come from

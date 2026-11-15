@@ -587,7 +587,7 @@ function pipeTick(now) {
   requestAnimationFrame(pipeTick);
 }
 
-/* ---------------------------------------------------------------- hero: the recorded swarm, replayed */
+/* ---------------------------------------------------------------- hero: the recorded run, replayed from market to ledger */
 const hero = { running: true, visible: true, userPaused: false };
 function heroSetup() {
   const sw = D.swarm, cv = $("#swarm"), ctx = cv.getContext("2d");
@@ -598,38 +598,51 @@ function heroSetup() {
   const nf = new Intl.NumberFormat("en-US"), mf = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const money = (cents) => (cents >= 1e8 ? "$" + mf.format(cents / 1e8) + "M" : "$" + nf.format(Math.round(cents / 100)));
   $("#m-days").textContent = " of " + sw.days;
-  let W = 0, H = 0, dpr = 1, agents = [], dots = [], ledger = 0, tray = [], colors = {};
+  const M = sw.market, NR = M.length;
+  // columns, as fractions of the width: market | agents | mandate check | risk layer | human review | ledger
+  const X = { mk: 0.20, ag0: 0.22, ag1: 0.37, gate: 0.425, risk: 0.555, rv0: 0.595, rv1: 0.795, led: 0.815 };
+  const TOP = 46, BOT = 14;
+  let W = 0, H = 0, dpr = 1, agents = [], byRow = [], dots = [], out = [], ledger = 0, queue = [], colors = {}, curBin = 0, small = false;
+  const flash = new Array(NR).fill(0), flashDir = new Array(NR).fill(0);
   const ledgerPer = Math.max(1, Math.round(sw.counts.reduce((a, r) => a + r[K("allow")], 0) / 1400));
+  const rowY = (i) => TOP + (i + 0.5) * ((H - TOP - BOT) / NR);
+  const laneY = (y) => TOP + 6 + ((y - TOP) / (H - TOP - BOT)) * (H * 0.5 - TOP - 6);
+  const rvTop = () => H * 0.56;
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   function size() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = cv.clientWidth; H = cv.clientHeight;
+    W = cv.clientWidth; H = cv.clientHeight; small = W < 640;
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    agents = [];
-    const n = W < 500 ? 420 : 1000;
+    seed = 7; agents = []; byRow = Array.from({ length: NR }, () => []);
+    const n = small ? 360 : 1000, x0 = X.ag0 * W + 6, x1 = X.ag1 * W - 6;
     for (let i = 0; i < n; i++) {
-      const r = Math.sqrt(rnd()), th = rnd() * Math.PI * 2;
-      agents.push({ x: W * 0.17 + Math.cos(th) * r * W * 0.13, y: H * 0.5 + Math.sin(th) * r * H * 0.3, ph: rnd() * 6.28 });
+      const y = TOP + 6 + rnd() * (H - TOP - BOT - 12), a = { x: x0 + rnd() * (x1 - x0), y, ph: rnd() * 6.28 };
+      a.row = Math.max(0, Math.min(NR - 1, Math.floor(((y - TOP) / (H - TOP - BOT)) * NR)));
+      agents.push(a); byRow[a.row].push(a);
     }
-    colors = { allowBg: css("--allow-bg"), holdBg: css("--hold-bg"), text: css("--text"), text2: css("--text-2"), dot: css("--dot"), text3: css("--text-3"), allow: css("--allow"), hold: css("--hold"), refuse: css("--refuse"), risk: css("--risk"), line: css("--line-strong"), surface: css("--surface") };
+    colors = { allowBg: css("--allow-bg"), holdBg: css("--hold-bg"), riskBg: css("--risk-bg"), refuseBg: css("--refuse-bg"), text: css("--text"), text2: css("--text-2"), text3: css("--text-3"), dot: css("--dot"),
+      allow: css("--allow"), hold: css("--hold"), refuse: css("--refuse"), risk: css("--risk"), line: css("--line"), lineStrong: css("--line-strong"), surface2: css("--surface-2"), sans: css("--sans") };
   }
-  const G = () => W * 0.44, RK = () => W * 0.63, LX = () => W * 0.73;
-  const LOOP = 48000, binDur = LOOP / sw.bins;
-  let t0 = performance.now(), last = -1, spawnQ = [];
-  const sample = () => (W < 500 ? 3 : W < 900 ? 2 : 1);
+  const LOOP = 56000, binDur = LOOP / sw.bins;
+  let t0 = performance.now(), last = -1, spawnQ = [], nextReview = 0;
+  const sample = () => (W < 640 ? 3 : W < 1000 ? 2 : 1);
   function spawnBin(bi) {
     const row = sw.counts[bi], list = [];
     keys.forEach((k, ki) => { for (let i = 0; i < row[ki]; i++) list.push(k); });
+    const rows = [];
+    sw.sym_counts[bi].forEach((c, ri) => { for (let i = 0; i < c; i++) rows.push(ri); });
     const s = sample();
     for (let i = 0; i < list.length; i += s) {
-      const a = agents[(bi * 131 + i * 17) % agents.length];
-      spawnQ.push({ at: bi * binDur + (i / list.length) * binDur, k: list[i], x: a.x, y: a.y });
+      const r = rows.length ? rows[(i * 7 + bi) % rows.length] : NR;
+      spawnQ.push({ at: bi * binDur + (i / list.length) * binDur, k: list[i], r });
     }
   }
   function startBin(bi) {
-    if (bi === 0) { ledger = 0; tray = []; dots = []; }
+    if (bi === 0) { ledger = 0; queue = []; dots = []; out = []; }
+    curBin = bi;
+    if (bi > 0) M.forEach((m, i) => { const d = m.pct[bi] - m.pct[bi - 1]; if (Math.abs(d) >= 0.6) { flash[i] = Math.min(1, Math.abs(d) / 2 + 0.4); flashDir[i] = Math.sign(d); } });
     spawnBin(bi);
     const day = Math.min(Number(sw.days), Math.floor((bi * sw.steps / sw.bins) / sw.steps_per_day) + 1);
     $("#m-day").textContent = String(day);
@@ -638,53 +651,103 @@ function heroSetup() {
     $("#m-leak").textContent = money(cum.leak[bi]);
   }
   function final() {
-    const lastBin = sw.bins - 1;
+    curBin = sw.bins - 1;
     $("#m-day").textContent = sw.days;
     $("#m-orders").textContent = sw.orders;
     $("#m-bad").textContent = sw.bad_total;
     $("#m-leak").textContent = D.swarm.facts.leak_after.text;
     ledger = sw.counts.reduce((a, r) => a + r[K("allow")], 0);
-    tray = [];
-    sw.counts.forEach((r) => { for (let i = 0; i < r[K("hold")]; i++) tray.push("hold"); for (let i = 0; i < r[K("risk")]; i++) tray.push("risk"); });
-    return lastBin;
+    queue = [];
+    sw.counts.forEach((r) => { for (let i = 0; i < r[K("risk")]; i++) queue.push(true); for (let i = 0; i < r[K("hold")]; i++) queue.push(false); });
+  }
+  function label(text, x, y, color, align) {
+    ctx.fillStyle = color; ctx.textAlign = align || "left"; ctx.fillText(text, x, y);
+  }
+  function drawMarket(now) {
+    const x0 = 12, x1 = X.mk * W - 8, rh = (H - TOP - BOT) / NR;
+    ctx.font = "500 11px " + colors.sans;
+    for (let i = 0; i < NR; i++) {
+      const m = M[i], cy = rowY(i);
+      if (flash[i] > 0.01) {
+        ctx.globalAlpha = flash[i] * 0.9; ctx.fillStyle = flashDir[i] < 0 ? colors.refuseBg : colors.allowBg;
+        ctx.fillRect(0, cy - rh / 2 + 1, X.ag1 * W, rh - 2); ctx.globalAlpha = 1;
+        if (!reduce.matches) flash[i] *= 0.965;
+      }
+      let lo = Math.min(-2, ...m.pct), hi = Math.max(2, ...m.pct);
+      const sy = (v) => cy + rh * 0.36 - ((v - lo) / (hi - lo)) * rh * 0.62;
+      const n = m.pct.length, sx = (j) => x0 + (j / (n - 1)) * (x1 - x0);
+      ctx.strokeStyle = colors.lineStrong; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(x0, sy(0)); ctx.lineTo(x1, sy(0)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = colors.text2; ctx.lineWidth = 1.4; ctx.beginPath();
+      for (let j = 0; j <= curBin; j++) { const x = sx(j), y = sy(m.pct[j]); if (j) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+      const v = m.pct[curBin], cx = sx(curBin), cyy = sy(v);
+      ctx.fillStyle = v < 0 ? colors.refuse : colors.allow; ctx.beginPath(); ctx.arc(cx, cyy, 2.6, 0, 6.2832); ctx.fill();
+      label(m.sym, x0, cy - rh * 0.5 + 13, colors.text3);
+      if (!small) label((v >= 0 ? "+" : "") + v.toFixed(1) + "%", x1, cy - rh * 0.5 + 13, v < 0 ? colors.refuse : colors.allow, "right");
+    }
+    ctx.textAlign = "left";
   }
   function drawStatic(now) {
     ctx.clearRect(0, 0, W, H);
-    // agents
+    drawMarket(now);
+    // agents: brighter where their market row just shook
     ctx.fillStyle = colors.dot;
-    for (const a of agents) { const j = reduce.matches ? 0 : Math.sin(now / 900 + a.ph) * 1.2; ctx.globalAlpha = 0.55; ctx.fillRect(a.x + j, a.y - j, 1.6, 1.6); }
+    for (const a of agents) {
+      const j = reduce.matches ? 0 : Math.sin(now / 900 + a.ph) * 1.1;
+      ctx.globalAlpha = 0.45 + 0.5 * flash[a.row];
+      ctx.fillRect(a.x + j, a.y - j, 1.7, 1.7);
+    }
     ctx.globalAlpha = 1;
-    // zones: ledger and review tray
-    ctx.fillStyle = colors.allowBg; ctx.fillRect(LX(), 0, W - LX(), H);
-    ctx.fillStyle = colors.holdBg; ctx.fillRect(W * 0.34, H - 46, LX() - W * 0.34, 46);
-    // gate and risk lines
-    ctx.lineWidth = 2; ctx.strokeStyle = colors.text; ctx.globalAlpha = 0.8;
-    ctx.beginPath(); ctx.moveTo(G(), 34); ctx.lineTo(G(), H - 52); ctx.stroke();
+    // ledger, review box, the two checks
+    ctx.fillStyle = colors.allowBg; ctx.fillRect(X.led * W, 0, W - X.led * W, H);
+    const r0 = X.rv0 * W, r1 = X.rv1 * W, rt = rvTop();
+    ctx.fillStyle = colors.holdBg; ctx.fillRect(r0, rt, r1 - r0, H - rt - BOT + 6);
+    ctx.lineWidth = 2; ctx.strokeStyle = colors.text; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(X.gate * W, TOP - 4); ctx.lineTo(X.gate * W, H - BOT); ctx.stroke();
     ctx.setLineDash([5, 5]); ctx.strokeStyle = colors.risk;
-    ctx.beginPath(); ctx.moveTo(RK(), 34); ctx.lineTo(RK(), H - 52); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X.risk * W, TOP - 4); ctx.lineTo(X.risk * W, H - BOT); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha = 1;
+    // column heads
+    ctx.font = "500 12px " + colors.sans;
+    const heads = [["Market", 12, small ? "" : "recorded prices"], ["Agents", X.ag0 * W + 4, small ? "" : sw.agents + " simulated"], ["Mandate", X.gate * W - 6, small ? "" : "signed, in code"],
+      ["Risk", X.risk * W - 6, small ? "" : "model, tighten only"], ["Review", r0 + 6, small ? "" : "ranked, a person decides"], ["Ledger", X.led * W + 10, small ? "" : "committed"]];
+    for (const [h, x, sub] of heads) {
+      if (small && h === "Agents") continue;
+      const al = h === "Mandate" || h === "Risk" ? "right" : "left";
+      label(small && h === "Mandate" ? "Gate" : h, x, 18, colors.text2, al);
+      if (sub) { ctx.font = "400 11px " + colors.sans; label(sub, x, 33, colors.text3, al); ctx.font = "500 12px " + colors.sans; }
+    }
+    ctx.textAlign = "left";
     // ledger blocks
-    const lx0 = LX() + 12, lx1 = W - 14, ly0 = 40, ly1 = H - 16;
-    const cell = W < 500 ? 4 : 5, cols = Math.max(1, Math.floor((lx1 - lx0) / cell)), rows = Math.floor((ly1 - ly0) / cell);
+    const lx0 = X.led * W + 10, lx1 = W - 12, ly0 = TOP + 4, ly1 = H - BOT;
+    const cell = small ? 4 : 5, cols = Math.max(1, Math.floor((lx1 - lx0) / cell)), rows = Math.floor((ly1 - ly0) / cell);
     const blocks = Math.min(cols * rows, Math.floor(ledger / ledgerPer));
     ctx.fillStyle = colors.allow;
     for (let i = 0; i < blocks; i++) {
       const r = Math.floor(i / cols), c = i % cols;
-      ctx.globalAlpha = i > blocks - cols ? 0.95 : 0.42;
+      ctx.globalAlpha = i > blocks - cols ? 0.95 : 0.4;
       ctx.fillRect(lx0 + c * cell, ly1 - (r + 1) * cell, cell - 1, cell - 1);
     }
     ctx.globalAlpha = 1;
-    // review tray
-    const tx0 = W * 0.34 + 14, tx1 = LX() - 8, ty = H - 34;
-    const tcols = Math.max(1, Math.floor((tx1 - tx0) / 4));
-    tray.slice(-tcols * 3).forEach((k, i) => {
-      ctx.fillStyle = k === "risk" ? colors.risk : colors.hold;
-      ctx.fillRect(tx0 + (i % tcols) * 4, ty - Math.floor(i / tcols) * 4, 3, 3);
-    });
+    // the review queue, riskiest first
+    const qx0 = r0 + 8, qx1 = r1 - 8, qy0 = rt + 10, qc = Math.max(1, Math.floor((qx1 - qx0) / 6)), qr = Math.max(1, Math.floor((H - BOT - qy0) / 6));
+    const ranked = queue.filter((x) => x).concat(queue.filter((x) => !x)).slice(0, qc * qr);
+    ranked.forEach((bad, i) => { ctx.fillStyle = bad ? colors.risk : colors.hold; ctx.fillRect(qx0 + (i % qc) * 6, qy0 + Math.floor(i / qc) * 6, 4, 4); });
   }
   function shape(d, x, y, r) {
     if (d.bad) { ctx.beginPath(); ctx.moveTo(x, y - r - 1); ctx.lineTo(x + r + 1, y); ctx.lineTo(x, y + r + 1); ctx.lineTo(x - r - 1, y); ctx.closePath(); ctx.fill(); }
     else { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); }
+  }
+  const toward = (d, k) => { const dx = d.tx - d.x, dy = d.ty - d.y, dist = Math.hypot(dx, dy), step = d.v * 16 * (W / 700) * k; if (dist <= step) { d.x = d.tx; d.y = d.ty; return true; } d.x += (dx / dist) * step; d.y += (dy / dist) * step; return false; };
+  function review(now) {
+    // a person works the queue from the top: risky orders first. Approved orders go on to the ledger; rejected ones stop here.
+    if (!queue.length || now < nextReview) return;
+    nextReview = now + Math.max(140, 700 - queue.length * 25);
+    const i = queue.indexOf(true), bad = i >= 0, idx = bad ? i : 0;
+    queue.splice(idx, 1);
+    const x = X.rv0 * W + 12, y = rvTop() + 12;
+    out.push(bad ? { kind: "reject", x, y, fade: 1 } : { kind: "approve", x, y, tx: X.led * W + 14, ty: laneY(y - 40), v: 0.5 });
   }
   function frame(now) {
     requestAnimationFrame(frame);
@@ -695,43 +758,58 @@ function heroSetup() {
     while (spawnQ.length && spawnQ[0].at <= t) {
       const s = spawnQ.shift();
       const bad = s.k === "gate" || s.k === "risk" || s.k === "leak" || s.k === "dup";
-      dots.push({ k: s.k, bad, x: s.x, y: s.y, tx: G(), ty: H * 0.5 + (s.y - H * 0.5) * 0.55, v: 0.22 + Math.random() * 0.08, phase: 0, life: 0 });
+      const pool = s.r < NR ? byRow[s.r] : agents, a = pool[Math.floor(rnd() * pool.length)] || agents[0];
+      const fromMarket = s.r < NR;
+      const sx = fromMarket ? X.mk * W - 8 : a.x, sy = fromMarket ? rowY(s.r) : a.y;
+      dots.push({ k: s.k, bad, x: sx, y: sy, tx: a.x, ty: a.y, v: 0.24 + rnd() * 0.08, phase: fromMarket ? -1 : 0, fade: 1 });
+      if (!fromMarket) { const d = dots[dots.length - 1]; d.tx = X.gate * W; d.ty = d.k === "refuse" || d.k === "gate" || d.k === "dup" ? a.y : laneY(a.y); }
     }
     drawStatic(now);
+    review(now);
     const next = [];
     for (const d of dots) {
-      d.life += 16;
-      if (d.phase === 0) {
-        const dx = d.tx - d.x, dy = d.ty - d.y, dist = Math.hypot(dx, dy), step = d.v * 16 * (W / 700);
-        if (dist <= step) {
-          d.x = d.tx; d.y = d.ty;
-          if (d.k === "allow" || d.k === "leak") { d.phase = 1; d.tx = d.k === "allow" ? LX() + 10 : W; d.ty = d.y; }
-          else if (d.k === "risk") { d.phase = 1; d.tx = RK(); d.ty = d.y; }
-          else if (d.k === "hold") { d.phase = 3; d.tx = d.x + 10 + Math.random() * (LX() - G() - 30); d.ty = H - 34; }
-          else { d.phase = 2; d.vx = -(1.2 + Math.random()); d.vy = (Math.random() - 0.5) * 1.6; d.fade = 1; }
-        } else { d.x += (dx / dist) * step; d.y += (dy / dist) * step; }
-      } else if (d.phase === 1) {
-        const step = d.v * 16 * (W / 700); d.x += step;
-        if (d.x >= d.tx) {
-          if (d.k === "allow") { ledger += sample(); continue; }
-          if (d.k === "risk") { d.phase = 3; d.tx = d.x - Math.random() * (RK() - G() - 20); d.ty = H - 34; d.k = "risk"; }
-          if (d.k === "leak") continue;
+      if (d.phase === -1) {
+        if (toward(d, 1.6)) { d.phase = 0; d.tx = X.gate * W; d.ty = d.k === "hold" || d.k === "risk" || d.k === "allow" || d.k === "leak" ? laneY(d.y) : d.y; }
+      } else if (d.phase === 0) {
+        if (toward(d, 1)) {
+          if (d.k === "allow" || d.k === "leak" || d.k === "risk") { d.phase = 1; d.tx = X.risk * W; d.ty = d.y; }
+          else if (d.k === "hold") { d.phase = 3; d.tx = X.rv0 * W + 10 + rnd() * (X.rv1 - X.rv0) * W * 0.8; d.ty = rvTop() + 8; }
+          else { d.phase = 2; d.vx = -(1.1 + rnd()); d.vy = (rnd() - 0.5) * 1.6; }
         }
+      } else if (d.phase === 1) {
+        if (toward(d, 1)) {
+          if (d.k === "risk") { d.phase = 3; d.tx = X.rv0 * W + 10 + rnd() * (X.rv1 - X.rv0) * W * 0.8; d.ty = rvTop() + 8; }
+          else { d.phase = 4; d.tx = X.led * W + 8; d.ty = d.y; }
+        }
+      } else if (d.phase === 4) {
+        if (toward(d, 1)) { if (d.k === "allow") ledger += sample(); continue; }
       } else if (d.phase === 2) {
         d.x += d.vx; d.y += d.vy; d.fade -= 0.025; if (d.fade <= 0) continue;
       } else if (d.phase === 3) {
-        d.x += (d.tx - d.x) * 0.08; d.y += (d.ty - d.y) * 0.08;
-        if (Math.abs(d.ty - d.y) < 1.5) { for (let i = 0; i < sample(); i++) tray.push(d.k === "risk" ? "risk" : "hold"); continue; }
+        if (toward(d, 1.2)) { queue.push(d.k === "risk"); continue; }
       }
-      const decided = d.phase > 0 && !(d.k === "risk" && d.phase === 1);
-      const c = !decided ? (d.bad ? colors.text2 : colors.dot) : d.k === "allow" ? colors.allow : d.k === "hold" ? colors.hold : d.k === "risk" ? colors.risk : d.k === "dup" ? colors.line : colors.refuse;
-      ctx.fillStyle = c;
-      ctx.globalAlpha = d.phase === 2 ? Math.max(0, d.fade) : !decided ? 0.85 : d.k === "allow" ? 0.7 : 1;
+      const decided = d.phase >= 1 && !(d.k === "risk" && d.phase === 1);
+      const c = d.phase <= 0 ? (d.bad ? colors.text2 : colors.dot) : !decided ? colors.text2 : d.k === "allow" ? colors.allow : d.k === "hold" ? colors.hold : d.k === "risk" ? colors.risk : d.k === "dup" ? colors.lineStrong : colors.refuse;
+      ctx.fillStyle = d.phase === 2 ? (d.k === "dup" ? colors.lineStrong : colors.refuse) : c;
+      ctx.globalAlpha = d.phase === 2 ? Math.max(0, d.fade) : d.phase === -1 ? 0.75 : d.k === "allow" && decided ? 0.7 : 0.95;
       shape(d, d.x, d.y, d.bad ? 2.6 : 2);
       next.push(d);
     }
-    ctx.globalAlpha = 1;
     dots = next;
+    const keep = [];
+    for (const r of out) {
+      if (r.kind === "reject") {
+        r.fade -= 0.03; if (r.fade <= 0) continue;
+        ctx.globalAlpha = r.fade; ctx.strokeStyle = colors.refuse; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(r.x - 4, r.y - 4 - (1 - r.fade) * 10); ctx.lineTo(r.x + 4, r.y + 4 - (1 - r.fade) * 10); ctx.moveTo(r.x + 4, r.y - 4 - (1 - r.fade) * 10); ctx.lineTo(r.x - 4, r.y + 4 - (1 - r.fade) * 10); ctx.stroke();
+      } else {
+        if (toward(r, 1)) { ledger += 1; continue; }
+        ctx.globalAlpha = 1; ctx.fillStyle = colors.allow; ctx.beginPath(); ctx.arc(r.x, r.y, 2.4, 0, 6.2832); ctx.fill();
+      }
+      keep.push(r);
+    }
+    out = keep;
+    ctx.globalAlpha = 1;
   }
   size();
   addEventListener("resize", () => { const w = cv.clientWidth; if (Math.abs(w - W) > 2) { size(); if (reduce.matches || hero.userPaused) drawStatic(0); } });
@@ -748,6 +826,24 @@ function heroSetup() {
   });
   new IntersectionObserver((es) => { hero.visible = es[0].isIntersecting; }).observe(cv);
   document.addEventListener("visibilitychange", () => { hero.visible = !document.hidden; });
+}
+
+/* ---------------------------------------------------------------- film chapters */
+function film() {
+  const v = $("#film"), list = $("#chapters"), now = $("#film-now");
+  if (!v || !list) return;
+  const btns = [...list.querySelectorAll("button")];
+  let cur = 0;
+  function pick(i, play) {
+    cur = i;
+    btns.forEach((b, j) => b.setAttribute("aria-current", String(j === i)));
+    const c = btns[i].dataset.clip;
+    v.poster = "media/og-" + c + ".jpg"; v.src = "media/og-" + c + ".mp4";
+    now.textContent = "Chapter " + (i + 1) + " of " + btns.length + ": " + btns[i].querySelector(".ch-t").textContent;
+    if (play) v.play().catch(() => {});
+  }
+  btns.forEach((b, i) => b.addEventListener("click", () => pick(i, true)));
+  v.addEventListener("ended", () => { if (cur + 1 < btns.length) pick(cur + 1, true); });
 }
 
 /* ---------------------------------------------------------------- theme */
@@ -784,6 +880,7 @@ async function boot() {
   theme();
   drawAll();
   heroSetup();
+  film();
   new IntersectionObserver((es) => { pipeVisible = es[0].isIntersecting; }, { threshold: 0.3 }).observe($("#pipe"));
   requestAnimationFrame(pipeTick);
   let lastW = innerWidth, tm = 0;

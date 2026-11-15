@@ -354,6 +354,32 @@ def swarm(r: Reader) -> dict:
     risk = r.json("results/risk/arena-replay-arena-s7-k1000-t2000.json")
     honest_to_human = sum(c[keys.index("hold")] for c in counts)
     run = tl["run"]
+    # The market the agents traded on: the trusted price the guard sized each order at, last value per bin,
+    # as a percent move from the first one; and how many orders per bin named each of these symbols.
+    market_syms = ("AAPL", "MSFT", "SPY", "NVDA", "TSLA", "BTC-USD")
+    last = {s: [None] * bins for s in market_syms}
+    sym_counts = [[0] * (len(market_syms) + 1) for _ in range(bins)]
+    with r.path("results/arena/arena-s7-k1000-t2000.jsonl").open(encoding="utf-8") as fh:
+        for line in fh:
+            row = json.loads(line)
+            if row.get("type") == "meta":
+                continue
+            b = min(bins - 1, int(row["step"] / width))
+            t = row["order"].get("ticker")
+            k = market_syms.index(t) if t in market_syms else len(market_syms)
+            sym_counts[b][k] += 1
+            if k < len(market_syms) and isinstance(row.get("tp"), (int, float)) and row["tp"] > 0:
+                last[t][b] = row["tp"]
+    market = []
+    for s in market_syms:
+        series, prev = [], None
+        for v in last[s]:
+            prev = v if v is not None else prev
+            series.append(prev)
+        first = next(v for v in series if v is not None)
+        series = [first if v is None else v for v in series]
+        moves = [round((v / first - 1) * 100, 3) for v in series]
+        market.append({"sym": s, "pct": moves, "last": f"{moves[-1]:+.1f}%"})
     return {
         "src": "results/theater/timeline.json",
         "run": run["name"],
@@ -370,6 +396,9 @@ def swarm(r: Reader) -> dict:
         "orders_n": len(codes),
         "bad_total": usd_m(summ["bad"]["attack_notional_usd"]),
         "honest_to_human_n": honest_to_human,
+        "market": market,
+        "market_src": "results/arena/arena-s7-k1000-t2000.jsonl",
+        "sym_counts": sym_counts,
         "facts": {
             "agents": fact(run["agents"], num(run["agents"]), "results/theater/timeline.json", "/run/agents"),
             "orders": fact(len(codes), num(len(codes)), "results/theater/timeline.json", "/events"),
