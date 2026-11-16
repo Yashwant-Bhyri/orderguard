@@ -1437,6 +1437,123 @@ def risk_families(r: Reader) -> dict:
             "detectors": fact(len(units), num(len(units)), M, "/units")}
 
 
+def launch_more(r: Reader, doc: dict) -> dict:
+    """v9 launch data: the swarm benchmark and how the model works, the adapter's two checkpoints, a labelled memory
+    illustration for long-running agents, and the film cues that run beside each part."""
+    M = "data/models/order_risk.json"
+    m = r.json(M)
+    LAT = "results/risk/latency.json"
+    lat = r.json(LAT)
+    REP = "results/risk/arena-replay-replay-binance-public-20261111T000117Z-k1000.json"
+    rep = r.json(REP)
+    ho, ad = m["metrics_held_out_seeds"], m["metrics_adaptive_colluders"]
+    adk = {"collusion": "stealth", "runaway": "runaway", "fat_finger": "fat_finger", "compromised": "compromised"}
+    sig = {"collusion": "Several agents send near-identical slices of one position, each under the approval line",
+           "runaway": "Small legal orders repeat faster and faster",
+           "fat_finger": "One order's size jumps far above the agent's own usual size",
+           "stale_price": "The limit price sits far from OrderGuard's own feed",
+           "compromised": "An agent suddenly trades off its usual schedule"}
+    names = {"collusion": "Agents splitting one position", "runaway": "Runaway loop", "fat_finger": "Fat finger",
+             "stale_price": "Order placed on a stale price", "compromised": "Hijacked agent"}
+    risk_md = r.text("docs/RISK.md")
+    assert re.search(r"Held-out seeds \([\d,]+ allowed orders", risk_md), "the benchmark counts gate-allowed orders"
+    base = fact(0.0, "0%", "docs/RISK.md", "Operating points: the benchmark counts only orders every per-order limit allowed")
+    bench = []
+    for k, label in names.items():
+        v = ho["by_family"][k]
+        row = {"k": k, "name": label, "sig": sig[k],
+               "held": fact(v, pct(v, 1).replace(".0%", "%"), M, f"/metrics_held_out_seeds/by_family/{k}"), "base": base}
+        if k in adk:
+            a = ad["by_family"][adk[k]]
+            row["adaptive"] = fact(a, pct(a, 1).replace(".0%", "%"), M, f"/metrics_adaptive_colluders/by_family/{adk[k]}")
+        bench.append(row)
+    units = [{"name": u["name"].replace("_", " "), "family": names[u["family"]]} for u in m["units"]]
+    how = {
+        "latency_p50": fact(lat["p50_us"], f"{lat['p50_us']:.0f}µs", LAT, "/p50_us"),
+        "latency_p99": fact(lat["p99_us"], f"{lat['p99_us']:.0f}µs", LAT, "/p99_us"),
+        "model_kb": fact(lat["model_mb"], f"{lat['model_mb'] * 1000:.0f} KB", LAT, "/model_mb"),
+        "precision": fact(ho["hold_precision"], pct(ho["hold_precision"], 1), M, "/metrics_held_out_seeds/hold_precision"),
+        "replay_stopped": fact(rep["bad_stopped_share"], pct(rep["bad_stopped_share"], 0), REP, "/bad_stopped_share"),
+        "replay_honest": fact(rep["honest_tightened_rate"], pct(rep["honest_tightened_rate"], 1), REP, "/honest_tightened_rate"),
+        "replay_bad": fact(rep["leak_before_usd"], usd_short(rep["leak_before_usd"]), REP, "/leak_before_usd"),
+        "replay_after": fact(rep["leak_after_usd"], usd(rep["leak_after_usd"]), REP, "/leak_after_usd"),
+        "units": units,
+        "signals": ["Its size against the cap and the approval line", "Its timing against the agent's own rhythm",
+                    "How many other agents moved the same name in the same minute", "How far its price sits from the trusted feed",
+                    "Whether the same order keeps coming back"],
+    }
+    COP, SCO = "results/review/copilot.json", "results/review/scope.json"
+    cop, sco = r.json(COP), r.json(SCO)
+    SSRC = "python/orderguard_review/labelled_scope.py"
+    r.text(SSRC)
+    from orderguard_review.labelled_scope import SET as SCOPE_SET
+    srows = {x["id"]: x for x in sco["rows"]}
+    scope_ex = []
+    for sid in ("x07", "c06", "x05", "c12"):
+        _, lab, intent, order = next(x for x in SCOPE_SET if x[0] == sid)
+        row = srows[sid]
+        q = order["quantity"]
+        scope_ex.append({"id": sid, "intent": intent, "order": order["side"].upper() + " " + num(q) + " " + order["ticker"],
+                         "mismatch": fact(row["mismatch"], f"{row['mismatch']:.2f}", SCO, f"/rows/{sid}/mismatch"),
+                         "held": row["action"] == "hold", "label": lab})
+    n_mis = sum(1 for x in sco["rows"] if x["label"] == 1)
+    n_ok = len(sco["rows"]) - n_mis
+    adapter = {
+        "auc": fact(cop["auc"], pct(cop["auc"], 1), COP, "/auc"),
+        "baseline": fact(cop["baseline_breadth_auc"], pct(cop["baseline_breadth_auc"], 1), COP, "/baseline_breadth_auc"),
+        "heldout": fact(cop["calibration"]["heldout_accuracy"], pct(cop["calibration"]["heldout_accuracy"], 0), COP, "/calibration/heldout_accuracy"),
+        "scope_held": fact(round(sco["hold_rate_on_mismatching"] * n_mis), num(round(sco["hold_rate_on_mismatching"] * n_mis)), SCO, "hold_rate_on_mismatching x mismatches"),
+        "scope_n": fact(n_mis, num(n_mis), SCO, "rows with label 1"),
+        "scope_ok_held": fact(round(sco["hold_rate_on_matching"] * n_ok), num(round(sco["hold_rate_on_matching"] * n_ok)), SCO, "hold_rate_on_matching x matches"),
+        "scope_ok_n": fact(n_ok, num(n_ok), SCO, "rows with label 0"),
+        "scope_ex": scope_ex,
+        "questions": ["Does it serve the purpose?", "Does it ask for more than the purpose needs?", "If not, what is the concern?"],        "warn_at": fact(sco["warn_at"], f"{sco['warn_at']:.2f}", SCO, "/warn_at"),
+        "latency": fact(r.json("results/review/jev_latency.json")["p50"], f"{r.json('results/review/jev_latency.json')['p50'] / 1000:.1f}s", "results/review/jev_latency.json", "/p50"),
+    }
+    L_ = doc["launch"]
+    fig, price = L_["figure"], L_["price"]
+    memory = {
+        "note": "Illustration: one agent's notes over a month. The figure and price are the recorded cases; the notes around them are drawn for the page.",
+        "entries": [
+            {"day": "Day 1", "text": "Apple fiscal 2024 revenue " + fig["truth"], "from": "SEC 10-K", "kind": "sourced"},
+            {"day": "Day 6", "text": "Revenue was " + fig["claim"].split(": ")[-1], "from": "its own summary of a summary", "kind": "drift",
+             "check": "The filing says " + fig["truth"]},
+            {"day": "Day 9", "text": "The owner prefers large positions", "from": "written by a plugin, author unknown", "kind": "undeclared",
+             "check": "Not in what you signed, and nobody can say who wrote it"},
+            {"day": "Day 14", "text": "Robotics names are running hot", "from": "no figure, no source", "kind": "vague",
+             "check": "Nothing to check, so nothing to act on"},
+            {"day": "Day 21", "text": "Apple at " + price["claim"].split(" at ")[-1].split(",")[0], "from": "a quote saved an hour ago", "kind": "stale",
+             "check": "OrderGuard's own feed says " + price["truth"]},
+            {"day": "Day 27", "text": "Acquisition talks reported", "from": "one outlet", "kind": "single",
+             "check": "Waits for a second outlet"},
+        ],
+        "order": "BUY AAPL, sized up",
+    }
+    films = {
+        "mandate": {"clip": ["order", 0.2, 19.8], "title": "One synthetic order, slowed down",
+                    "cues": [[0.2, "trace"], [2.2, "token"], [9.6, "recheck"], [15.6, "ledger"]]},
+        "data": {"clip": ["order", 36.0, 46.0], "title": "Every trade carries its chain of reasoning",
+                 "cues": [[36.0, "chain"], [40.0, "sources"], [44.0, "cut"]]},
+        "verify": {"clip": ["order", 46.0, 60.2], "title": "Independent agents check every claim",
+                   "cues": [[46.0, "check"], [54.0, "act"]]},
+        "final": {"clip": ["fits", 6.4, 17.6], "title": "At the broker, before any effect",
+                  "cues": [[6.4, "receiver"], [12.0, "commit"]]},
+    }
+    sim = doc["sim"]["facts"]
+    final = {"orders": sim["million_orders_total"], "breaches": sim["million_breaches"], "agents": sim["million_agents"],
+             "checks": ["Signature valid, mandate not revoked", "Inside the scope you signed", "Price still inside the band, at the live price",
+                        "Every fact it cites still holds", "Budget left right now, all agents together"],
+             "note": "Illustration of three waves. The failing reasons are the recorded price case and the shared daily budget.",
+             "waves": [
+                 [{"o": "BUY 40 SPY"}, {"o": "SELL 20 AAPL"}, {"o": "BUY 25 MSFT"}],
+                 [{"o": "BUY 60 KO"}, {"o": "BUY 90 AAPL", "fail": 2, "why": "The market moved since the plan: " + price["result"].split(";")[0].replace("The agent's price is ", "")},
+                  {"o": "SELL 30 TSLA"}],
+                 [{"o": "BUY 25 JNJ"}, {"o": "BUY 50 QQQ"}, {"o": "BUY 70 NVDA", "fail": 4, "why": "Today's budget, all agents together, is used up"}],
+             ]}
+    return {"bench": bench, "how": how, "adapter3": adapter, "memory": memory, "films": films, "final": final,
+            "src": [M, LAT, REP, COP, SCO, SSRC]}
+
+
 def launch(r: Reader, doc: dict) -> dict:
     """The launch page's story: one chat assistant given a broker's tools, six things that go wrong, and the part of OrderGuard
     that stops each. Every step is a recorded case or a measured run; this function only gathers them in story order."""
@@ -1625,6 +1742,7 @@ def build() -> tuple[dict, dict[str, bytes]]:
     doc["launch"] = launch(r, doc)
     doc["launch"]["adapter2"] = adapter_examples(r)
     doc["launch"]["families"] = risk_families(r)
+    doc["launch"].update(launch_more(r, doc))
     doc["launch"]["contagion"] = {
         "note": "Illustration with fictional tickers, redrawn from the film's opening scene. Not a recorded run.",
         "ask": "Watch robotics stocks.", "name": "TALN", "name_note": "loosely related, jumps", "order": "BUY 5,000 TALN",

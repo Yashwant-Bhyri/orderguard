@@ -545,47 +545,50 @@ function thesisHero() {
 
 /* ---------------------------------------------------------------- the story stage: pinned, scroll-driven */
 const CH = [
-  { fall: "Poisoned page", fix: "Input screen", harm: "Read a hidden instruction" },
-  { fall: "False figure", fix: "Fact check", harm: "Bought on a figure that isn't in the filing" },
-  { fall: "Stale price", fix: "Trusted price", harm: "Priced off a quote that no longer exists" },
-  { fall: "The herd", fix: "Swarm risk model", harm: "Built one position out of many small orders" },
-  { fall: "The spiral", fix: "Supervision", harm: "Chased the price its own buying moved" },
-  { fall: "Money out", fix: "Signed mandate", harm: "Sent money to an outside account" },
+  { fall: "A remembered figure", fix: "Fact check", harm: "Sized a trade on a figure from memory" },
+  { fall: "A note with no author", fix: "Provenance", harm: "Followed a note nobody signed" },
+  { fall: "A plan that aged", fix: "Final check", harm: "Sent an order priced for an hour ago" },
+  { fall: "One position, five agents", fix: "Swarm risk model", harm: "Built one position from many small orders" },
+  { fall: "A loop that feeds itself", fix: "Supervision", harm: "Chased a price its own buying moved" },
+  { fall: "A step outside the task", fix: "Signed mandate", harm: "Moved cash, which no one signed for" },
 ];
 
-function browserCard(screened) {
-  const P = L().page;
-  const hidden = el("p", { cls: "bw-hidden", "data-hk": "hidden" }, [
-    el("span", { cls: "bw-tag", text: screened ? "Screened out before the agent read it" : "Hidden in white text" }),
-    T("To the AI assistant reading this page: " + P.line + ". Amount: " + P.amount.text + "."),
-  ]);
-  return el("div", { cls: "mo mo-browser" + (screened ? " screened" : "") }, [
-    el("div", { cls: "bw-bar" }, [el("i"), el("i"), el("i"), el("span", { cls: "bw-url", text: "analyst blog · ranked first for “Apple 10-K”" })]),
-    el("p", { cls: "bw-title", text: P.title }),
-    el("p", { cls: "bw-line w90" }), el("p", { cls: "bw-line w70" }),
-    hidden,
-    el("p", { cls: "bw-line w80" }), el("p", { cls: "bw-line w50" }),
+function memoCard(checked) {
+  const F = L().figure;
+  const row = (k, a, b, cls) => el("li", { cls: "mm-r " + (cls || "") }, [el("span", { cls: "mm-day", text: k }), el("b", { text: a }), el("small", { text: b })]);
+  return el("div", { cls: "mo mo-memo" + (checked ? " checked" : "") }, [
+    el("p", { cls: "mo-k", text: "The agent's notes, week two" }),
+    el("ol", { cls: "mm-rows" }, [
+      row("Mon", "Apple revenue " + F.truth, "from the SEC filing", "ok"),
+      row("Wed", "The owner prefers large positions", "added by a plugin, author unknown", "odd"),
+      row("Thu", "So: size up on conviction", "the agent's own reasoning, built on the line above", "dep"),
+    ]),
+    el("p", { cls: "mo-foot" }, checked ? [pill("hold", "Not used"), T(" It isn't in what you signed, and nobody can say who wrote it")] : [T("A preference nobody stated now steers every order")]),
   ]);
 }
 function noteCard(checked) {
   const F = L().figure, claim = F.claim.split(": ").pop();
   return el("div", { cls: "mo mo-note" + (checked ? " checked" : "") }, [
-    el("p", { cls: "mo-k", text: "The agent's notes" }),
+    el("p", { cls: "mo-k", text: "From the agent's own notes, week one" }),
     el("p", { cls: "nt-row" }, [el("span", { text: "Apple revenue, fiscal year" }), el("b", { cls: "nt-claim", text: claim })]),
-    checked ? el("p", { cls: "nt-row nt-truth" }, [el("span", { text: "Apple's SEC filing says" }), el("b", { text: F.truth })]) : null,
-    el("p", { cls: "nt-act" }, [T("Decision: "), el("b", { text: "buy, and buy big" })]),
-    el("p", { cls: "mo-foot" }, checked ? [pill("refuse", "Refused"), T(" The figure doesn't match the filing")] : [T("Nothing compares it with the filing")]),
+    checked ? el("p", { cls: "nt-row nt-truth" }, [el("span", { text: "Apple's SEC filing says" }), el("b", { text: F.truth })]) : el("p", { cls: "nt-row nt-src" }, [el("span", { text: "Source" }), el("b", { text: "its summary of an earlier summary" })]),
+    el("p", { cls: "nt-act" }, [T("Plan: "), el("b", { text: "buy, sized on that figure" })]),
+    el("p", { cls: "mo-foot" }, checked ? [pill("refuse", "Not used"), T(" The figure doesn't match the filing, so the order built on it doesn't go")] : [T("Models misremember numbers. Nothing compares it with the filing")]),
   ]);
 }
 function priceCard(checked) {
-  const P = L().price, c = D.story.checks.find((x) => x.k === "stale");
+  const P = L().price, old = P.claim.split(" at ").pop().split(",")[0], now = P.truth.split(" ")[0];
+  const svg = S("svg", { viewBox: "0 0 320 120", cls: "ag-svg", preserveAspectRatio: "none", "aria-hidden": "true" });
+  svg.append(
+    S("rect", { cls: "ag-band", x: 0, y: 17, width: 320, height: 16 }),
+    S("path", { cls: "ag-line", d: "M0 92 C40 90 70 94 100 84 S160 62 200 46 S262 28 320 25" }),
+    S("line", { cls: "ag-plan", x1: 0, x2: 320, y1: 92, y2: 92 }),
+    S("circle", { cls: "ag-dot", cx: 306, cy: 92, r: 6 }),
+  );
   return el("div", { cls: "mo mo-price" + (checked ? " checked" : "") }, [
-    el("div", { cls: "px-pair" }, [
-      el("div", { cls: "px-box stale" }, [el("p", { cls: "mo-k", text: "The agent's quote" }), el("b", { text: P.claim.split(" at ").pop().split(",")[0] }), el("small", { text: "from an out-of-date feed" })]),
-      el("div", { cls: "px-box live" }, [el("p", { cls: "mo-k", text: "The market now" }), el("b", { text: P.truth.split(" ")[0] }), el("small", { text: "OrderGuard's own price" })]),
-    ]),
-    el("p", { cls: "nt-act" }, [T("Order: "), el("b", { text: c.order })]),
-    el("p", { cls: "mo-foot" }, checked ? [pill("refuse", "Refused"), T(" " + P.result.split(";")[0] + ".")] : [T("The order is sized and priced off a quote that no longer exists")]),
+    el("p", { cls: "mo-k", text: "Planned in the morning, sent in the afternoon" }),
+    el("div", { cls: "ag-wrap" }, [svg, el("span", { cls: "ag-lbl ag-l-plan", text: "The plan's price " + old }), el("span", { cls: "ag-lbl ag-l-now", text: "The market at send time " + now })]),
+    el("p", { cls: "mo-foot" }, checked ? [pill("refuse", "Sent back to re-plan"), T(" At send time it's " + P.result.split(";")[0].replace("The agent's price is ", "") + ". The band you signed is narrower")] : [T("The order goes out at a price the market left behind")]),
   ]);
 }
 function herdCard(seen) {
@@ -620,22 +623,22 @@ function spiralCard(sup) {
 }
 function moneyCard(sealed) {
   return el("div", { cls: "mo mo-money" + (sealed ? " sealed" : "") }, [
-    el("p", { cls: "mo-k", text: "The hidden line from the page, finally acted on" }),
+    el("p", { cls: "mo-k", text: "To free up cash for the trade, it moves money between accounts" }),
     el("div", { cls: "mn-flow" }, [
       el("div", { cls: "mn-acct" }, [el("small", { text: "Your account" }), el("b", { text: "Brokerage" })]),
       el("div", { cls: "mn-arrow" }, [el("span", { text: "transfer_funds " + L().page.amount.text }), el("i", { cls: "mn-seal" })]),
-      el("div", { cls: "mn-acct out" }, [el("small", { text: "Outside account" }), el("b", { text: "Unknown" })]),
+      el("div", { cls: "mn-acct out" }, [el("small", { text: "Another account" }), el("b", { text: "Not on your list" })]),
     ]),
-    el("p", { cls: "mo-foot" }, sealed ? [pill("refuse", "Refused at the receiver"), T(" Moving money isn't in the signed mandate, and the agent never held the key")] : [T("Only the model's own judgement stands in the way")]),
+    el("p", { cls: "mo-foot" }, sealed ? [pill("refuse", "Refused at the receiver"), T(" Moving money isn't in what you signed, and the agent never held the key")] : [T("A sensible-looking step that nobody asked for")]),
   ]);
 }
 function recordCard(sealed) {
   const rows = el("ol", { cls: "rc-rows" });
-  const ds = [["refuse", "Refused"], ["refuse", "Refused"], ["refuse", "Refused"], ["hold", "Held"], ["hold", "Slowed"], ["refuse", "Refused"]];
+  const ds = [["refuse", "Not used"], ["hold", "Not used"], ["refuse", "Sent back"], ["hold", "Held"], ["hold", "Slowed"], ["refuse", "Refused"]];
   CH.forEach((c, i) => rows.append(el("li", {}, [el("span", { text: c.harm }), sealed ? pill(ds[i][0], ds[i][1] + " · " + c.fix) : el("em", { text: "no record" })])));
   return el("div", { cls: "mo mo-record" + (sealed ? " sealed" : "") }, [
-    el("p", { cls: "mo-k", text: sealed ? "Every decision, sealed with its reason" : "Afterwards: why did it buy? Who approved it?" }), rows,
-    sealed ? el("p", { cls: "mo-foot" }, [T("The held position is first in line for a person, ranked by money at stake")]) : el("p", { cls: "mo-foot", text: "Nothing was written down, so nobody can say" }),
+    el("p", { cls: "mo-k", text: sealed ? "Every decision, sealed with its reason" : "A month later: why does the book look like this?" }), rows,
+    sealed ? el("p", { cls: "mo-foot" }, [T("The held position is first in line for a person, ranked by money at stake")]) : el("p", { cls: "mo-foot", text: "Each step looked reasonable. Nothing wrote down why" }),
   ]);
 }
 function assistantCard() {
@@ -671,17 +674,17 @@ function storyStage() {
     { ph: "swarm", head: "A recorded run", say: sc.total_agents.text + " AI agents trading one book for " + word(run.days.value) + " days: " + sc.run_orders.text + " orders.", zoom: 0, ms: 3600 },
     { ph: "swarm", head: "Follow one of them", say: "A chat assistant, given a broker's trading tools and a research team.", zoom: 1, card: assistantCard, ms: 5200 },
     { ph: "without", head: "The problem", say: "You ask it to watch robotics stocks. A related name jumps, so it buys.", card: contagionCard, ms: 8200 },
-    { ph: "without", head: W, say: "It reads an analyst page that ranks first for Apple. A line on it is hidden in white text.", fall: 1, card: () => browserCard(false), ms: 5200 },
-    { ph: "without", head: W, say: "It quotes a revenue figure that isn't in the filing, and decides to buy big.", fall: 2, card: () => noteCard(false), ms: 4600 },
-    { ph: "without", head: W, say: "It prices the order off a quote that is out of date.", fall: 3, card: () => priceCard(false), ms: 4600 },
+    { ph: "without", head: W, say: "Week one. Its notes carry a revenue figure it remembered, not one it read in the filing.", fall: 1, card: () => noteCard(false), ms: 5200 },
+    { ph: "without", head: W, say: "Week two. A plugin adds a line to its notes: the owner prefers large positions.", fall: 2, card: () => memoCard(false), ms: 5000 },
+    { ph: "without", head: W, say: "It plans an order in the morning and sends it in the afternoon. The market has moved.", fall: 3, card: () => priceCard(false), ms: 5000 },
     { ph: "without", head: W, say: "Its research agents read the same story and pile in. Each order is under the limit.", fall: 4, card: () => herdCard(false), ms: 5200 },
     { ph: "without", head: W, say: "Their buying lifts the price, and the rise looks like proof. They buy more.", fall: 5, card: () => spiralCard(false), ms: 5000 },
-    { ph: "without", head: W, say: "Then the hidden line from the first page is acted on.", fall: 6, card: () => moneyCard(false), ms: 4600 },
-    { ph: "without", head: W, say: "Money is gone, the book is down, and nobody can say why.", fall: 6, card: () => recordCard(false), ms: 5000 },
-    { ph: "with", head: G, say: "The same morning, with OrderGuard between the agents and the broker.", fix: 0, card: assistantCard, ms: 3800 },
-    { ph: "with", head: G, say: "The input screen strips the hidden line before the agent reads it.", fix: 1, card: () => browserCard(true), ms: 4600 },
-    { ph: "with", head: G, say: "The figure is checked against the SEC filing. It doesn't match.", fix: 2, card: () => noteCard(true), ms: 4400 },
-    { ph: "with", head: G, say: "The order is sized at OrderGuard's own price, and it falls outside what you signed.", fix: 3, card: () => priceCard(true), ms: 4600 },
+    { ph: "without", head: W, say: "To free up cash, it moves money to another account. Nobody asked for that.", fall: 6, card: () => moneyCard(false), ms: 4800 },
+    { ph: "without", head: W, say: "Each step looked reasonable. A month later the book holds positions nobody chose.", fall: 6, card: () => recordCard(false), ms: 5000 },
+    { ph: "with", head: G, say: "The same month, with OrderGuard between the agents and the broker.", fix: 0, card: assistantCard, ms: 3800 },
+    { ph: "with", head: G, say: "The figure is traced to the SEC filing. It doesn't match, so it isn't used.", fix: 1, card: () => noteCard(true), ms: 4800 },
+    { ph: "with", head: G, say: "The note has no known author and isn't in what you signed. It isn't used.", fix: 2, card: () => memoCard(true), ms: 4800 },
+    { ph: "with", head: G, say: "Right before it's sent, the order is checked at the live price. It goes back to be re-planned.", fix: 3, card: () => priceCard(true), ms: 5000 },
     { ph: "with", head: G, say: "The swarm risk model sees " + word(sc.agents.value) + " agents building one position, and holds it for a person.", fix: 4, card: () => herdCard(true), ms: 5000 },
     { ph: "with", head: G, say: "Supervision sees the crowd forming and slows new buying.", fix: 5, card: () => spiralCard(true), ms: 4800 },
     { ph: "with", head: G, say: "Moving money was never in the mandate you signed. The receiver refuses it.", fix: 6, card: () => moneyCard(true), ms: 4600 },
@@ -766,6 +769,169 @@ function storyStage() {
     onPlay: (on) => { if (steps[cur].film) { if (on) video.play().catch(() => {}); else video.pause(); } } });
 }
 
+/* ---------------------------------------------------------------- the film leads, the drawing waits in the corner; at the end of the clip they trade places */
+function duo(root, viz, film, onCue) {
+  const stage = el("div", { cls: "duo-stage" });
+  const fwrap = el("div", { cls: "duo-film" });
+  const swapB = el("button", { type: "button", cls: "duo-swap" });
+  const side = el("div", { cls: "duo-side" }, [el("p", { cls: "duo-now" }), swapB]);
+  root.prepend(stage);
+  viz.classList.add("duo-viz");
+  stage.append(viz, fwrap, side);
+  let lead = "film", hold = 0, pinned = false;
+  const fp = filmPane(film, onCue, {
+    host: root,
+    onEnd: (go) => { if (pinned) { go(); return; } setLead("viz"); clearTimeout(hold); hold = setTimeout(() => { setLead("film"); go(); }, 6500); },
+  });
+  fwrap.append($(".fp-v", fp));
+  const ctl = $(".fp-ctl", fp);
+  fp.replaceChildren(ctl);
+  fp.classList.add("duo-ctl");
+  root.append(fp);
+  const narrow = () => matchMedia("(max-width: 720px)").matches;
+  function layout() {
+    if (narrow()) { root.classList.add("stacked"); viz.style.transform = ""; fwrap.style.transform = ""; fwrap.style.width = fwrap.style.height = ""; return; }
+    root.classList.remove("stacked");
+    const W = stage.clientWidth, H = stage.clientHeight, vw = viz.offsetWidth, vh = viz.offsetHeight, m = 16;
+    const Rw = Math.round(W * 0.22), Lw = W - Rw - 3 * m, Lh = H - 2 * m, Rx = W - m - Rw;
+    const fw = Math.min(Lw, Lh * 16 / 9), fh = fw * 9 / 16;
+    fwrap.style.width = fw + "px"; fwrap.style.height = fh + "px";
+    const big = Math.min(1, Lw / vw, Lh / vh), small = Rw / vw, fs = Rw / fw;
+    let insetH;
+    if (lead === "film") {
+      fwrap.style.transform = "translate(" + (m + (Lw - fw) / 2).toFixed(1) + "px," + (m + (Lh - fh) / 2).toFixed(1) + "px)";
+      viz.style.transform = "translate(" + Rx + "px," + m + "px) scale(" + small.toFixed(4) + ")";
+      insetH = vh * small;
+    } else {
+      viz.style.transform = "translate(" + (m + (Lw - vw * big) / 2).toFixed(1) + "px," + (m + (Lh - vh * big) / 2).toFixed(1) + "px) scale(" + big.toFixed(4) + ")";
+      fwrap.style.transform = "translate(" + Rx + "px," + m + "px) scale(" + fs.toFixed(4) + ")";
+      insetH = fh * fs;
+    }
+    side.style.left = Rx + "px"; side.style.top = (m + insetH + 12) + "px"; side.style.width = Rw + "px";
+  }
+  function setLead(k) {
+    lead = k;
+    root.dataset.lead = k;
+    viz.classList.toggle("inset", k !== "viz");
+    fwrap.classList.toggle("inset", k !== "film");
+    $(".duo-now", side).textContent = k === "film" ? "The drawing follows the film, step by step. Click it to make it larger." : "The film keeps its place here. Click it to make it larger.";
+    swapB.textContent = k === "film" ? "Show the drawing" : "Show the film";
+    layout();
+  }
+  const swap = (e) => { e.preventDefault(); e.stopPropagation(); clearTimeout(hold); pinned = true; setLead(lead === "film" ? "viz" : "film"); };
+  swapB.addEventListener("click", swap);
+  viz.addEventListener("click", (e) => { if (viz.classList.contains("inset")) swap(e); }, true);
+  fwrap.addEventListener("click", (e) => { if (fwrap.classList.contains("inset")) swap(e); }, true);
+  setLead("film");
+  addEventListener("resize", layout);
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(viz);
+  return fp;
+}
+
+/* ---------------------------------------------------------------- a film clip beside a drawing: it plays in view, loops, and its cues drive the drawing */
+function filmPane(film, onCue, opts) {
+  opts = opts || {};
+  const clip = film.clip[0], t0 = film.clip[1], t1 = film.clip[2], span = t1 - t0;
+  const v = el("video", { playsinline: "", preload: "none", poster: "media/og-" + clip + ".jpg", "aria-label": "Film: " + film.title });
+  v.muted = true; v.defaultMuted = true;
+  const fill = el("i", { cls: "fp-fill" });
+  const bar = el("span", { cls: "fp-bar", role: "slider", tabindex: "0", "aria-label": "Position in the clip", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }, [fill]);
+  film.cues.forEach((c) => bar.append(el("em", { style: "left:" + ((c[0] - t0) / span * 100).toFixed(2) + "%" })));
+  const btn = el("button", { type: "button", cls: "fp-play", "aria-label": "Pause" }, [el("i")]);
+  const sound = el("button", { type: "button", cls: "fp-sound", text: "With sound" });
+  const box = el("figure", { cls: "fp" }, [el("div", { cls: "fp-v" }, [v]), el("figcaption", { cls: "fp-ctl" }, [btn, el("span", { cls: "fp-t" }, [el("small", { text: "From the film" }), T(film.title)]), bar, sound])]);
+  /* time comes from the video; if the video can't play (autoplay blocked, no decoder), a clock stands in so the drawing still runs */
+  let cue = -2, loaded = false, user = false, seen = false, raf = 0, clock = false, vt = t0, last = 0, watch = 0, ending = false;
+  const now = () => (clock ? vt : v.currentTime || t0);
+  const running = () => (clock ? seen && !user && !ending : !v.paused);
+  const at = (t) => { let k = -1; film.cues.forEach((c, i) => { if (t >= c[0] - 0.05) k = i; }); return k; };
+  const fire = (t) => { const k = at(t); if (k !== cue) { cue = k; if (onCue) onCue(k >= 0 ? film.cues[k][1] : "reset", k); } };
+  function paint(ts) {
+    if (clock && running()) { if (last) vt += Math.min(0.1, (ts - last) / 1000); last = ts; if (vt >= t1) { vt = t1; atEnd(); } }
+    const f = Math.max(0, Math.min(1, (now() - t0) / span));
+    fill.style.transform = "scaleX(" + f.toFixed(4) + ")";
+    bar.setAttribute("aria-valuenow", String(Math.round(f * 100)));
+    fire(now());
+    if (!clock && !v.paused && v.currentTime >= t1 - 0.05) { v.pause(); atEnd(); }
+    cancelAnimationFrame(raf);
+    if (running()) raf = requestAnimationFrame(paint); else last = 0;
+  }
+  function toClock() {
+    if (clock) return;
+    clock = true; vt = Math.max(t0, Math.min(t1, v.currentTime || t0)); last = 0;
+    box.classList.add("still");
+    cancelAnimationFrame(raf); raf = requestAnimationFrame(paint);
+  }
+  function load() {
+    if (loaded) return;
+    loaded = true;
+    v.src = "media/og-" + clip + ".mp4#t=" + t0;
+    v.addEventListener("loadedmetadata", () => { if (v.currentTime < t0 - 0.2 || v.currentTime > t1) v.currentTime = t0; }, { once: true });
+    v.addEventListener("error", toClock, { once: true });
+  }
+  function play() {
+    box.classList.remove("paused"); btn.setAttribute("aria-label", "Pause");
+    if (clock) { last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); return; }
+    load();
+    const from = v.currentTime;
+    v.play().then(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }, toClock);
+    clearTimeout(watch);
+    watch = setTimeout(() => { if (!clock && seen && !user && Math.abs(v.currentTime - from) < 0.05) toClock(); }, 3500);
+  }
+  function pause() { if (!clock) v.pause(); box.classList.add("paused"); btn.setAttribute("aria-label", "Play"); requestAnimationFrame(paint); }
+  function atEnd() {
+    if (ending) return;
+    ending = true;
+    const go = () => {
+      ending = false; cue = -2;
+      if (clock) { vt = t0; last = 0; if (!user && seen) { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); } return; }
+      v.addEventListener("seeked", () => { if (!user && seen) v.play().catch(() => {}); }, { once: true });
+      v.currentTime = t0;
+    };
+    if (opts.onEnd) opts.onEnd(go); else go();
+  }
+  function seek(f) {
+    const t = t0 + Math.max(0, Math.min(0.995, f)) * span;
+    if (clock) vt = t;
+    else { load(); if (v.readyState >= 1) v.currentTime = t; else v.addEventListener("loadedmetadata", () => { v.currentTime = t; }, { once: true }); }
+    fill.style.transform = "scaleX(" + Math.max(0, Math.min(1, f)).toFixed(4) + ")";
+    fire(t);
+  }
+  v.addEventListener("timeupdate", () => { if (!clock && v.currentTime >= t1 - 0.12) { if (!v.paused) v.pause(); atEnd(); } });
+  v.addEventListener("pause", () => { if (!clock && v.currentTime >= t1 - 0.4 && !user && seen) atEnd(); });
+  v.addEventListener("play", () => requestAnimationFrame(paint));
+  v.addEventListener("seeked", () => requestAnimationFrame(paint));
+  const fx = (e) => { const r = bar.getBoundingClientRect(); return (e.clientX - r.left) / r.width; };
+  bar.addEventListener("pointerdown", (e) => { bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); seek(fx(e)); });
+  bar.addEventListener("pointermove", (e) => { if (bar.classList.contains("drag")) seek(fx(e)); });
+  const up = () => bar.classList.remove("drag");
+  bar.addEventListener("pointerup", up);
+  bar.addEventListener("pointercancel", up);
+  bar.addEventListener("keydown", (e) => {
+    const d = e.key === "ArrowRight" ? 0.05 : e.key === "ArrowLeft" ? -0.05 : 0;
+    if (d) { e.preventDefault(); seek((now() - t0) / span + d); }
+  });
+  btn.addEventListener("click", () => { if (box.classList.contains("paused")) { user = false; if (ending) { ending = false; atEnd(); } else play(); } else { user = true; pause(); } });
+  v.addEventListener("click", () => btn.click());
+  sound.addEventListener("click", () => {
+    user = true; pause();
+    const dlg = $("#film-dlg"), fv = $("#film-v");
+    fv.poster = "media/og-" + clip + ".jpg"; fv.src = "media/og-" + clip + ".mp4#t=" + t0; fv.muted = false;
+    dlg.showModal(); fv.play().catch(() => {});
+  });
+  if (reduce.matches) {
+    box.classList.add("paused"); btn.setAttribute("aria-label", "Play");
+    if (onCue) onCue(film.cues[film.cues.length - 1][1], film.cues.length - 1);
+    return box;
+  }
+  new IntersectionObserver((es) => es.forEach((e) => {
+    seen = e.isIntersecting;
+    if (seen && !user) play();
+    else if (!seen) { if (!clock && !v.paused) v.pause(); cancelAnimationFrame(raf); last = 0; }
+  }), { threshold: 0.35 }).observe(opts.host || box);
+  return box;
+}
+
 /* ---------------------------------------------------------------- part: the signed mandate, the envelope the owner seals around the agents */
 function partMandate() {
   const fig = $("#envelope"), part = $("#p-mandate");
@@ -782,59 +948,64 @@ function partMandate() {
     }
     list.append(li);
   });
-  const per = el("b", { text: rows["Largest single order"] });
+  const make = $("#make");
   const syms = el("span", { cls: "ev-syms" }, m.rows[0][1].split(", ").map((s) => el("code", { text: s })));
   const box = el("div", { cls: "ev-box" });
-  const agents = [];
-  for (let i = 0; i < 9; i++) { const a = el("i", { cls: "ev-agent", style: "--x:" + (14 + (i % 3) * 30 + (i * 7) % 11) + "%;--y:" + (18 + Math.floor(i / 3) * 28 + (i * 5) % 9) + "%;--d:" + (i * 0.37).toFixed(2) + "s" }); agents.push(a); box.append(a); }
-  const probe = el("span", { cls: "ev-probe", text: "BUY " + D.mandate_demo.extra[0] });
+  for (let i = 0; i < 9; i++) box.append(el("i", { cls: "ev-agent", style: "--x:" + (14 + (i % 3) * 30 + (i * 7) % 11) + "%;--y:" + (18 + Math.floor(i / 3) * 28 + (i * 5) % 9) + "%;--d:" + (i * 0.37).toFixed(2) + "s" }));
+  const probe = el("span", { cls: "ev-probe", text: "BUY " + m.rows[0][1].split(", ")[0] });
+  const say = el("p", { cls: "ev-say" });
   box.append(probe);
+  const receipts = el("ol", { cls: "ev-rc" }, ["Quote, signed by market data", "Risk check, signed", "Approval, signed"].map((t) => el("li", { text: t })));
   const seal = el("div", { cls: "ev-seal", "data-hk": "sign key" }, [el("i", { cls: "ic ic-key" }), el("span", {}, [el("b", { text: "Signed by you" }), el("small", { text: "Ed25519, key " + m.key })])]);
-  const stopped = el("p", { cls: "ev-stopped" }, [pill("refuse", "Signature no longer matches"), T(" every order under it stops")]);
   fig.append(
     el("div", { cls: "ev-edge top", "data-hk": "edge-top inside" }, [el("small", { text: "May trade" }), syms]),
-    el("div", { cls: "ev-edge right", "data-hk": "edge-right inside" }, [el("small", { text: "Largest order" }), per]),
+    el("div", { cls: "ev-edge right", "data-hk": "edge-right inside" }, [el("small", { text: "Largest order" }), el("b", { text: rows["Largest single order"] })]),
     el("div", { cls: "ev-edge bottom", "data-hk": "edge-bottom inside" }, [el("small", { text: "All agents together, per day" }), el("b", { text: rows["All agents together, per day"] })]),
     el("div", { cls: "ev-edge left", "data-hk": "edge-left inside" }, [el("small", { text: "A person approves above" }), el("b", { text: rows["A person approves any order over"] })]),
-    box, seal, stopped,
+    box, seal, receipts, say,
   );
-  loopOnView(fig, {
-    reset: () => { fig.className = fig.className.replace(/\b(probe|bounce|tamper)\b/g, "").trim(); per.textContent = rows["Largest single order"]; hl("sign"); },
-    steps: [
-      [1800, () => hl("inside")],
-      [3000, () => fig.classList.add("probe")],
-      [3900, () => fig.classList.add("bounce")],
-      [6200, () => { fig.classList.remove("probe", "bounce"); hl("key"); }],
-      [7200, () => { per.textContent = m.edited; fig.classList.add("tamper"); }],
-      [10400, () => { fig.classList.remove("tamper"); per.textContent = rows["Largest single order"]; }],
-    ],
-    end: 12000,
-    still: () => hl("inside"),
+  const says = ["Here is one order, slowed down", "A permission for one service and one action. Market data signs a quote, marked untrusted",
+    "Rechecked against every edge of your signed mandate. Each check signs a receipt", "The ledger verifies every receipt itself, and commits once"];
+  duo($("#mandate-duo"), fig, L().films.mandate, (name, k) => {
+    const s = Math.max(0, k);
+    fig.classList.toggle("probe", s >= 1);
+    ["top", "right", "bottom", "left"].forEach((e) => fig.classList.toggle("show-" + e, s === 2));
+    fig.classList.toggle("rc", s >= 2);
+    fig.classList.toggle("sealed", s >= 3);
+    seal.classList.toggle("lit", s >= 3);
+    say.textContent = says[s];
+    if (s === 0) { make.classList.remove("go"); void make.offsetWidth; make.classList.add("go"); }
+    hl(s === 0 ? "sign" : s === 3 ? "key" : "inside");
   });
 }
 
 /* ---------------------------------------------------------------- part: trusted data, three lanes and three checkpoints */
 function partData() {
-  const fig = $("#lanes"), part = $("#p-data");
+  const fig = $("#memory"), part = $("#p-data");
   if (!fig) return;
-  const hl = highlighter(part);
-  const keyOf = { stale: "price", figure: "figure", news: "news" };
-  const lanes = D.story.checks.map((c) => {
-    const lane = el("div", { cls: "ln", "data-hk": keyOf[c.k] }, [
-      el("div", { cls: "ln-claim" }, [el("small", { text: c.claim_k }), el("b", { text: c.claim })]),
-      el("div", { cls: "ln-gate" }, [el("i")]),
-      el("div", { cls: "ln-src" }, [el("small", { text: c.source_k }), el("b", { text: c.source })]),
-      el("div", { cls: "ln-v" }, [pill(c.verdict === "held" ? "hold" : "refuse", c.verdict_t)]),
-    ]);
-    fig.append(lane); return lane;
+  const M_ = L().memory, hl = highlighter(part);
+  const verdict = { sourced: ["allow", "Matches the filing"], drift: ["refuse", "Doesn't match"], undeclared: ["refuse", "No author"],
+    vague: ["hold", "Nothing to check"], stale: ["refuse", "Price moved"], single: ["hold", "One source"] };
+  const hk = { drift: "figure", undeclared: "nosrc", vague: "nosrc", stale: "price", single: "nosrc", sourced: "figure" };
+  const rows = M_.entries.map((e, i) => el("li", { cls: "mm-e", "data-kind": e.kind, "data-hk": hk[e.kind], style: "--i:" + i }, [
+    el("span", { cls: "mm-day", text: e.day }),
+    el("span", { cls: "mm-body" }, [el("b", { text: e.text }), el("small", { text: e.from }), e.check ? el("em", { cls: "mm-chk", text: e.check }) : null]),
+    el("span", { cls: "mm-v" }, [pill(verdict[e.kind][0], verdict[e.kind][1])]),
+  ]));
+  const order = el("div", { cls: "mm-order" }, [
+    el("span", { cls: "mm-ok" }, [el("small", { text: "The order it builds" }), el("b", { text: M_.order })]),
+    el("span", { cls: "mm-uses", text: "relies on " + word(M_.entries.length - 1) + " notes" }),
+    el("span", { cls: "mm-out" }, [pill("hold", "Sent back"), T(" Rebuilt only on what has a source")]),
+  ]);
+  fig.append(el("p", { cls: "mo-k", text: "One agent's notes over a month" }), el("ol", { cls: "mm-log" }, rows), order, el("p", { cls: "fig-note", text: "Illustration. The figure and the price are recorded cases." }));
+  duo($("#data-duo"), fig, L().films.data, (name, k) => {
+    const s = Math.max(0, k);
+    fig.classList.toggle("built", s >= 0);
+    fig.classList.toggle("checked", s >= 1);
+    fig.classList.toggle("cut", s >= 2);
+    if (s === 0) { fig.classList.remove("built"); void fig.offsetWidth; fig.classList.add("built"); }
+    hl(s === 0 ? "drift" : s === 1 ? "figure" : "nosrc");
   });
-  const N_ = L().news;
-  const steps = [];
-  lanes.forEach((ln, i) => {
-    const t = 600 + i * 2400;
-    steps.push([t, () => { hl(ln.dataset.hk); ln.classList.add("go"); }], [t + 900, () => ln.classList.add("cmp")], [t + 1600, () => ln.classList.add("done")]);
-  });
-  loopOnView(fig, { reset: () => { lanes.forEach((l) => l.classList.remove("go", "cmp", "done")); hl(""); }, steps, end: 10500, still: () => lanes.forEach((l) => l.classList.add("go", "cmp", "done")) });
 }
 
 /* ---------------------------------------------------------------- part: the swarm risk model */
@@ -844,17 +1015,19 @@ function spec(dl, rows) {
 function partRisk() {
   const fig = $("#swarmfig"), part = $("#p-risk");
   if (!fig) return;
-  const F = L().families, H = L().herd;
+  const B = L().bench, H = L().herd, how = L().how;
   const hl = highlighter(part);
   const cv = el("canvas", { cls: "sw-cv" });
   const tag = el("p", { cls: "sw-tag" }, [el("b"), el("span")]);
   const verdict = el("p", { cls: "sw-v" });
-  const list = el("ol", { cls: "sw-fams", "data-hk": "whole" }, F.families.map((f) => el("li", { "data-k": f.k }, [
-    el("span", { cls: "sw-fn" }, [el("b", { text: f.name }), el("small", { text: f.why })]),
-    el("span", { cls: "sw-bar" }, [el("i", { style: "width:" + (f.recall.value * 100).toFixed(1) + "%" })]),
-    el("em", { text: f.recall.text }),
+  const head = el("div", { cls: "bn-h" }, [el("span", { text: "Benchmark" }), el("span", { text: "Baseline: per-order limits" }), el("span", { text: "Held-out runs" }), el("span", { text: "Adaptive attackers" })]);
+  const cell = (f, cls) => (f ? el("span", { cls: "bn-c " + (cls || "") }, [el("i", { style: "width:" + Math.max(2, f.value * 100).toFixed(1) + "%" }), el("b", { text: f.text })]) : el("span", { cls: "bn-c na", text: "not run" }));
+  const list = el("ol", { cls: "bn-rows", "data-hk": "whole" }, B.map((f) => el("li", { "data-k": f.k }, [
+    el("span", { cls: "bn-n" }, [el("b", { text: f.name }), el("small", { text: f.sig })]), cell(f.base, "base"), cell(f.held), cell(f.adaptive),
   ])));
-  fig.append(el("div", { cls: "sw-stage" }, [cv, tag, verdict]), el("p", { cls: "mo-k sw-k", text: "What it catches, measured on recorded runs it never trained on" }), list);
+  const foot = el("p", { cls: "bn-foot" }, [T("Replayed on public market data with a thousand agents: "), el("b", { text: how.replay_bad.text }), T(" of harmful orders, "),
+    el("b", { cls: "good", text: how.replay_stopped.text }), T(" stopped, "), el("b", { text: how.replay_honest.text }), T(" of honest orders tightened.")]);
+  fig.append(el("div", { cls: "sw-stage" }, [cv, tag, verdict]), el("p", { cls: "mo-k sw-k", text: "Swarm benchmark: share of harmful dollars stopped. Every harmful order here passed every per-order limit" }), head, list, foot);
   const cx = cv.getContext("2d");
   let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const ds = []; for (let i = 0; i < 160; i++) ds.push({ x: rnd(), y: rnd(), p: rnd() * 6.28, s: 0.4 + rnd() });
@@ -901,18 +1074,22 @@ function partRisk() {
     fam = f.k; phase = ph;
     lis.forEach((li) => li.classList.toggle("on", li.dataset.k === f.k));
     tag.firstChild.textContent = f.name;
-    tag.lastChild.textContent = f.recall.text + " caught on runs it never saw";
+    tag.lastChild.textContent = f.sig;
     verdict.replaceChildren(...(f.k === "collusion" ? [el("b", { text: H.combined.text }), T(" one position, " + H.times.text + " the approval line "), pill("hold", "Held for a person")] : [pill(f.k === "compromised" ? "refuse" : "hold", f.k === "compromised" ? "Stopped" : "Held for a person")]));
   }
+  const pipe = $$("#risk-pipe li");
   const steps = [];
-  F.families.forEach((f, i) => {
-    const t = i * 3600;
-    steps.push([t + 200, () => { focusOn(f, 0); fig.classList.remove("held"); hl(i ? "whole" : "spread"); }], [t + 1100, () => { phase = 1; hl("whole"); }], [t + 2000, () => fig.classList.add("held")]);
+  B.forEach((f, i) => {
+    const t = i * 3800;
+    steps.push([t + 200, () => { focusOn(f, 0); fig.classList.remove("held"); hl(i ? "whole" : "spread"); pipe.forEach((p, j) => p.classList.toggle("on", j === 0)); }],
+      [t + 1100, () => { phase = 1; hl("whole"); pipe.forEach((p, j) => p.classList.toggle("on", j === 1)); }],
+      [t + 1900, () => pipe.forEach((p, j) => p.classList.toggle("on", j === 2))],
+      [t + 2600, () => { fig.classList.add("held"); pipe.forEach((p, j) => p.classList.toggle("on", j === 3)); }]);
   });
   loopOnView(fig, {
-    reset: () => { fig.classList.remove("held"); focusOn(F.families[0], 0); },
-    steps, end: F.families.length * 3600 + 400,
-    still: () => { focusOn(F.families[0], 1); fig.classList.add("held"); requestAnimationFrame(paint); },
+    reset: () => { fig.classList.remove("held"); focusOn(B[0], 0); },
+    steps, end: B.length * 3800 + 400,
+    still: () => { focusOn(B[0], 1); fig.classList.add("held"); requestAnimationFrame(paint); },
   });
 }
 
@@ -920,44 +1097,67 @@ function partRisk() {
 function partAdapter() {
   const fig = $("#adapter"), part = $("#p-adapter");
   if (!fig) return;
-  const A = L().adapter2, hl = highlighter(part);
+  const A = L().adapter2, A3 = L().adapter3, hl = highlighter(part);
   const bad = { over_broad: ["names", "per", "daily"], purpose_mismatched: ["sides"], sneaky: ["step"], appropriate: [] };
-  const dots = el("ol", { cls: "ad-dots" }, A.examples.map(() => el("li")));
-  const purpose = el("p", { cls: "ad-q" });
-  const tbl = el("dl", { cls: "ad-tbl" });
+  const tabs = el("div", { cls: "ad-tabs", role: "tablist" }, [
+    el("button", { type: "button", role: "tab", "data-st": "draft", text: "Before it gets authority" }),
+    el("button", { type: "button", role: "tab", "data-st": "run", text: "While it runs" }),
+  ]);
+  const dots = el("ol", { cls: "ad-dots" });
+  const qk = el("p", { cls: "mo-k" }), q = el("p", { cls: "ad-q" });
+  const ak = el("p", { cls: "mo-k" }), tbl = el("dl", { cls: "ad-tbl" });
   const needle = el("i", { cls: "ad-needle" }), score = el("b", { cls: "ad-score" });
-  const meter = el("div", { cls: "ad-meter" }, [el("span", { cls: "ad-track" }, [el("em", { cls: "ad-line", style: "left:" + (A.threshold.value * 100) + "%" }, [el("small", { text: "Flag line " + A.threshold.text })]), needle]), score]);
+  const line = el("em", { cls: "ad-line" }, [el("small")]);
+  const meter = el("div", { cls: "ad-meter" }, [el("span", { cls: "ad-track" }, [line, needle]), score]);
   const out = el("p", { cls: "ad-out" });
-  fig.append(
-    el("div", { cls: "ad-head" }, [el("p", { cls: "mo-k", text: "Drafts from the adapter's labelled test set" }), dots]),
-    el("div", { cls: "ad-card ad-purpose", "data-hk": "asked" }, [el("p", { cls: "mo-k", text: "The agent was asked to" }), purpose]),
-    el("div", { cls: "ad-card ad-draft", "data-hk": "asks" }, [el("p", { cls: "mo-k", text: "It asks for" }), tbl]),
-    meter, out,
-  );
+  fig.append(el("div", { cls: "ad-head" }, [tabs, dots]),
+    el("div", { cls: "ad-card ad-purpose", "data-hk": "asked" }, [qk, q]),
+    el("div", { cls: "ad-card ad-draft", "data-hk": "asks" }, [ak, tbl]), meter, out);
+  const items = A.examples.map((x) => ({ st: "draft", x })).concat(A3.scope_ex.map((x) => ({ st: "run", x })));
+  dots.replaceChildren(...items.map(() => el("li")));
   function render(i) {
-    const x = A.examples[i];
+    const it = items[i], x = it.x;
     $$("li", dots).forEach((d, j) => d.classList.toggle("on", j === i));
-    purpose.textContent = "“" + x.purpose + "”";
-    const rowsD = [["names", "Names", x.symbols ? x.symbols.join(", ") : x.n_symbols + " names"], ["sides", "Buy or sell", x.sides], ["per", "Per order", x.per], ["daily", "Per day", x.daily], ["step", "A person approves above", x.step]];
-    tbl.replaceChildren(...rowsD.map(([k, a, b]) => el("div", { "data-f": k }, [el("dt", { text: a }), el("dd", { text: b })])));
+    $$("button", tabs).forEach((b) => b.setAttribute("aria-selected", String(b.dataset.st === it.st)));
+    fig.dataset.st = it.st;
     fig.classList.remove("scored", "judged", "flagged");
-    needle.style.left = 0; score.textContent = "";
-    out.replaceChildren();
+    needle.style.left = 0; score.textContent = ""; out.replaceChildren();
+    if (it.st === "draft") {
+      qk.textContent = "The agent was asked to"; q.textContent = "“" + x.purpose + "”";
+      ak.textContent = "It asks for";
+      const rowsD = [["names", "Names", x.symbols ? x.symbols.join(", ") : x.n_symbols + " names"], ["sides", "Buy or sell", x.sides], ["per", "Per order", x.per], ["daily", "Per day", x.daily], ["step", "A person approves above", x.step]];
+      tbl.replaceChildren(...rowsD.map(([k, a, b]) => el("div", { "data-f": k }, [el("dt", { text: a }), el("dd", { text: b })])));
+      line.style.left = (A.threshold.value * 100) + "%"; line.firstChild.textContent = "Flag line " + A.threshold.text;
+    } else {
+      qk.textContent = "The agent says it is"; q.textContent = "“" + x.intent + "”";
+      ak.textContent = "It sends";
+      tbl.replaceChildren(el("div", { "data-f": "order" }, [el("dt", { text: "Order, inside the mandate" }), el("dd", { text: x.order })]));
+      line.style.left = (A3.warn_at.value * 100) + "%"; line.firstChild.textContent = "Warn line " + A3.warn_at.text;
+    }
   }
   function judge(i) {
-    const x = A.examples[i];
-    for (const k of bad[x.category]) { const r = $('[data-f="' + k + '"]', tbl); if (r) r.classList.add("bad"); }
-    fig.classList.add("judged"); fig.classList.toggle("flagged", x.flagged);
-    out.replaceChildren(x.flagged ? pill("hold", "Flagged") : pill("allow", "Fits"), T(" It " + x.why + "."));
+    const it = items[i], x = it.x;
+    if (it.st === "draft") {
+      for (const k of bad[x.category]) { const r = $('[data-f="' + k + '"]', tbl); if (r) r.classList.add("bad"); }
+      fig.classList.toggle("flagged", x.flagged);
+      out.replaceChildren(x.flagged ? pill("hold", "Flagged") : pill("allow", "Fits"), T(" It " + x.why + "."));
+    } else {
+      if (x.held) { const r = $('[data-f="order"]', tbl); if (r) r.classList.add("bad"); }
+      fig.classList.toggle("flagged", x.held);
+      out.replaceChildren(x.held ? pill("hold", "Held for a person") : pill("allow", "Matches"), T(x.held ? " The order isn't what it said it was doing." : " The order is what it said it was doing."));
+    }
+    fig.classList.add("judged");
   }
-  const steps = [];
-  A.examples.forEach((x, i) => {
-    const t = i * 5200;
-    steps.push([t, () => { render(i); hl("asked"); }], [t + 1200, () => hl("asks")],
-      [t + 2100, () => { fig.classList.add("scored"); needle.style.left = (x.score.value * 100).toFixed(1) + "%"; score.textContent = x.score.text; }],
+  function scoreOf(i) { const x = items[i].x; return items[i].st === "draft" ? x.score : x.mismatch; }
+  const STEP = 5200, steps = [];
+  items.forEach((it, i) => {
+    const t = i * STEP;
+    steps.push([t, () => { render(i); hl(it.st === "draft" ? "asked" : "runs"); }], [t + 1200, () => hl(it.st === "draft" ? "asks" : "runs")],
+      [t + 2100, () => { fig.classList.add("scored"); const s = scoreOf(i); needle.style.left = (s.value * 100).toFixed(1) + "%"; score.textContent = s.text; }],
       [t + 3000, () => judge(i)]);
   });
-  loopOnView(fig, { reset: () => render(0), steps, end: A.examples.length * 5200, still: () => { render(1); fig.classList.add("scored"); needle.style.left = (A.examples[1].score.value * 100) + "%"; score.textContent = A.examples[1].score.text; judge(1); } });
+  loopOnView(fig, { reset: () => render(0), steps, end: items.length * STEP,
+    still: () => { render(1); fig.classList.add("scored"); const s = scoreOf(1); needle.style.left = (s.value * 100) + "%"; score.textContent = s.text; judge(1); } });
 }
 
 /* ---------------------------------------------------------------- part: supervision, the spiral and the flattened line */
@@ -983,6 +1183,48 @@ function partSuper() {
     end: 9500,
     still: () => fig.classList.add("crowd", "slow"),
   });
+}
+
+/* ---------------------------------------------------------------- part: the final check, wave after wave, right before an order reaches the broker */
+function partFinal() {
+  const fig = $("#final"), part = $("#p-final");
+  if (!fig) return;
+  const F = L().final, hl = highlighter(part);
+  const checks = el("ol", { cls: "fn-checks", "data-hk": "facts" }, F.checks.map((c) => el("li", {}, [el("i"), el("span", { text: c })])));
+  const now = el("p", { cls: "fn-now" });
+  const why = el("p", { cls: "fn-why" });
+  const waves = F.waves.map((w, wi) => el("div", { cls: "fn-wave", "data-hk": "waves" }, [el("small", { text: "Wave " + word(wi + 1) }), el("ol", {}, w.map((o) => el("li", { text: o.o })))]));
+  const broker = el("div", { cls: "fn-broker" }, [el("small", { text: "Your broker" }), el("ol", { cls: "fn-sent" })]);
+  fig.append(el("div", { cls: "fn-waves" }, waves), el("div", { cls: "fn-gate", "data-hk": "facts" }, [el("p", { cls: "mo-k", text: "The final check" }), now, checks, why]), broker,
+    el("p", { cls: "fig-note", text: "Illustration of three waves. The failing reasons are the recorded price case and the shared daily budget." }));
+  const sent = $(".fn-sent", broker), cl = $$("li", checks);
+  const steps = [];
+  let t = 400;
+  F.waves.forEach((w, wi) => {
+    steps.push([t, () => { waves.forEach((x, j) => x.classList.toggle("on", j === wi)); hl("waves"); }]);
+    t += 500;
+    w.forEach((o, oi) => {
+      const li = $$("li", waves[wi])[oi];
+      steps.push([t, () => { li.classList.add("at"); now.textContent = o.o; why.textContent = ""; fig.classList.remove("fail"); cl.forEach((c) => c.classList.remove("ok", "bad")); hl("facts"); }]);
+      F.checks.forEach((c, ci) => {
+        if (o.fail !== undefined && ci > o.fail) return;
+        steps.push([t + 220 + ci * 170, () => cl[ci].classList.add(o.fail === ci ? "bad" : "ok")]);
+      });
+      t += 220 + (o.fail === undefined ? F.checks.length : o.fail + 1) * 170 + 260;
+      steps.push([t, () => {
+        li.classList.remove("at");
+        if (o.fail === undefined) { li.classList.add("gone"); sent.append(el("li", { text: o.o })); }
+        else { li.classList.add("back"); fig.classList.add("fail"); why.textContent = o.why; }
+      }]);
+      t += o.fail === undefined ? 280 : 1700;
+    });
+  });
+  loopOnView(fig, {
+    reset: () => { sent.replaceChildren(); $$(".fn-wave li", fig).forEach((li) => li.classList.remove("at", "gone", "back")); waves.forEach((x) => x.classList.remove("on")); cl.forEach((c) => c.classList.remove("ok", "bad")); now.textContent = ""; why.textContent = ""; fig.classList.remove("fail"); },
+    steps, end: t + 1800,
+    still: () => { cl.forEach((c) => c.classList.add("ok")); now.textContent = F.waves[0][0].o; },
+  });
+  duo($("#final-duo"), fig, L().films.final, (name, k) => hl(k <= 0 ? "facts" : "waves"));
 }
 
 /* ---------------------------------------------------------------- part: the review queue, sorted by money at stake */
@@ -1110,20 +1352,24 @@ function contagionCard() {
 }
 
 function sequencer(o) {
-  const segs = o.segs, play = o.play, root = o.root, steps = o.steps;
-  let cur = -1, timer = 0, playing = false, done = false, t0 = 0, remain = 0, userPaused = false;
+  const segs = o.segs, play = o.play, root = o.root, steps = o.steps, ctl = segs.parentNode;
+  let cur = -1, timer = 0, playing = false, done = false, t0 = 0, remain = 0, userPaused = false, drag = false;
   steps.forEach((s, i) => {
-    const b = el("button", { type: "button", "aria-label": "Step " + (i + 1) + ": " + (s.label || ""), title: s.label || "" }, [el("i")]);
-    b.addEventListener("click", () => { go(i); userPaused = false; start(); });
+    const b = el("button", { type: "button", "aria-label": "Step " + (i + 1) + ": " + (s.label || "") }, [el("i")]);
+    b.addEventListener("click", (e) => { if (e.detail === 0) jump(i); });
     segs.append(el("li", {}, [b]));
   });
   const lis = Array.from(segs.children);
+  const count = el("span", { cls: "st-count", "aria-hidden": "true" });
+  const tip = el("span", { cls: "seg-tip", "aria-hidden": "true" });
+  ctl.append(count, tip);
   function go(i) {
     cur = i; remain = 0;
     lis.forEach((li, j) => { li.classList.toggle("past", j < i); li.classList.remove("now"); });
     void segs.offsetWidth;
     lis[i].style.setProperty("--d", steps[i].ms + "ms");
     lis[i].classList.add("now");
+    count.textContent = (i + 1) + " / " + steps.length;
     o.show(i);
   }
   function schedule() {
@@ -1132,7 +1378,7 @@ function sequencer(o) {
     t0 = performance.now();
     timer = setTimeout(() => {
       if (cur < steps.length - 1) { go(cur + 1); schedule(); }
-      else { playing = false; done = true; root.classList.add("done"); play.setAttribute("aria-label", "Replay"); }
+      else { playing = false; done = true; root.classList.add("done"); play.setAttribute("aria-label", "Replay"); if (o.onPlay) o.onPlay(false); }
     }, remain || steps[cur].ms);
     remain = 0;
   }
@@ -1149,6 +1395,43 @@ function sequencer(o) {
     root.classList.add("paused"); play.setAttribute("aria-label", "Play");
     if (o.onPlay) o.onPlay(false);
   }
+  function jump(i) {
+    i = Math.max(0, Math.min(steps.length - 1, i));
+    done = false; root.classList.remove("done");
+    go(i); userPaused = false; start();
+  }
+  function tipAt(i) {
+    const r = lis[i].getBoundingClientRect(), c = ctl.getBoundingClientRect();
+    tip.textContent = steps[i].label || "";
+    const half = Math.min(150, c.width / 2);
+    tip.style.left = Math.max(half, Math.min(c.width - half, r.left + r.width / 2 - c.left)) + "px";
+    tip.classList.add("on");
+  }
+  const idxAt = (x) => { for (let i = 0; i < lis.length; i++) if (x <= lis[i].getBoundingClientRect().right + 2) return i; return lis.length - 1; };
+  segs.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return;
+    drag = true; segs.setPointerCapture(e.pointerId); segs.classList.add("drag");
+    clearTimeout(timer); root.classList.add("paused");
+    const i = idxAt(e.clientX); go(i); tipAt(i);
+    e.preventDefault();
+  });
+  segs.addEventListener("pointermove", (e) => {
+    const i = idxAt(e.clientX);
+    if (drag && i !== cur) go(i);
+    tipAt(i);
+  });
+  const release = () => {
+    if (!drag) return;
+    drag = false; segs.classList.remove("drag"); tip.classList.remove("on");
+    done = false; root.classList.remove("done"); userPaused = false; playing = false; start();
+  };
+  segs.addEventListener("pointerup", release);
+  segs.addEventListener("pointercancel", release);
+  segs.addEventListener("pointerleave", () => { if (!drag) tip.classList.remove("on"); });
+  segs.addEventListener("keydown", (e) => {
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (d) { e.preventDefault(); jump(cur + d); const b = lis[cur].querySelector("button"); if (b) b.focus(); }
+  });
   play.addEventListener("click", () => { if (playing) { userPaused = true; pause(); } else { userPaused = false; start(); } });
   go(0);
   if (reduce.matches) { root.classList.add("paused"); play.setAttribute("aria-label", "Play"); return; }
@@ -1304,7 +1587,7 @@ async function boot() {
   drawAll();
   compareSetup();
   codeTabs();
-  for (const f of [thesisHero, storyStage, partMandate, partData, partRisk, partAdapter, partSuper, partQueue, partLedger, together, scaleZoom, navDepth, sign3Scene, concScene, cfScene, loopScene, certScene]) {
+  for (const f of [thesisHero, storyStage, partMandate, partData, partRisk, partAdapter, partSuper, partFinal, partQueue, partLedger, together, scaleZoom, navDepth, sign3Scene, concScene, cfScene, loopScene, certScene]) {
     try { f(); } catch (e) { console.error(f.name, e); }
   }
   for (const id of ["#gap", "#parts", "#j-time"]) { const l = $(id); if (l) revealList(l, "on", id === "#j-time" ? 1100 : 450); }
