@@ -928,6 +928,165 @@ function ledgerDemo() {
   if (!reduce.matches) onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
 }
 
+/* ---------------------------------------------------------------- vision: scenes acted out from data.json (illustrative inputs) */
+function replayOnView(node, run) {
+  run();
+  if (reduce.matches) return;
+  let vis = false;
+  onView(node, (v) => { const was = vis; vis = v; if (v && !was) run(); });
+}
+function revealList(list, cls, gap) {
+  const items = $$("li", list), T = timeline();
+  replayOnView(list, () => {
+    T.clear();
+    items.forEach((li) => li.classList.remove(cls));
+    items.forEach((li, i) => T.at(reduce.matches ? 0 : 300 + i * gap, () => li.classList.add(cls)));
+  });
+}
+
+function accScene() {
+  const box = $("#acc");
+  if (!box) return;
+  const A = D.vision.accumulate, grid = $("#acc-agents"), T = timeline();
+  const techPct = parseFloat(A.tech_pct) / 100;
+  const dots = Array.from({ length: A.agents }, (_, i) => {
+    const d = el("span", { cls: "acc-ag", title: "Agent " + (i + 1) + " · order within the " + A.cap + " cap" });
+    grid.append(d);
+    return d;
+  });
+  const fill = (k) => { $("#acc-tech").style.width = (k.tech * 100) + "%"; $("#acc-other").style.width = (k.other * 100) + "%"; };
+  function run() {
+    T.clear(); box.classList.remove("shocked"); $("#acc-shock").hidden = true;
+    dots.forEach((d) => d.className = "acc-ag");
+    fill({ tech: 0, other: 0 }); $("#acc-v").textContent = A.violations; $("#acc-u").textContent = A.unauthorized; $("#acc-p").textContent = "";
+    const step = reduce.matches ? 0 : 260;
+    dots.forEach((d, i) => T.at(200 + i * step, () => {
+      d.classList.add(i < A.tech_n ? "t" : "o");
+      const k = (i + 1) / A.agents, t = Math.min(i + 1, A.tech_n) / A.agents;
+      fill({ tech: t, other: k - t });
+      $("#acc-p").textContent = Math.round((t / k) * 100) + "%";
+    }));
+    const t0 = 200 + A.agents * step + (reduce.matches ? 0 : 900);
+    T.at(t0, () => {
+      $("#acc-p").textContent = A.tech_pct;
+      box.classList.add("shocked");
+      $("#acc-shock").hidden = false;
+      $("#acc-loss").textContent = A.loss;
+      $("#acc-loss-t").textContent = "The theme falls " + A.shock_pct + ". That is " + A.loss_pct + " of the whole " + A.portfolio + " portfolio, and no agent ever broke its limit.";
+      $("#acc-tech").style.width = techPct * 100 * (1 - parseFloat(A.shock_pct) / 100) + "%";
+    });
+  }
+  $("#acc-replay").addEventListener("click", run);
+  replayOnView(box, run);
+}
+
+function sign3Scene() {
+  const box = $("#sign3");
+  if (!box) return;
+  const V = D.vision, T = timeline();
+  $("#s3-intent").textContent = "“" + V.intent + "”";
+  const json = (o) => JSON.stringify(o, null, 2);
+  $("#s3-prop").textContent = json(V.contract);
+  const [grp, key] = V.edit.path;
+  function run() {
+    T.clear();
+    const signed = $("#s3-signed"), st = $("#s3-state"), diff = $("#s3-diff");
+    signed.textContent = ""; diff.textContent = ""; st.className = "pill"; st.textContent = "unsigned";
+    box.classList.remove("done");
+    T.at(reduce.matches ? 0 : 1600, () => {
+      const c = JSON.parse(JSON.stringify(V.contract)); c[grp][key] = V.edit.signed;
+      const lines = json(c).split("\n");
+      lines.forEach((ln) => signed.append(ln.includes('"' + key + '"') ? el("mark", { text: ln }) : ln, "\n"));
+      diff.textContent = "You changed " + key + " from " + V.edit.proposed + " to " + V.edit.signed + " before signing. The change is recorded with the contract.";
+    });
+    T.at(reduce.matches ? 0 : 3600, () => { st.className = "pill allowed"; st.textContent = "signed by the owner"; box.classList.add("done"); });
+  }
+  replayOnView(box, run);
+}
+
+function concScene() {
+  const box = $("#conc");
+  if (!box) return;
+  const C = D.vision.concurrency, T = timeline(), naive = $("#conc-naive"), proj = $("#conc-proj");
+  function run() {
+    T.clear(); naive.textContent = ""; proj.textContent = ""; $("#conc-naive-f").textContent = ""; $("#conc-proj-f").textContent = "";
+    const g = reduce.matches ? 0 : 900;
+    C.naive.forEach((v, i) => T.at(300 + i * g, () => {
+      naive.append(el("li", { cls: "in" }, [el("span", { text: "Agent " + (i + 1) + " adds " + C.add }), el("b", { text: "sees " + v }), el("span", { cls: "pill allowed", text: "fits" })]));
+      proj.append(el("li", { cls: "in" }, [el("span", { text: "Agent " + (i + 1) + " adds " + C.add }), el("b", { text: "projected " + C.projected[i] }),
+        el("span", { cls: "pill " + (C.verdicts[i] === "allow" ? "allowed" : "held"), text: C.verdicts[i] === "allow" ? "reserved" : "held" })]));
+    }));
+    T.at(300 + 3 * g, () => {
+      $("#conc-naive-f").textContent = "All three fill. The account now holds " + C.actual + ", over the " + C.issuer_cap + " cap nobody's check saw.";
+      $("#conc-proj-f").textContent = "The third order would take the position past the " + C.issuer_cap + " cap, so it waits for a person.";
+    });
+  }
+  const p = el("p", { cls: "conc-start", text: "The account already holds " + C.holding + " of the stock. The per-stock cap is " + C.issuer_cap + "." });
+  box.before(p);
+  replayOnView(box, run);
+}
+
+function cfScene() {
+  const box = $("#cf");
+  if (!box) return;
+  const F = D.vision.counterfactual;
+  $("#cf-note").textContent = F.note + " Signed volatility budget: " + F.budget + ".";
+  const title = { diversified: "A diversified book", concentrated: "A book already heavy in technology" };
+  for (const b of F.books) {
+    const bars = el("div", { cls: "cf-mix" }, b.weights.map((w) => el("span", { style: "flex:" + w.pct, title: w.name + " " + w.usd, text: w.pct > 0.12 ? w.name : "" })));
+    box.append(el("div", { cls: "cf-book " + b.verdict }, [
+      el("p", { cls: "cf-h" }, [el("b", { text: title[b.book] || b.book }), el("span", { cls: "pill " + (b.verdict === "allow" ? "allowed" : "held"), text: b.verdict === "allow" ? "Allowed" : "Held" })]),
+      bars,
+      el("p", { cls: "cf-o", text: "Add " + F.order }),
+      el("dl", { cls: "cf-kv" }, [el("div", {}, [el("dt", { text: "Risk before" }), el("dd", { text: b.before })]), el("div", {}, [el("dt", { text: "Risk after" }), el("dd", { text: b.after })]),
+        el("div", {}, [el("dt", { text: "Added by this order" }), el("dd", { text: b.delta })])])]));
+  }
+}
+
+function loopScene() {
+  const box = $("#loop");
+  if (!box) return;
+  const ring = $$("#loop-ring li"), log = $("#loop-log"), T = timeline(), L = D.vision.lease_s;
+  const events = [
+    ["ok", "Three agents renew their leases against the current portfolio"],
+    ["warn", "Three supposedly independent agents start buying on the same unverified rumour"],
+    ["bad", "New risk paused for all three. Cancels and risk-reducing orders still allowed"],
+    ["ok", "A person reviews the rumour; one agent's lease is renewed with a smaller budget"],
+  ];
+  function run() {
+    T.clear(); log.textContent = "";
+    let k = 0;
+    const tick = () => { ring.forEach((li, i) => li.classList.toggle("on", i === k % ring.length)); k += 1; };
+    for (let i = 0; i < 16; i++) T.at(i * 700, tick);
+    events.forEach(([c, t], i) => T.at(600 + i * 2600, () => log.append(el("li", { cls: "in " + c, text: t }))));
+    const fill = $("#lease-fill"), lt = $("#lease-t");
+    for (let i = 0; i <= 20; i++) T.at(i * 550, () => { const left = Math.round(L * (1 - i / 20)); fill.style.width = (100 * (1 - i / 20)) + "%"; lt.textContent = Math.floor(left / 60) + " min left"; });
+    T.at(11600, () => { fill.style.width = 100 + "%"; lt.textContent = "renewed"; });
+  }
+  replayOnView(box, run);
+}
+
+function certScene() {
+  const box = $("#cert");
+  if (!box) return;
+  const ledger = D.flows.ledger[0], T = timeline();
+  const lines = [
+    ["order", D.layers.price.order], ["agent", D.layers.price.agent], ["contract", "growth-portfolio-v1, policy version signed by the owner"],
+    ["portfolio snapshot", "the state it was checked against"], ["reservation", "capacity held for this order"], ["evidence", "two sources, by content hash and time"],
+  ];
+  function run() {
+    T.clear(); const ol = $("#cert-lines"); ol.textContent = ""; $("#cert-seal").hidden = true;
+    lines.forEach(([k, v], i) => T.at(reduce.matches ? 0 : 300 + i * 700, () => ol.append(el("li", { cls: "in" }, [el("span", { text: k }), el("b", { text: v }), el("i", { text: "✓" })]))));
+    T.at(reduce.matches ? 0 : 300 + lines.length * 700 + 400, () => { const s = $("#cert-seal"); s.hidden = false; s.textContent = "Receipt sealed into the ledger · " + ledger.seal_short; });
+  }
+  replayOnView(box, run);
+}
+
+function visionScenes() {
+  accScene(); sign3Scene(); concScene(); cfScene(); loopScene(); certScene();
+  for (const id of ["#gap", "#parts", "#j-time"]) { const l = $(id); if (l) revealList(l, "on", id === "#j-time" ? 1100 : 450); }
+}
+
 /* ---------------------------------------------------------------- the full film, in a dialog */
 function filmDialog() {
   const dlg = $("#film-dlg"), open = $("#film-open");
@@ -1004,6 +1163,7 @@ async function boot() {
   ledgerDemo();
   clips();
   proofGrid();
+  visionScenes();
   filmDialog();
   let lastW = innerWidth, tm = 0;
   addEventListener("resize", () => { clearTimeout(tm); tm = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; drawAll(); } }, 150); });

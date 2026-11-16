@@ -1160,6 +1160,44 @@ def layers(r: Reader, doc: dict) -> dict:
             "outcomes": outcomes}
 
 
+def vision() -> dict:
+    """Illustrative inputs for the vision page, with the arithmetic done here so the page never types a figure. Every number is
+    labelled illustrative on the page; the volatility comparison is computed from a declared, illustrative covariance."""
+    import numpy as np
+    pv, n, cap, tech_share, shock = 100_000, 20, 5_000, 0.80, 0.25
+    tech = pv * tech_share
+    acc = {"agents": n, "cap": usd(cap), "portfolio": usd(pv), "tech_pct": f"{tech_share:.0%}", "other_pct": f"{1 - tech_share:.0%}",
+           "shock_pct": f"{shock:.0%}", "loss": "−" + usd(tech * shock), "loss_pct": f"{tech * shock / pv:.0%}",
+           "tech_n": int(round(n * tech_share)), "violations": "0", "unauthorized": "0"}
+    hold, add, issuer_cap = 10_000, 5_000, 20_000
+    conc = {"holding": usd(hold), "add": usd(add), "issuer_cap": usd(issuer_cap),
+            "naive": [usd(hold + add)] * 3, "projected": [usd(hold + add * (i + 1)) for i in range(3)],
+            "verdicts": ["allow" if hold + add * (i + 1) <= issuer_cap else "hold" for i in range(3)], "actual": usd(hold + 3 * add)}
+    names = ["Semiconductors", "Large-cap tech", "Consumer staples", "Treasuries"]
+    vol = np.array([0.45, 0.32, 0.15, 0.07])
+    corr = np.array([[1, .8, .3, -.2], [.8, 1, .35, -.2], [.3, .35, 1, 0], [-.2, -.2, 0, 1]])
+    cov = np.outer(vol, vol) * corr
+    sig = lambda w: float(np.sqrt(w @ cov @ w))
+    order, vbudget = np.array([5_000, 0, 0, 0]), 25_000
+    books = {"diversified": np.array([5_000, 15_000, 40_000, 40_000]), "concentrated": np.array([20_000, 45_000, 20_000, 15_000])}
+    cf = []
+    for k, w in books.items():
+        before, after = sig(w), sig(w + order)
+        cf.append({"book": k, "weights": [{"name": a, "usd": usd(x), "pct": round(float(x) / float(w.sum()), 4)} for a, x in zip(names, w)],
+                   "before": usd(before), "after": usd(after), "delta": "+" + usd(after - before), "delta_n": round(after - before, 2),
+                   "verdict": "allow" if after <= vbudget else "hold"})
+    contract = {"contract_id": "growth-portfolio-v1", "authorized_agents": ["earnings", "macro", "momentum"],
+                "trading": {"allowed_assets": ["US_EQUITIES", "US_ETFS"], "allow_leverage": False, "max_single_order_usd": 5000},
+                "portfolio": {"max_single_issuer_weight": 0.15, "max_technology_factor_exposure": 0.35,
+                              "max_loss_usd_in_declared_stress_suite": 4000, "max_daily_turnover_usd": 15000},
+                "autonomy": {"authorization_lease_seconds": 900, "max_orders_per_agent_per_hour": 10, "human_review_on_policy_exception": True}}
+    return {"accumulate": acc, "concurrency": conc, "counterfactual": {"order": usd(5_000) + " of semiconductors", "books": cf,
+            "budget": usd(vbudget), "note": "Annualised portfolio volatility in dollars, from an illustrative covariance (volatilities and correlations declared on this page's source)."},
+            "contract": contract, "edit": {"path": ["portfolio", "max_technology_factor_exposure"], "proposed": 0.35, "signed": 0.25},
+            "intent": "Grow my portfolio, avoid betting everything on one theme, and never risk more than I'm comfortable losing.",
+            "lease_s": 900}
+
+
 # ---------------------------------------------------------------------------------------------------------------- the theater copy
 THEATER_FILES = ("theme.js", "app.css", "theater.css", "ui.js", "theater.js")
 
@@ -1243,6 +1281,7 @@ def build() -> tuple[dict, dict[str, bytes]]:
     }
     doc["compare"] = compare(doc)
     doc["layers"] = layers(r, doc)
+    doc["vision"] = vision()
     theater = theater_files(r)
     doc["inputs"] = [{"path": p, "sha256": h} for p, h in sorted(r.used.items())]
     return doc, theater

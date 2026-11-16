@@ -145,7 +145,7 @@ class _Text(HTMLParser):
                 self.h1 += d
 
 
-PAGES = ("index.html", "evidence.html")
+PAGES = ("index.html", "evidence.html", "vision.html")
 
 
 def _page(name="index.html"):
@@ -192,7 +192,7 @@ def test_the_script_formats_no_figures_of_its_own():
 
 
 def test_static_contract_weight_and_no_external_requests():
-    files = [SITE / "index.html", SITE / "evidence.html", SITE / "site.css", SITE / "site.js"]
+    files = [SITE / "index.html", SITE / "evidence.html", SITE / "vision.html", SITE / "site.css", SITE / "site.js"]
     total = sum(p.stat().st_size for p in files)
     assert total < 400_000, f"page weight {total:,} bytes (data.json excluded)"
     for p in files:
