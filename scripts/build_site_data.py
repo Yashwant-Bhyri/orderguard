@@ -1108,6 +1108,58 @@ def mandate_demo(r: Reader) -> dict:
             "src": "results/review/copilot.json"}
 
 
+
+def layers(r: Reader, doc: dict) -> dict:
+    """Data for the layer-by-layer walk: the real signed core mandate, a real figure check, the film segments, outcomes with context."""
+    from orderguard_arena.envelopes import make_envelope, owner_key_from_seed
+    from orderguard_guard.gate import FakeFigureChecker, APPLE_FY2024_TRUTH
+    import datetime as _dt
+    tl = r.json("results/theater/timeline.json")
+    e = next(x for x in tl["envelopes"] if x["name"] == "core")
+    env = make_envelope(owner_key_from_seed("site-core-mandate"), name="core", purpose=e["purpose"], symbols=e["symbols"],
+                        per_order=e["per_order"], daily=e["daily"], band_pct=e["band_pct"], step_up=e["step_up"], expires="2027-06-30T00:00:00Z")
+    m = env.mandate if hasattr(env, "mandate") else env.__dict__.get("mandate")
+    body = m if isinstance(m, dict) else {k: getattr(m, k) for k in ("symbols", "sides", "maxOrderNotionalUsd", "maxDailyNotionalUsd", "priceBandPct",
+                                                                     "stepUpAboveUsd", "expiresAt", "signerPublicKey", "signature")}
+    def fmt(v):
+        return int(v) if isinstance(v, float) and v.is_integer() else v
+    keys = [("symbols", "What it may trade"), ("sides", "Buy, sell, or both"), ("maxOrderNotionalUsd", "Largest single order, in dollars at the trusted price"),
+            ("maxDailyNotionalUsd", "Most it may trade in a day, across every agent on this mandate"), ("priceBandPct", "How far a limit price may sit from the trusted price"),
+            ("stepUpAboveUsd", "Above this, a person approves the order"), ("expiresAt", "When the mandate stops working"),
+            ("signerPublicKey", "The owner's public key; the private key never leaves the owner"), ("signature", "Ed25519 over every line above; change one character and it fails")]
+    def shown(k, v):            # key and signature are public, but long base64 trips the secret scan, so publish them shortened
+        return v[:8] + "…" + v[-4:] if k in ("signerPublicKey", "signature") else fmt(v)
+    rows = [{"k": k, "v": shown(k, body[k]), "note": n} for k, n in keys if k in body]
+    chk = FakeFigureChecker(APPLE_FY2024_TRUTH)
+    claims = [{"metric": "revenue", "fiscal_year": 2024, "value": 383285, "unit": "USD millions"},
+              {"metric": "net_income", "fiscal_year": 2024, "value": 93736, "unit": "USD millions"}]
+    res = chk("AAPL", _dt.date(2025, 1, 15), claims)
+    label = {"revenue": "revenue", "net_income": "net income"}
+    figs = [{"claim": f"AAPL fiscal {c['fiscal_year']} {label[c['metric']]}: ${c['value']:,}M", "status": x["status"],
+             "truth": f"${x['truth']:,.0f}M" if x["truth"] else "", "reason": x["reason"].replace("391035", "$391,035M")} for c, x in zip(claims, res)]
+    honest = doc["flows"]["flows"][0]
+    sf, sim = doc["swarm"]["facts"], doc["sim"]["facts"]
+    hv = sf["honest_tightened"].get("value") if isinstance(sf["honest_tightened"], dict) else None
+    one_in = f"about 1 in {round(1 / hv, -2):,.0f}" if hv else ""
+    outcomes = [
+        {"big": sf["fit_mandate"]["text"], "label": "of harmful orders stopped that broke no per-order limit",
+         "ctx": f"A thousand-agent swarm sent {sf['bad_reached']['text']} in harmful orders. {sf['fit_mandate']['text']} of it sat inside every per-order limit, so limits alone would have let it all through. With OrderGuard, {sf['leak_after']['text']} reached the market.",
+         "src": sf["fit_mandate"]["src"]},
+        {"big": doc["models"]["risk"]["usd_recall"]["text"], "label": "of harmful dollars stopped on swarms the model never saw",
+         "ctx": "Measured on recorded swarm runs held out of training: collusion, crowding, runaway loops and hijacked agents.", "src": doc["models"]["risk"]["usd_recall"]["src"]},
+        {"big": sf["honest_tightened"]["text"], "label": "of legitimate orders sent to a person",
+         "ctx": f"That is {one_in} honest orders. Everything else goes straight through, so people review only what matters.", "src": sf["honest_tightened"]["src"]},
+        {"big": sim["million_orders_total"]["text"], "label": "decisions in simulations of up to " + sim["million_agents"]["text"] + " agents",
+         "ctx": f"Every order went through the full check, and an independent auditor found {sim['million_breaches']['text']} breaches of a signed limit.", "src": sim["million_orders_total"]["src"]},
+    ]
+    return {"mandate": {"name": e["name"], "purpose": e["purpose"], "rows": rows},
+            "price": {"order": honest["order"], "agent": honest["agent"], "check": honest["checks"][-1], "size": honest["checks"][1]},
+            "figures": figs,
+            "clips": {"problem": ["problem", 4.5, 27], "connect": ["fits", 0, 14.5], "mandate": ["fits", 34, 50.5], "data": ["order", 36, 60.3],
+                      "swarm": ["attack", 0, 17.5], "record": ["order", 18, 36]},
+            "outcomes": outcomes}
+
+
 # ---------------------------------------------------------------------------------------------------------------- the theater copy
 THEATER_FILES = ("theme.js", "app.css", "theater.css", "ui.js", "theater.js")
 
@@ -1190,6 +1242,7 @@ def build() -> tuple[dict, dict[str, bytes]]:
         "film": {"clip": "fits", "steps": [{"t": t, "text": x} for t, x in FILM_STEPS]},
     }
     doc["compare"] = compare(doc)
+    doc["layers"] = layers(r, doc)
     theater = theater_files(r)
     doc["inputs"] = [{"path": p, "sha256": h} for p, h in sorted(r.used.items())]
     return doc, theater

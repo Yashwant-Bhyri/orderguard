@@ -21,8 +21,8 @@
       <span>OrderGuard</span>
     </a>
     <nav class="nav" aria-label="Sections">
-      <a href="#how">Product</a>
-      <a href="#system">How it works</a>
+      <a href="#scope">With and without</a>
+      <a href="#how">How it works</a>
       <a href="#live">At scale</a>
       <a href="#start">Developers</a>
       <a href="evidence.html">Evidence</a>
@@ -80,82 +80,100 @@
   </div>
 </section>
 
-<!-- ===================================================================== capabilities -->
-<section class="sec" id="how" aria-labelledby="h-how">
+<!-- ===================================================================== full scope against OrderGuard -->
+<section class="sec" id="scope" aria-labelledby="h-scope">
   <div class="wrap">
     <header class="sec-head center">
-      <p class="eyebrow">What it does</p>
-      <h2 id="h-how">Three things your agents can't do without you</h2>
+      <p class="eyebrow">Full trading scope, or OrderGuard in the middle</p>
+      <h2 id="h-scope">The same agents, with and without OrderGuard</h2>
+      <p>We gave the same agents full trading access, then ran them again with OrderGuard between them and the market.</p>
     </header>
-
-    <article class="cap">
-      <div class="cap-copy">
-        <p class="cap-n">Rules</p>
-        <h3>Set the rules once. Enforce them on every order</h3>
-        <p>You sign a mandate for a whole strategy: which symbols, how large an order can be, how much a day, and above what size a person must approve. The agent never holds the signing key, so it can't widen its own limits. Every order is sized at OrderGuard's trusted market price, not the price the agent says it saw.</p>
-        <div class="seg" role="tablist" aria-label="Mandate examples" id="seal-tabs">
-          <button type="button" role="tab" aria-selected="true" data-k="edit">An agent edits its limits</button>
-          <button type="button" role="tab" aria-selected="false" data-k="draft">An agent drafts its own mandate</button>
-        </div>
+    <div class="scope">
+      <figure class="clip" data-clip="problem"><video muted playsinline preload="none"></video><figcaption>From the film: what an agent with full access does</figcaption></figure>
+      <div class="lanes">
+        <div class="lane-head" aria-hidden="true"><span></span><span class="w-o">Agent straight to market</span><span class="w-g">Agent, OrderGuard, market</span></div>
+        <div class="cmp" id="cmp"></div>
       </div>
-      <div class="cap-vis">
-        <div class="seal" id="seal" aria-live="polite">
-          <p class="seal-head"><span id="seal-title">Signed mandate</span><span class="pill" id="seal-state">Signed</span></p>
-          <p class="seal-purpose" id="seal-purpose"></p>
-          <dl class="seal-kv" id="seal-kv"></dl>
-          <p class="seal-label">Symbols</p>
-          <p class="seal-syms" id="seal-syms"></p>
-          <ul class="seal-log" id="seal-log"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================================== how it works, layer by layer -->
+<section class="sec alt" id="how" aria-labelledby="h-how">
+  <div class="wrap">
+    <header class="sec-head center">
+      <p class="eyebrow">How it works</p>
+      <h2 id="h-how">Five layers between your agent and the market</h2>
+      <p>Each layer can stop an order. None of them can approve one the layer before refused.</p>
+    </header>
+    <nav class="lnav" aria-label="Layers">
+      <a href="#l-connect">Connect</a><a href="#l-mandate">Signed mandate</a><a href="#l-data">Trusted data</a><a href="#l-swarm">Swarm risk</a><a href="#l-record">Review and record</a>
+    </nav>
+
+    <article class="layer" id="l-connect">
+      <header class="l-head"><p class="cap-n">Connect</p><h3>Your agent never touches the market directly</h3>
+        <p>It sends orders to OrderGuard over MCP, HTTP or the SDK. OrderGuard holds the keys and the connection to your broker.</p></header>
+      <div class="l-body">
+        <div class="arch" aria-label="Agents connect to OrderGuard, which connects to the broker or exchange">
+          <div class="a-col"><p class="a-t">Your agents</p><span>Chat assistants</span><span>Research swarms</span><span>Any model, any framework</span></div>
+          <div class="a-pipe"><i></i><small>MCP · HTTP · SDK</small></div>
+          <div class="a-col og"><p class="a-t">OrderGuard</p><span>Signed mandate</span><span>Trusted data</span><span>Swarm risk model</span><span>Review queue</span><span>Ledger</span><p class="a-key">Holds the keys</p></div>
+          <div class="a-pipe"><i></i><small>signed order</small></div>
+          <div class="a-col"><p class="a-t">Your broker or exchange</p><span>Receiver checks the signature, the scope and the exact order again</span></div>
         </div>
+        <figure class="clip" data-clip="connect"><video muted playsinline preload="none"></video><figcaption>From the film: how it fits</figcaption></figure>
       </div>
     </article>
 
-    <article class="cap rev">
-      <div class="cap-copy">
-        <p class="cap-n">Risk</p>
-        <h3>Catch the risks that individual limits miss</h3>
-        <p>An order can pass every limit and still be dangerous: one of five agents quietly building the same position, a trade on a headline nobody else has reported, a command hidden in a web page. Every order goes through the same five stops, and the risk model watches the whole swarm. It can hold an order for a person. It can never approve one the mandate refuses.</p>
-        <div class="seg" role="tablist" aria-label="Orders" id="flow-tabs"></div>
+    <article class="layer" id="l-mandate">
+      <header class="l-head"><p class="cap-n">Signed mandate</p><h3>You sign the limits once. Agents can't change them</h3>
+        <p>This is the mandate the agents in our recorded run traded under. Hover a line to see what it controls.</p></header>
+      <div class="l-body">
+        <div class="mj" id="mj">
+          <p class="mj-head"><span><b id="mj-name"></b> <span id="mj-purpose"></span></span><span class="pill allowed" id="mj-state">Signature valid</span></p>
+          <ol class="mj-lines" id="mj-lines"></ol>
+          <p class="mj-note" id="mj-note" aria-live="polite"></p>
+          <div class="seg" role="tablist" aria-label="Mandate examples" id="mj-tabs">
+            <button type="button" role="tab" aria-selected="true" data-k="read">Read it</button>
+            <button type="button" role="tab" aria-selected="false" data-k="edit">An agent edits it</button>
+            <button type="button" role="tab" aria-selected="false" data-k="draft">An agent drafts its own</button>
+          </div>
+        </div>
+        <figure class="clip" data-clip="mandate"><video muted playsinline preload="none"></video><figcaption>From the film: a mandate for a whole strategy</figcaption></figure>
       </div>
-      <div class="cap-vis">
+    </article>
+
+    <article class="layer" id="l-data">
+      <header class="l-head"><p class="cap-n">Trusted data</p><h3>Every number an order relies on is checked first</h3>
+        <p>Prices come from OrderGuard's own feed, company figures from the filings, news from at least two independent sources. A claim with no proof behind it doesn't get used.</p></header>
+      <div class="l-body">
+        <ol class="facts" id="facts" aria-label="Checks on what an order relies on"></ol>
+        <figure class="clip" data-clip="data"><video muted playsinline preload="none"></video><figcaption>From the film: one order, every claim checked</figcaption></figure>
+      </div>
+    </article>
+
+    <article class="layer" id="l-swarm">
+      <header class="l-head"><p class="cap-n">Swarm risk</p><h3>Catch what no single order shows</h3>
+        <p>The risk model watches every agent at once: who is buying the same thing, how fast, and what it adds up to. It can hold an order for a person. It can never approve one.</p></header>
+      <div class="l-body">
         <div class="flowbox">
+          <div class="seg" role="tablist" aria-label="Orders" id="flow-tabs"></div>
           <svg id="flow-svg" role="img" aria-labelledby="flow-cap"></svg>
           <p class="flow-cap" id="flow-cap" aria-live="polite"></p>
           <ul class="flow-checks" id="flow-checks"></ul>
         </div>
+        <figure class="clip" data-clip="swarm"><video muted playsinline preload="none"></video><figcaption>From the film: harmless alone, harmful together</figcaption></figure>
       </div>
     </article>
 
-    <article class="cap">
-      <div class="cap-copy">
-        <p class="cap-n">Record</p>
-        <h3>Know why every order was allowed, held or refused</h3>
-        <p>Each decision is written with the mandate, the trusted price and the reason, and sealed into the record before it, so the history can't be quietly changed. Held orders wait in a review queue ranked by the money at stake, so a person sees the riskiest order first.</p>
-        <p><a class="arrow" data-doc="docs/OPERATIONS.md">How the ledger and review queue work</a></p>
-      </div>
-      <div class="cap-vis">
-        <ol class="chain" id="chain" aria-label="Ledger records, each sealed over the one before"></ol>
+    <article class="layer" id="l-record">
+      <header class="l-head"><p class="cap-n">Review and record</p><h3>Know why every order was allowed, held or refused</h3>
+        <p>Held orders wait for a person, riskiest first. Every decision is sealed into the record before it, so history can't be quietly changed.</p></header>
+      <div class="l-body">
+        <div><ol class="chain" id="chain" aria-label="Ledger records, each sealed over the one before"></ol></div>
+        <figure class="clip" data-clip="record"><video muted playsinline preload="none"></video><figcaption>From the film: the receiver stops a lie at the broker</figcaption></figure>
       </div>
     </article>
-  </div>
-</section>
-
-<!-- ===================================================================== how the system works, film woven in -->
-<section class="sec dark" id="system" aria-labelledby="h-system">
-  <div class="wrap">
-    <header class="sec-head center">
-      <p class="eyebrow">How the system works</p>
-      <h2 id="h-system">Plain code at the core. Intelligence around it</h2>
-      <p>Your agent never touches the market directly. It asks OrderGuard, which holds the keys, the prices and the ledger.</p>
-    </header>
-    <div class="weave">
-      <div class="weave-film">
-        <video id="weave-v" muted playsinline loop preload="metadata" aria-describedby="weave-now"></video>
-        <div class="weave-prog"><span id="weave-prog"></span></div>
-      </div>
-      <ol class="weave-steps" id="weave-steps" aria-label="Steps in the film"></ol>
-      <p class="sr" id="weave-now" aria-live="polite"></p>
-    </div>
     <p class="ctas center"><button type="button" class="btn" id="film-open">Watch the full film</button></p>
   </div>
 </section>
@@ -188,7 +206,7 @@
     <figure class="console" aria-labelledby="console-cap">
       <div class="c-top">
         <span class="c-brand"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.5 17 4v5.5c0 4.2-2.8 7.3-7 9-4.2-1.7-7-4.8-7-9V4z" fill="currentColor"/></svg>OrderGuard</span>
-        <span class="c-crumb">Book <b data-t="console.envelope.name"></b></span>
+        <span class="c-crumb">Mandate <b data-t="console.envelope.name"></b> · <span data-t="layers.mandate.purpose"></span> · <a href="#l-mandate">see it</a></span>
         <span class="grow"></span>
         <span class="c-live"><i></i>Replay</span>
         <span class="c-clock" id="c-clock"></span>
@@ -248,15 +266,11 @@
 </section>
 
 <!-- ===================================================================== proof -->
-<section class="outcomes" aria-labelledby="h-proof">
+<section class="sec" id="proof" aria-labelledby="h-proof">
   <div class="wrap">
-    <h2 class="sr" id="h-proof">Results</h2>
-    <dl class="o-grid three">
-      <div><dt>in harmful orders that passed every per-order limit, stopped before reaching the market</dt><dd data-f="swarm.facts.fit_mandate"></dd></div>
-      <div><dt>of harmful order value stopped, on agent swarms the model had never seen</dt><dd data-f="models.risk.usd_recall"></dd></div>
-      <div><dt>of legitimate orders sent to a person for review</dt><dd data-f="swarm.facts.honest_tightened"></dd></div>
-    </dl>
-    <p class="center"><a class="arrow" href="evidence.html">See all the evidence: with and without OrderGuard, the models, the million-agent run</a></p>
+    <header class="sec-head center"><p class="eyebrow">Results</p><h2 id="h-proof">What it changed, in our runs</h2></header>
+    <div class="proof" id="proof-grid"></div>
+    <p class="center more"><a class="arrow" href="evidence.html">All the evidence, and how to reproduce it</a></p>
   </div>
 </section>
 

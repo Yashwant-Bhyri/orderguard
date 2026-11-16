@@ -686,69 +686,128 @@ function authDemo() {
   onView(box, (vis) => { if (vis && !started && auto) { started = true; play(); } });
 }
 
-/* ---------------------------------------------------------------- rules: a signed mandate, edited or drafted */
-function sealDemo() {
-  const box = $("#seal");
+/* ---------------------------------------------------------------- signed mandate: the real document, annotated */
+function mandateJson() {
+  const box = $("#mj");
   if (!box) return;
-  const env = D.console.envelope, md = D.mandate_demo, T = timeline();
-  const state = $("#seal-state"), kv = $("#seal-kv"), syms = $("#seal-syms"), log = $("#seal-log"), purpose = $("#seal-purpose");
-  let mode = "edit", vis = false;
+  const M = D.layers.mandate, md = D.mandate_demo, T = timeline();
+  const lines = $("#mj-lines"), note = $("#mj-note"), state = $("#mj-state");
+  $("#mj-name").textContent = "Mandate " + M.name;
+  $("#mj-purpose").textContent = M.purpose;
+  let mode = "read", vis = false, hover = false;
+  const short = (v) => (typeof v === "string" && v.length > 28 ? v.slice(0, 12) + "…" + v.slice(-8) : v);
+  function val(v) {
+    if (Array.isArray(v)) return el("span", { cls: "mj-arr" }, v.map((x) => el("span", { cls: "chip", "data-s": x, text: x })));
+    if (typeof v === "number") return el("span", { cls: "mj-num", text: String(v) });
+    return el("span", { cls: "mj-str", text: JSON.stringify(short(v)) });
+  }
+  function render(rows) {
+    lines.textContent = "";
+    lines.append(el("li", { cls: "mj-brace", text: "{" }));
+    rows.forEach((r, i) => {
+      const li = el("li", { cls: "mj-row", "data-k": r.k }, [el("span", { cls: "mj-k", text: JSON.stringify(r.k) + ": " }), val(r.v), i < rows.length - 1 ? "," : ""]);
+      li.addEventListener("mouseenter", () => { if (mode === "read") { hover = true; focus(li, r.note); } });
+      li.addEventListener("mouseleave", () => { hover = false; });
+      lines.append(li);
+    });
+    lines.append(el("li", { cls: "mj-brace", text: "}" }));
+  }
+  function focus(li, text, cls) {
+    $$(".mj-row", lines).forEach((x) => x.classList.toggle("on", x === li));
+    note.textContent = text; note.className = "mj-note " + (cls || "");
+  }
+  const row = (k) => $('.mj-row[data-k="' + k + '"]', lines);
   function pill(cls, text) { state.className = "pill " + cls; state.textContent = text; }
-  function line(cls, text) { const li = el("li", { cls: "in " + cls, text }); log.append(li); return li; }
-  function fill(rows, symbols) {
-    kv.textContent = ""; syms.textContent = ""; log.textContent = "";
-    rows.forEach(([k, v]) => kv.append(el("div", {}, [el("dt", { text: k }), el("dd", { text: v })])));
-    symbols.forEach((s) => syms.append(el("span", { text: s, "data-s": s })));
+  function runRead() {
+    render(M.rows); pill("allowed", "Signature valid"); box.dataset.state = "ok";
+    const rs = $$(".mj-row", lines);
+    rs.forEach((li, i) => T.at(i * 2200, () => { if (!hover) focus(li, M.rows[i].note); }));
+    T.at(rs.length * 2200 + 400, () => { if (vis && mode === "read") runRead(); });
   }
   function runEdit() {
-    $("#seal-title").textContent = "Signed mandate";
-    purpose.hidden = true;
-    fill([["Per order", env.per_order], ["Per day", env.daily], ["Price band", env.band], ["Person approves above", env.step_up]], env.symbols);
-    box.dataset.state = "ok";
-    pill("allowed", "Signed by the owner");
-    line("ok", "Signed with the owner's key. Agents get a reference to it, never the key.");
-    T.at(1800, () => {
-      const dd = kv.querySelector("dd");
-      dd.textContent = "";
-      dd.append(el("s", { text: env.per_order }), " ", el("ins", { text: md.parent_per_order }));
-      line("warn", "agent-" + pad4(D.flows.swarm.agents[3]) + " raises its own per-order limit.");
+    render(M.rows); pill("allowed", "Signature valid"); box.dataset.state = "ok";
+    focus(row("signature"), "Signed with the owner's key. Agents get a reference to the mandate, never the key.");
+    T.at(2000, () => {
+      const li = row("maxOrderNotionalUsd"), n = $(".mj-num", li);
+      n.textContent = String(money(md.parent_per_order)); n.classList.add("edited");
+      focus(li, "agent-" + pad4(D.flows.swarm.agents[3]) + " raises its own per-order limit.", "warn");
     });
-    T.at(3400, () => { box.dataset.state = "bad"; pill("refused", "Signature broken"); line("bad", "The signature no longer matches what the owner signed."); });
-    T.at(4800, () => line("bad", "Every order under this mandate is refused. Nothing reaches the market."));
-    T.at(8800, () => { if (vis && mode === "edit") runEdit(); });
+    T.at(4000, () => {
+      row("signature").classList.add("bad"); box.dataset.state = "bad"; pill("refused", "Signature broken");
+      focus(row("signature"), "The signature no longer matches what the owner signed. Every order under it is refused, and nothing reaches the market.", "bad");
+    });
+    T.at(10000, () => { if (vis && mode === "edit") runEdit(); });
   }
   function runDraft() {
-    $("#seal-title").textContent = "Draft mandate from an agent";
-    purpose.hidden = false;
-    purpose.textContent = "";
-    purpose.append("Purpose ", el("b", { text: md.purpose_full }));
-    fill(md.kv, md.symbols);
-    box.dataset.state = "ok";
-    pill("held", "Reviewing");
-    line("ok", "Inside your signed mandate: code proves every limit is narrower than yours.");
-    const spans = $$("span", syms);
-    spans.forEach((sp, i) => T.at(1400 + i * 500, () => {
-      spans.forEach((x) => x.classList.remove("scan"));
-      sp.classList.add("scan");
-      if (md.extra.includes(sp.dataset.s)) sp.classList.add("flag");
+    const K = { "Per order": "maxOrderNotionalUsd", "Per day": "maxDailyNotionalUsd", "Sides": "sides", "Price band": "priceBandPct", "Person approves above": "stepUpAboveUsd" };
+    const rows = [{ k: "purpose", v: md.purpose_full }, { k: "symbols", v: md.symbols }].concat(md.kv.map(([k, v]) => ({
+      k: K[k] || k, v: K[k] === "sides" ? v.split(" and ") : money(v) }))).filter((r) => r.k !== "priceBandPct");
+    render(rows); pill("held", "Draft, reviewing"); box.dataset.state = "ok";
+    focus(row("purpose"), "An agent drafts a narrower mandate for one task. Code proves every limit sits inside the one you signed.");
+    const chips = $$(".chip", row("symbols"));
+    chips.forEach((c, i) => T.at(2200 + i * 600, () => {
+      chips.forEach((x) => x.classList.remove("scan")); c.classList.add("scan");
+      if (md.extra.includes(c.dataset.s)) c.classList.add("flag");
     }));
-    const after = 1400 + spans.length * 500 + 300;
-    T.at(after, () => { spans.forEach((x) => x.classList.remove("scan")); line("warn", "Decision adapter: " + md.concern + "."); });
-    T.at(after + 1500, () => {
-      box.dataset.state = "bad"; pill("refused", "Sent back");
-      spans.filter((x) => md.extra.includes(x.dataset.s)).forEach((x) => x.classList.add("cut"));
-      line("bad", "Sent back to the agent with the reason. The owner is asked to sign " + md.kept.join(" and ") + " only.");
+    const t = 2200 + chips.length * 600 + 200;
+    T.at(t, () => { chips.forEach((x) => x.classList.remove("scan")); focus(row("symbols"), "Decision adapter, post-trained on an underlying decision model: " + md.concern + ".", "warn"); });
+    T.at(t + 2600, () => {
+      chips.filter((c) => md.extra.includes(c.dataset.s)).forEach((c) => c.classList.add("cut"));
+      pill("refused", "Sent back"); box.dataset.state = "bad";
+      focus(row("symbols"), "Sent back to the agent with the reason. The owner is asked to sign " + md.kept.join(" and ") + " only.", "bad");
     });
-    T.at(after + 6000, () => { if (vis && mode === "draft") runDraft(); });
+    T.at(t + 9000, () => { if (vis && mode === "draft") runDraft(); });
   }
-  const run = () => { T.clear(); if (mode === "edit") runEdit(); else runDraft(); };
-  const tabs = $$("#seal-tabs [role=tab]");
-  tabs.forEach((t) => t.addEventListener("click", () => {
-    mode = t.dataset.k; tabs.forEach((x) => x.setAttribute("aria-selected", String(x === t))); run();
-  }));
-  if (reduce.matches) { run(); return; }
+  const run = () => { T.clear(); hover = false; ({ read: runRead, edit: runEdit, draft: runDraft })[mode](); };
+  const tabs = $$("#mj-tabs [role=tab]");
+  tabs.forEach((b) => b.addEventListener("click", () => { mode = b.dataset.k; tabs.forEach((x) => x.setAttribute("aria-selected", String(x === b))); run(); }));
   run();
-  onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
+  if (!reduce.matches) onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
+}
+
+/* ---------------------------------------------------------------- trusted data: what an order relies on, checked */
+function factsCheck() {
+  const box = $("#facts");
+  if (!box) return;
+  const L = D.layers, rum = D.flows.flows.find((f) => f.end === "person" && f.steps[0][0] === "hold");
+  const PILL = { confirmed: ["allowed", "Matches the filing"], contradicted: ["refused", "Contradicted"] };
+  const items = [
+    ["Price", L.price.agent + " · " + L.price.order, ["allowed", "Within the band"], L.price.check.replace(/^Price: /, "") + ". " + L.price.size.replace(/^Size: /, "") + "."],
+    ...L.figures.map((f) => ["Filing figure", "Agent cites " + f.claim, PILL[f.status] || ["held", f.status], f.status === "contradicted" ? "The filing reports " + f.truth + ". The order is refused." : "Checked against the company's filing."]),
+    ["News", rum ? rum.agent + " · " + rum.order : "", ["held", "Held"], rum ? rum.steps[0][1] + "." : ""],
+  ];
+  const T = timeline();
+  function run() {
+    T.clear(); box.textContent = "";
+    items.forEach(([kind, what, [cls, verdict], why], i) => T.at(reduce.matches ? 0 : 200 + i * 900, () => box.append(el("li", { cls: "in" }, [
+      el("p", { cls: "fx-top" }, [el("span", { cls: "fx-kind", text: kind }), el("span", { cls: "grow" }), el("span", { cls: "pill " + cls, text: verdict })]),
+      el("p", { cls: "fx-what", text: what }), el("p", { cls: "fx-why", text: why })]))));
+  }
+  run();
+  if (!reduce.matches) { let vis = false; onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); }); }
+}
+
+/* ---------------------------------------------------------------- film segments pinned to each layer */
+function clips() {
+  for (const fig of $$("figure.clip")) {
+    const c = D.layers.clips[fig.dataset.clip], v = $("video", fig);
+    if (!c || !v) continue;
+    const [name, a, b] = c;
+    v.poster = "media/og-" + name + ".jpg";
+    v.src = "media/og-" + name + ".mp4#t=" + a + "," + b;
+    v.addEventListener("loadedmetadata", () => { v.currentTime = a; });
+    v.addEventListener("timeupdate", () => { if (v.currentTime >= b || v.currentTime < a - 0.5) v.currentTime = a; });
+    if (reduce.matches) { v.controls = true; continue; }
+    onView(fig, (vis) => { if (vis) v.play().catch(() => {}); else v.pause(); }, 0.4);
+  }
+}
+
+/* ---------------------------------------------------------------- results, each with its context */
+function proofGrid() {
+  const box = $("#proof-grid");
+  if (!box) return;
+  for (const o of D.layers.outcomes) box.append(el("div", { cls: "p-item" }, [el("p", { cls: "p-big", text: o.big }), el("p", { cls: "p-lab", text: o.label }),
+    el("p", { cls: "p-ctx", text: o.ctx }), el("a", { cls: "src", href: fileHref(o.src), text: o.src })]));
 }
 
 /* ---------------------------------------------------------------- risk: one order through the five stops */
@@ -869,35 +928,6 @@ function ledgerDemo() {
   if (!reduce.matches) onView(box, (v) => { const was = vis; vis = v; if (v && !was) run(); });
 }
 
-/* ---------------------------------------------------------------- how the system works: the film, woven into the page */
-function filmWeave() {
-  const v = $("#weave-v");
-  if (!v) return;
-  const F = D.film, list = $("#weave-steps"), bar = $("#weave-prog"), now = $("#weave-now");
-  v.poster = "media/og-" + F.clip + ".jpg";
-  v.src = "media/og-" + F.clip + ".mp4";
-  const items = F.steps.map((s) => {
-    const b = el("button", { type: "button", text: s.text });
-    b.addEventListener("click", () => { v.currentTime = s.t + 0.05; v.play().catch(() => {}); });
-    const li = el("li", {}, b);
-    list.append(li);
-    return li;
-  });
-  let last = -1;
-  v.addEventListener("timeupdate", () => {
-    let k = 0;
-    F.steps.forEach((s, i) => { if (v.currentTime >= s.t) k = i; });
-    if (v.duration) bar.style.width = (v.currentTime / v.duration) * 100 + "%";
-    if (k !== last) {
-      last = k;
-      items.forEach((li, i) => { li.classList.toggle("on", i === k); li.classList.toggle("past", i < k); });
-      now.textContent = F.steps[k].text;
-    }
-  });
-  if (reduce.matches) { v.controls = true; return; }
-  onView(v, (vis) => { if (vis) v.play().catch(() => {}); else v.pause(); }, 0.5);
-}
-
 /* ---------------------------------------------------------------- the full film, in a dialog */
 function filmDialog() {
   const dlg = $("#film-dlg"), open = $("#film-open");
@@ -915,7 +945,7 @@ function filmDialog() {
   }
   btns.forEach((b, i) => b.addEventListener("click", () => pick(i, true)));
   v.addEventListener("ended", () => { if (cur + 1 < btns.length) pick(cur + 1, true); });
-  open.addEventListener("click", () => { const w = $("#weave-v"); if (w) w.pause(); dlg.showModal(); pick(0, true); });
+  open.addEventListener("click", () => { $$("figure.clip video").forEach((x) => x.pause()); dlg.showModal(); pick(0, true); });
   $("#film-close").addEventListener("click", () => dlg.close());
   dlg.addEventListener("close", () => v.pause());
   dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
@@ -968,10 +998,12 @@ async function boot() {
   compareSetup();
   codeTabs();
   authDemo();
-  sealDemo();
+  mandateJson();
+  factsCheck();
   flowScene();
   ledgerDemo();
-  filmWeave();
+  clips();
+  proofGrid();
   filmDialog();
   let lastW = innerWidth, tm = 0;
   addEventListener("resize", () => { clearTimeout(tm); tm = setTimeout(() => { if (innerWidth !== lastW) { lastW = innerWidth; drawAll(); } }, 150); });
