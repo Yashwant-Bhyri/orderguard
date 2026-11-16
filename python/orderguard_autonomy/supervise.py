@@ -212,7 +212,7 @@ class IntentRecord:
     intent_id: str = ""
 
     def sha256(self) -> str:
-        return sha256_hex({"agent": self.agent, "contract_id": self.contract_id, "objective_id": self.objective_id, "action": self.action,
+        return sha256_hex({"intent_id": self.intent_id, "agent": self.agent, "contract_id": self.contract_id, "objective_id": self.objective_id, "action": self.action,
                            "kind": self.kind, "symbol": self.symbol, "side": self.side, "quantity": self.quantity, "thesis": self.thesis,
                            "horizon_days": self.horizon_days, "evidence": list(self.evidence),
                            "claims": [[c.text, c.value, c.unit, c.evidence_sha256] for c in self.claims]})
@@ -467,15 +467,28 @@ class DriftMonitor:
             by_sector[self.sectors.get(s, "?")] += abs(v)
         return style_distance(by_sector, self.style)
 
-    def check(self, agent: str, book_usd: dict[str, float]) -> list[str]:
+    def check(self, agent: str, book_usd: dict[str, float], order: tuple[str, float] | None = None) -> list[str]:
+        """Reasons to hold this agent's risk-adding order. The style-distance test applies only once the book is big enough to
+        measure (`min_book_usd`) and only to an order that moves the book further from the signed style."""
         out = []
         if agent in self.alarmed:
             out.append("drift: off-objective trading rate has shifted (CUSUM alarm)")
         gross = sum(abs(v) for v in book_usd.values())
-        if gross > self.min_book_usd and gross > 0:
-            d = self.book_distance(book_usd)
-            if d > self.max_style_distance:
-                out.append(f"drift: the agent's book is {d:.2f} from the signed style (limit {self.max_style_distance:.2f})")
+        if gross >= self.min_book_usd and gross > 0:
+            d0 = self.book_distance(book_usd)
+            d1 = d0
+            if order is not None:
+                after = dict(book_usd)
+                after[order[0]] = after.get(order[0], 0.0) + order[1]
+                d1 = self.book_distance(after)
+            sec = self.sectors.get(order[0], "?") if order is not None else None
+            overweight = False
+            if sec is not None and gross > 0:                  # adding to a sector already at or over its signed share
+                tt = sum(self.style.values()) or 1.0
+                share = sum(abs(v) for s, v in book_usd.items() if self.sectors.get(s) == sec) / gross
+                overweight = share >= self.style.get(sec, 0.0) / tt
+            if d1 > self.max_style_distance and (d1 > d0 + 1e-9 or overweight):
+                out.append(f"drift: this order moves the agent's book to {d1:.2f} from the signed style (limit {self.max_style_distance:.2f})")
         return out
 
 
@@ -489,19 +502,43 @@ def _cos(a: dict[str, float], b: dict[str, float]) -> float:
     return dot / (na * nb) if na > 0 and nb > 0 else 0.0
 
 
-def flow_vectors(orders: list[dict]) -> dict[str, dict[str, float]]:
+def flow_vectors(orders: list[dict], key: Callable[[str], str] | None = None) -> dict[str, dict[str, float]]:
+    """Each agent's signed order flow, by symbol or, with `key`, by a coarser bucket (a sector). Coarse buckets matter: two agents
+    buying the same theme through different names have orthogonal symbol vectors but nearly identical sector vectors."""
     flows: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for o in orders:
-        flows[o["agent"]][o["symbol"]] += (1 if o["side"] == "buy" else -1) * float(o["notional"])
+        b = key(o["symbol"]) if key else o["symbol"]
+        flows[o["agent"]][b] += (1 if o["side"] == "buy" else -1) * float(o["notional"])
     return {a: dict(v) for a, v in flows.items()}
 
 
-def herding_clusters(orders: list[dict], min_similarity: float = 0.8, min_size: int = 3) -> list[set[str]]:
+def modal_source(orders: list[dict]) -> dict[str, tuple[str, float]]:
+    """Each agent's most-cited evidence root and the share of its orders citing it (orders carry a `root` key, or none)."""
+    counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    n: dict[str, int] = defaultdict(int)
+    for o in orders:
+        n[o["agent"]] += 1
+        if o.get("root"):
+            counts[o["agent"]][o["root"]] += 1
+    out = {}
+    for a, c in counts.items():
+        root, k = max(c.items(), key=lambda kv: (kv[1], kv[0]))
+        out[a] = (root, k / n[a])
+    return out
+
+
+def herding_clusters(orders: list[dict], min_similarity: float = 0.8, min_size: int = 3, *, require_shared_source: bool = False,
+                     min_source_share: float = 0.5, key: Callable[[str], str] | None = None) -> list[set[str]]:
     """Groups of agents whose recent signed order flow points the same way (cosine >= min_similarity), as connected components.
-    Keyed only on behaviour: an agent's declared identity, book or strategy label plays no part."""
-    flows = flow_vectors(orders)
+    Keyed only on behaviour: an agent's declared identity, book or strategy label plays no part.
+
+    With `require_shared_source`, two agents are linked only if they also lean on the same evidence root (each cites it in at least
+    `min_source_share` of its orders). That separates a herd acting on one thesis from a diversified population that happens to
+    sample the same names."""
+    flows = flow_vectors(orders, key)
     agents = sorted(flows)
     parent = {a: a for a in agents}
+    src = modal_source(orders) if require_shared_source else {}
 
     def find(x):
         while parent[x] != x:
@@ -510,6 +547,10 @@ def herding_clusters(orders: list[dict], min_similarity: float = 0.8, min_size: 
         return x
     for i, a in enumerate(agents):
         for b in agents[i + 1:]:
+            if require_shared_source:
+                sa, sb = src.get(a), src.get(b)
+                if not sa or not sb or sa[0] != sb[0] or sa[1] < min_source_share or sb[1] < min_source_share:
+                    continue
             if _cos(flows[a], flows[b]) >= min_similarity:
                 parent[find(a)] = find(b)
     groups: dict[str, set[str]] = defaultdict(set)
@@ -541,28 +582,29 @@ def herding_signal(orders: list[dict], evidence: dict[str, list[str]]) -> float:
 
 
 class HerdingMonitor:
-    """Caps the combined new exposure of a behavioural cluster. Clusters are re-derived from the last `window` orders every
-    `refresh` orders. An order from a cluster member that would take the cluster's net buying in one symbol group (sector) past
-    `cluster_cap_usd` is held. Tighten only."""
+    """Caps the aggregate net exposure of a behavioural cluster: agents that trade alike (and, by default, on the same evidence
+    root) are treated as one bet. Clusters are re-derived from the last `window` allowed orders every `refresh` orders. A buy from a
+    cluster member that would take the cluster's combined net buying past `cluster_cap_usd` is held. Tighten only."""
 
     def __init__(self, sectors: dict[str, str], cluster_cap_usd: float, *, window: int = 400, refresh: int = 25,
-                 min_similarity: float = 0.8, min_size: int = 3):
+                 min_similarity: float = 0.8, min_size: int = 3, require_shared_source: bool = True):
         self.sectors, self.cap = sectors, float(cluster_cap_usd)
         self.recent: deque = deque(maxlen=window)
         self.refresh, self.min_similarity, self.min_size = refresh, min_similarity, min_size
+        self.require_shared_source = require_shared_source
         self.clusters: list[set[str]] = []
         self._member: dict[str, int] = {}
         self._n = 0
-        self.net: dict[tuple[int, str], float] = defaultdict(float)
-        self._agent_net: dict[tuple[str, str], float] = defaultdict(float)
+        self._agent_net: dict[str, float] = defaultdict(float)
 
-    def observe(self, agent: str, symbol: str, side: str, notional: float) -> None:
-        self.recent.append({"agent": agent, "symbol": symbol, "side": side, "notional": notional})
-        sec = self.sectors.get(symbol, "?")
-        self._agent_net[(agent, sec)] += (1 if side == "buy" else -1) * notional
+    def observe(self, agent: str, symbol: str, side: str, notional: float, root: str | None = None) -> None:
+        self.recent.append({"agent": agent, "symbol": symbol, "side": side, "notional": notional, "root": root})
+        self._agent_net[agent] += (1 if side == "buy" else -1) * notional
         self._n += 1
         if self._n % self.refresh == 0:
-            self.clusters = herding_clusters(list(self.recent), self.min_similarity, self.min_size)
+            self.clusters = herding_clusters(list(self.recent), self.min_similarity, self.min_size,
+                                             require_shared_source=self.require_shared_source,
+                                             key=lambda sym: self.sectors.get(sym, sym))
             self._member = {a: i for i, g in enumerate(self.clusters) for a in g}
 
     def cluster_of(self, agent: str) -> set[str] | None:
@@ -573,20 +615,27 @@ class HerdingMonitor:
         g = self.cluster_of(agent)
         if g is None or side != "buy":
             return None
-        sec = self.sectors.get(symbol, "?")
-        net = sum(self._agent_net[(a, sec)] for a in g)
+        net = sum(self._agent_net[a] for a in g)
         if net + notional > self.cap:
-            return f"herding: {len(g)} agents trading together already hold ${net:,.0f} net in {sec}; cluster cap ${self.cap:,.0f}"
+            return f"herding: {len(g)} agents trading alike on one source already hold ${net:,.0f} net; cluster cap ${self.cap:,.0f}"
         return None
 
 
 def _shape(args: str) -> str:
-    return re.sub(r"\d+(\.\d+)?", lambda m: f"{float(m.group(0)):.2g}", args)
+    return re.sub(r"\d+(\.\d+)?", lambda m: f"{float(m.group(0)):.3g}", args)
 
 
-def loop_signal(actions: list[tuple[str, str]]) -> float:
-    """Repetition in an agent's (tool, arguments) sequence, rising with frequency: 1 - distinct/len over the window, with numbers
-    rounded to two significant figures so near-identical calls count as repeats. 0 for fewer than 4 actions."""
+def loop_signal(actions: list[tuple[str, str]], times: list[float] | None = None, horizon_s: float = 300.0) -> float:
+    """Repetition in an agent's (tool, arguments) sequence, rising with frequency: 1 - distinct/len over the actions of the last
+    `horizon_s` seconds (all actions if no times are given), with numbers rounded to three significant figures so near-identical
+    calls count as repeats. 0 for fewer than 4 actions in the window. An agent that buys the same name again an hour later is not
+    looping; one that sends the same call five times in a minute is."""
+    if times is not None:
+        if len(times) != len(actions):
+            raise ValueError("times and actions differ in length")
+        if times:
+            cut = times[-1] - horizon_s
+            actions = [a for a, t in zip(actions, times) if t >= cut]
     if len(actions) < 4:
         return 0.0
     shapes = [(t, _shape(a)) for t, a in actions]
@@ -595,28 +644,44 @@ def loop_signal(actions: list[tuple[str, str]]) -> float:
 
 @dataclass
 class PacingController:
-    """Spend of a day's budget treated as a control problem. By step t of T, an agent may have used at most
-    share x budget x min(1, (t + 1) / T x (1 + slack)) + floor. It never loosens anything signed; it only holds orders that would
-    run ahead of plan, so one fast agent or coalition cannot starve the rest."""
+    """Spend of a day's budget treated as a control problem: a guaranteed share for every agent, with reservations that fade.
+
+    Each agent's fair share (budget / number of agents) stays reserved for it, scaled by the part of the day still to come, so an
+    agent that has not traded yet still finds its share later, and capacity nobody claims is released as the day runs out. An
+    order is held only if it would dip into what is still reserved for the other agents:
+
+        total spent + this order  >  budget - sum over other agents of max(0, share x (1 - t / T) - their spend)
+
+    An agent inside its own share is therefore never paced; a fast agent can use whatever nobody else has a claim on. It never
+    loosens anything signed and only ever holds. (A first version paced against a straight-line plan; a lone fast agent simply
+    rode the plan line and used up the day before slower agents arrived, so it was replaced.)"""
     budget_usd: float
     steps: int
     agents: tuple[str, ...]
-    slack: float = 0.5
-    floor_usd: float = 0.0
     spent: dict = field(default_factory=lambda: defaultdict(float))
 
-    def allowance(self, agent: str, step: int) -> float:
-        share = 1.0 / max(1, len(self.agents))
-        return share * self.budget_usd * min(1.0, (step + 1) / self.steps * (1 + self.slack)) + self.floor_usd
+    def share(self) -> float:
+        return self.budget_usd / max(1, len(self.agents))
+
+    def reserved_for_others(self, agent: str, step: int) -> float:
+        frac = 1.0 - (step % self.steps) / self.steps
+        return sum(max(0.0, self.share() * frac - self.spent[b]) for b in self.agents if b != agent)
 
     def check(self, agent: str, step: int, notional: float) -> str | None:
-        allow = self.allowance(agent, step)
-        if self.spent[agent] + notional > allow + 1e-6:
-            return f"pacing: ${self.spent[agent] + notional:,.0f} would run ahead of this agent's ${allow:,.0f} plan so far"
+        total = sum(self.spent.values())
+        room = self.budget_usd - self.reserved_for_others(agent, step)
+        if total + notional > room + 1e-6:
+            return (f"pacing: ${total + notional:,.0f} would dip into ${self.reserved_for_others(agent, step):,.0f} still reserved for "
+                    f"other agents today")
         return None
 
     def record(self, agent: str, notional: float) -> None:
-        self.spent[agent] += float(notional)
+        """Net exposure added: a risk-adding order records +notional, a risk-reducing one -notional (never below zero), so an
+        agent that rotates its book does not use up its share by turnover alone."""
+        self.spent[agent] = max(0.0, self.spent[agent] + float(notional))
+
+    def new_day(self) -> None:
+        self.spent.clear()
 
 
 # ---------------------------------------------------------------------------------------------------------------------

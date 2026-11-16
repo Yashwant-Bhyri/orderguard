@@ -169,6 +169,24 @@ def apply_event(state: PortfolioState, event: dict) -> None:
         raise ValueError(f"unknown event kind {kind!r}")
 
 
+def check_event(state: PortfolioState, event: dict) -> None:
+    """Raise InvalidTransition if `event` cannot apply to `state`. Never mutates: the ledger validates before it writes."""
+    kind = event.get("kind")
+    if kind == "reserve":
+        if event["order"]["order_id"] in state.working:
+            raise InvalidTransition(f"order {event['order']['order_id']} already exists")
+    elif kind == "transition":
+        wo = state.working.get(event["order_id"])
+        if wo is None:
+            raise InvalidTransition(f"unknown order {event['order_id']}")
+        to = Lifecycle(event["to"])
+        if to not in TRANSITIONS[wo.state]:
+            raise InvalidTransition(f"{wo.order_id}: {wo.state.value} -> {to.value}")
+        filled = float(event.get("filled", wo.filled))
+        if filled < wo.filled - 1e-9 or filled > wo.quantity + 1e-9:
+            raise InvalidTransition(f"{wo.order_id}: fill {filled} outside [{wo.filled}, {wo.quantity}]")
+
+
 def replay(entries: list[dict]) -> PortfolioState:
     """Rebuild the state from log entries alone (what an auditor does)."""
     s = PortfolioState()
@@ -267,17 +285,12 @@ class ReservationLedger:
 
     def append(self, event: dict) -> dict:
         with self.lock:
-            probe = self.state.copy() if event["kind"] in ("transition", "reserve") else None
-            if probe is not None:
-                apply_event(probe, event)                          # validate before anything is written
+            check_event(self.state, event)                         # validate before anything is written
             seq = len(self.store.entries) + 1
             prev = self.store.entries[-1]["hash"] if self.store.entries else GENESIS
             entry = {"seq": seq, "prev": prev, "event": event, "hash": entry_hash(seq, prev, event)}
             self.store.append(self.token, entry)
-            if probe is not None:
-                self.state = probe
-            else:
-                apply_event(self.state, event)
+            apply_event(self.state, event)
             self.state.snapshot = seq
             if self.signing_key is not None and seq % self.checkpoint_every == 0:
                 self.checkpoint()
@@ -514,15 +527,26 @@ class EscrowNode:
         """(dollars, risk) this node could reserve right now, counting what its ancestors could still grant. Read-only."""
         with self.lock:
             if self.parent is None:
-                return max(0.0, self.free_usd), max(0.0, self.free_risk)
+                return self.free_usd, self.free_risk
             pu, pr = self.parent.obtainable()
-            return (max(0.0, self.free_usd) + max(0.0, min(self.limit_usd - self.capacity_usd, pu)),
-                    max(0.0, self.free_risk) + max(0.0, min(self.risk_limit - self.risk_capacity, pr)))
+            # free can be negative after a rebase re-measured risk upward; that debt must be covered before anything new
+            return (self.free_usd + max(0.0, min(self.limit_usd - self.capacity_usd, pu)),
+                    self.free_risk + max(0.0, min(self.risk_limit - self.risk_capacity, pr)))
+
+    def return_idle(self) -> None:
+        """Every descendant hands its unused capacity back up, leaves first, so idle allocations never strand budget that a
+        sibling needs. Capacity is pulled down again on demand (request_more). Called at reconciliation."""
+        for ch in self.children:
+            ch.return_idle()
+        if self.parent is not None:
+            self.relinquish()
 
     # reservations -------------------------------------------------------------------------------------------------
     def can_reserve(self, notional_usd: float, risk_units: float, *, ask_parent: bool = True) -> bool:
         with self.lock:
-            short_usd, short_risk = max(0.0, notional_usd - self.free_usd), max(0.0, risk_units - self.free_risk)
+            # Nothing asked, nothing needed: a risk-reducing order reserves zero and must pass even when the node is in debt.
+            short_usd = max(0.0, notional_usd - self.free_usd) if notional_usd > 0 else 0.0
+            short_risk = max(0.0, risk_units - self.free_risk) if risk_units > 0 else 0.0
             if short_usd <= 1e-9 and short_risk <= 1e-12:
                 return True
             return ask_parent and self.request_more(short_usd, short_risk)

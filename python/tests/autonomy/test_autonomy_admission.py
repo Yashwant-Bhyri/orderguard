@@ -15,7 +15,7 @@ D = Decision
 
 
 def test_ten_thousand_held_three_agents_add_five_thousand_each():
-    ctl = make_controller(make_contract(**{"portfolio.max_issuer_weight": 0.20}))   # $20,000 per issuer
+    ctl = make_controller(make_contract(**{"portfolio.max_issuer_weight": 0.20, "autonomy.review_above_usd": 20_000.0}))  # $20,000 per issuer
     first = ctl.admit(req(ctl, "a1", "NVDA", "buy", 100))                          # $10,000 held
     ctl.on_terminal(first.order_id, L.FILLED, 100)
     out = [ctl.admit(req(ctl, f"a{i}", "NVDA", "buy", 50)).decision for i in (1, 2, 3)]
@@ -60,12 +60,17 @@ def test_stale_state_and_review_threshold_hold_rather_than_refuse():
     assert r.decision == D.HOLD and any("old" in x for x in r.hard_reasons)
     ctl.set_marks({s: 100.0 for s in SECTORS}, ctl.test_clock())
     r = ctl.admit(req(ctl, "a1", "KO", "buy", 95))                                 # $9,500 > $9,000 review threshold
-    assert r.decision == D.HOLD and r.reservation_id                               # a held order reserves capacity
-    cert = ctl.resolve_hold(r.order_id, approve=True)
-    assert cert is not None and cert.order_id == r.order_id
+    assert r.decision == D.HOLD and r.reservation_id is None                       # a held order reserves nothing
+    approved = ctl.resolve_hold(r.order_id, approve=True)                          # a person approves: admitted afresh
+    assert approved.decision == D.ALLOW and approved.certificate is not None and approved.reservation_id
     r2 = ctl.admit(req(ctl, "a2", "KO", "buy", 95))
-    ctl.resolve_hold(r2.order_id, approve=False)
-    assert r2.reservation_id not in ctl.ledger.state.reservations
+    assert ctl.resolve_hold(r2.order_id, approve=False) is None and r2.order_id not in ctl.held
+    # an approval cannot override a hard limit that has since been reached
+    ctl3 = make_controller(make_contract(**{"portfolio.max_issuer_weight": 0.15}))
+    h = ctl3.admit(req(ctl3, "a1", "KO", "buy", 95))
+    assert h.decision == D.HOLD
+    assert ctl3.admit(req(ctl3, "a2", "KO", "buy", 80)).decision == D.ALLOW          # $8,000 of the $15,000 cap
+    assert ctl3.resolve_hold(h.order_id, approve=True).decision == D.REFUSE
 
 
 def test_contract_tampering_version_and_untrusted_signer_refuse():
@@ -208,3 +213,19 @@ def test_reconcile_settles_escrow_and_returns_diversification():
     assert node.used_risk < reserved                                               # Euler share < sum of standalone reservations
     assert not ctl.ledger.state.reservations
     assert ctl.root.check_invariants() == []
+
+
+def test_a_retry_under_a_new_key_cannot_spend_the_same_decision_twice():
+    ctl = make_controller()
+    first = req(ctl, "a1", "KO", "buy", 10, key="try-1")
+    r1 = ctl.admit(first)
+    retry = replace(first, idempotency_key="try-2")                                # naive retry: new key, same decision
+    r2 = ctl.admit(retry)
+    assert r1.decision == D.ALLOW and r2.decision == D.REFUSE
+    assert any("already working or filled" in x for x in r2.hard_reasons)
+    ctl.on_status(r1.order_id, L.SUBMITTED)
+    ctl.on_status(r1.order_id, L.UNCERTAIN)                                       # sent, no acknowledgement
+    assert ctl.admit(replace(first, idempotency_key="try-2b")).decision == D.REFUSE
+    ctl.reconcile([], None, complete=True)                                       # the broker proves the first never arrived
+    assert ctl.ledger.state.working[r1.order_id].state == L.REJECTED
+    assert ctl.admit(replace(first, idempotency_key="try-3")).decision == D.ALLOW # now the retry is legitimate

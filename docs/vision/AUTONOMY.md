@@ -1,6 +1,6 @@
 # Continuous autonomy control: design direction
 
-Status: design. Nothing in this document is built yet unless it says so. The code pathways live in `python/orderguard_autonomy/` and raise `NotImplementedError` until each piece is built and tested. The running record of how this idea developed is in [JOURNAL.md](JOURNAL.md).
+Status: stages 1 and 2 are built and tested in simulation; nothing here runs against a real broker. The code lives in `python/orderguard_autonomy/`. What was built and what the benchmark found are in section 8. The method and full results are in [BENCHMARK.md](BENCHMARK.md), and the judgement model's research plan is in [JUDGEMENT.md](JUDGEMENT.md). The running record of how this idea developed is in [JOURNAL.md](JOURNAL.md).
 
 ## 1. The problem, stated precisely
 
@@ -117,7 +117,7 @@ What it proves: the order was admitted against this authority, this state and th
 
 ### F. Proposal: a long-horizon judgement model
 
-A proposal, not a feature. Today's models judge one order, or one window, at a time. Delegated trading needs judgement that persists: what the book is for, which theses it currently holds, what has already been tried, and whether today's actions still fit.
+A proposal, not a feature. A calibrated baseline now exists (section 8 and [JUDGEMENT.md](JUDGEMENT.md)). It does not yet earn a place beyond drift. Today's models judge one order, or one window, at a time. Delegated trading needs judgement that persists: what the book is for, which theses it currently holds, what has already been tried, and whether today's actions still fit.
 
 The proposal is a model that keeps a structured, persistent state of the delegation (purpose, active theses, evidence and their freshness, exposure history) and scores each new action against it over long horizons. It is trained on simulated episodes where the long-run outcome is known, calibrated, and bound by the same rule as everything else: it can tighten, never approve.
 
@@ -136,7 +136,7 @@ Compare four systems on the same scenarios, not just OrderGuard against an unpro
 
 Scenarios: correlated buying across agents, objective drift, coordinated misinformation, delayed broker acknowledgements, volatility regime change, budget starvation, cross-venue execution, tool compromise.
 
-Measure safety and usefulness together: hard-limit breaches, harmful exposure reached, false holds, legitimate executions completed, incremental portfolio risk, review burden, latency and behaviour under stale state. The result that matters is D beating C on a failure C allows. That has to come out of the experiment; it cannot be assumed.
+Measure safety and usefulness together: hard-limit breaches, harmful exposure reached, false holds, legitimate executions completed, incremental portfolio risk, review burden, latency and behaviour under stale state. The result that matters is D beating C on a failure C allows. That has to come out of the experiment; it cannot be assumed. It has now been run in simulation; see section 8.
 
 ## 5. What OrderGuard promises, and what it does not
 
@@ -160,3 +160,51 @@ The cited brief is [RESEARCH.md](RESEARCH.md). What it changed in this design:
 1. **Risk-aware authorization.** Projected-state admission with working-order reservations, hierarchical escrow, issuer and sector exposure caps, declared-scenario loss limits. US equities and ETFs, paper broker, no leverage.
 2. **Continuous supervision.** Leases with epochs, typed intent records, evidence provenance, drift and herding detection, and the system C baseline to compare against.
 3. **Integration and validation.** Shadow mode against broker order and position feeds, then limited live use only with brokerage, security and compliance review.
+
+Stages 1 and 2 are built and tested in simulation. Stage 3 has not started.
+
+## 8. What was built, and what the benchmark found
+
+### Built (`python/orderguard_autonomy/`; 140 tests in `python/tests/autonomy/` and `python/tests/test_autonomy_pathways.py`)
+
+- **Contract (`contract.py`).**
+  - Intent, proposed policy and signed policy are kept as separate objects. The proposed limits are explained through their consequences in declared scenarios, and the diff between what was proposed and what the owner signed is itself signed.
+  - Contracts are Ed25519 over canonical JSON. A schema states which way each limit may move, so a delegation chain is checked as attenuation only.
+  - The signed contract compiles to predicates. Hard predicates (permissions, caps, price band, no short, gross, issuer, sector, declared-scenario loss, rate) can refuse. Model predicates (risk budget, portfolio ES) can only hold. A risk-reducing order always passes the cap checks.
+- **State (`state.py`).**
+  - An event-sourced portfolio state with an order lifecycle.
+  - A single-writer reservation ledger with fencing tokens, a hash-chained log and signed checkpoints.
+  - Conservative projection over every subset of working-order fills.
+  - Reconciliation that keeps uncertain orders reserved until the broker's complete record resolves them.
+  - Hierarchical escrow (firm, book, agent) of dollars and ES units. Capacity flows down on demand and returns when idle. Locks are always taken child before parent.
+- **Risk (`risk.py`).**
+  - Gaussian and Student-t ES.
+  - Ledoit-Wolf constant-correlation shrinkage, a factor covariance and a stressed covariance.
+  - A rolling covariance and a regime detector with hysteresis.
+  - Incremental ES, Euler and group Euler allocation, and liquidity cost.
+  - Kupiec and Acerbi-Szekely backtests.
+  - Declared-scenario loss. Its worst case over fills is checked against a linear program in the tests.
+- **Admission (`admission.py`).**
+  - Order of checks: idempotency, contract and version, hard predicates, intent match (a mismatch refuses and quarantines the lineage), intent-quantity dedupe, escrow, then model checks.
+  - Combining is tighten-only. A hold reserves nothing; approving it re-admits the order.
+- **Supervision (`supervise.py`).**
+  - Leases with epochs per contract and lineage, with renewal refused on a stale snapshot, and revoke-all.
+  - Typed intent records.
+  - Evidence provenance, which collapses reposts and near-copies to their root.
+  - Claim flags.
+  - A Bernoulli CUSUM and a style distance for drift.
+  - Behavioural herding on sector flows plus a shared source.
+  - Time-windowed loop detection, and pacing with guaranteed fading shares.
+- **Certificates (`certificate.py`).**
+  - Each allowed order carries a signed certificate of about 900 bytes.
+  - The receiver checks it with a short deterministic checker: signature, trusted issuer, policy version, snapshot freshness, lease epoch, a matching reservation that covers the order (or, for a risk-reducing order, that it still reduces), and evidence freshness. The receiver's receipt is sealed into the ledger, and the certificate states what it does not prove.
+
+### Found (20 seeds; [BENCHMARK.md](BENCHMARK.md))
+
+- **D beat the competent conventional stack (C) on its own harm measure in all eight scenarios,** with separated 95% intervals. It beat C with C's weak settings fixed (C+) in seven. D had zero hard-limit breaches.
+- **Cross-venue is a tie with C+.** The gain there comes from consolidating checks across venues, which a conventional stack can also do.
+- **Pre-trade control cannot de-risk.** In the volatility regime scenario D stopped adding risk once the true ES was over budget ($5k added, against $380k under C). Even so, the book stayed over its signed budget for the whole post-shock window under every system. Reducing risk already held needs a separate action that the owner approves.
+- **Fairness has a price.** Pacing raised slow agents' completion from 0.39 to 0.63, but it held 210 of the fast agent's orders. Escrow alone (D_auth) made starvation worse (0.10), because escrow is first come, first served. The owner has to choose the share.
+- **The tool-compromise win rests on an assumption:** intent records are written by the agent runtime, not by the order tool. Without that assumption, D falls back to D_auth's caps, which let $132k through.
+- **The judgement baseline does not generalize.** AUROC is 0.97 in distribution and 0.63 on an adversarial shift, where recall falls to 5%. Drift is better caught by the deterministic monitor, which detected every drifting agent with no false alarms. The judgement model stays a research track.
+- **The agents are scripted, and the same team wrote the scenarios and D.** The next evidence has to come from shadow mode on live-forward paper data, with scenarios reviewed by someone else.

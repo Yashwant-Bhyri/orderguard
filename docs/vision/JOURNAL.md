@@ -154,3 +154,62 @@ Volatility and Expected Shortfall are both subadditive, because they are coheren
 - How is the herding signal defined so it keys on behaviour rather than declared identity, and how is its false-alarm rate controlled across thousands of agents?
 - How are decision certificates kept small enough for the receiver to verify deterministically, and what do they say they cannot prove?
 - Does the "Proof of Execution" preprint's approach hold up independently, or is it only a self-reported prototype?
+
+## Entry 3: Built, benchmarked, and what it taught
+
+**Date:** 2026-11-17
+
+### 1. What was built
+
+- Stages 1 and 2 of the build order now exist as working code in `python/orderguard_autonomy/`:
+  - contract compiler and attenuation;
+  - reservation ledger, projection and reconciliation;
+  - hierarchical escrow of dollars and ES units;
+  - risk models and backtests;
+  - admission controller;
+  - leases, intents, provenance, drift, herding, loops and pacing;
+  - decision certificates with a receiver-side checker.
+- The test suite covers each piece: unit, property and adversarial tests (concurrency, forged and altered certificates, stale leases, replayed retries).
+- A four-system benchmark runs in `orderguard_autonomy/bench` on the existing impact market, with an independent auditor. See [BENCHMARK.md](BENCHMARK.md).
+- A calibrated long-horizon judgement baseline and its research plan. See [JUDGEMENT.md](JUDGEMENT.md).
+- AUTONOMY.md section 8 summarizes what was found.
+
+### 2. First designs that failed, and why
+
+- **Holds that reserved capacity.** A model hold took its reservation, so approving it later could fail on an exhausted escrow, and a hold quietly became a refusal. Fix: a hold reserves nothing, and approval re-admits the order through every check.
+- **Plan-line pacing.** Pacing against a planned spend line let a fast agent ride the line and still starve the others. It was replaced by guaranteed shares that fade over the day and count net exposure. Even then, fairness has a visible cost: the fast agent is held.
+- **Capacity stuck in children.** Escrow granted capacity down to agents but never took it back, so an idle agent's grant starved the busy ones. Fix: idle capacity returns to the root at each rebase.
+- **A certificate that refused good sells.** The receiver required the reservation to cover the order, but risk-reducing orders reserve nothing. Certificates now say when an order was admitted as risk-reducing, and the receiver re-checks that it still reduces.
+- **Herding keyed on symbols.** Agents buying different names in the same theme did not look alike. The herding signal is now sector-level flow plus a shared root source in the evidence.
+- **Drift that flagged the book's size.** Style distance flagged small books whose weights were noisy. It now flags only books above a minimum size, and only orders that move the book further from the signed style.
+- **A judgement model that graded itself.** The first evaluation used the same generator for training and testing, so it scored 0.97. An adversarial shifted set brought it to 0.63 with 5% recall, and that is the honest number.
+- **Benchmark confounds found and fixed:**
+  - limits that saturated in every system, so nothing could differ;
+  - a herding measure that counted legitimate background buying;
+  - a conventional baseline that applied fills twice and tripped its own kill switch;
+  - drift control agents that copied the drifter's rotation rule.
+
+### 3. What was learned
+
+- **The win over a competent stack comes from binding, not from risk maths.** The large differences come from tying each order to a typed intent, a lineage lease and its evidence roots:
+  - duplicates are stopped by intent quantity;
+  - a compromised tool by intent mismatch;
+  - rumours by root-source counting;
+  - drift by comparing behaviour against the signed style.
+
+  Projection and escrow mostly match what C+ already does with worst-case working-order position.
+- **Pre-trade control cannot take risk off.** Once volatility rises, a book can be over its signed budget with no new order. De-risking is a separate, owner-approved action, and it is not designed yet.
+- **Fairness is a policy choice.** Escrow without pacing is first come, first served, and it made starvation worse than no escrow.
+- **Some wins rest on stated assumptions.** The intent records must come from the agent runtime and not from the agent's tools. That has to be enforced in deployment, not assumed.
+
+### 4. Decisions
+
+- The judgement model stays out of system D. The deterministic drift monitor does better.
+- The next evidence is shadow mode on live-forward paper data, with the scenarios reviewed by someone outside the team.
+
+### 5. Open questions
+
+- What is the owner-facing control for de-risking a book that is over budget through no new order of its own?
+- How should pacing shares be set: equal, by contract, or by the owner per agent?
+- How is "intent written by the runtime, not the tool" enforced? Separate process, separate key, or attestation?
+- Can herding caps be set from the owner's declared scenarios rather than as a share of capital?

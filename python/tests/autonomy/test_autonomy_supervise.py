@@ -138,8 +138,11 @@ def test_drift_monitor_flags_style_departure():
     style = {"staples": 0.4, "healthcare": 0.4, "index": 0.2}
     sectors = {"KO": "staples", "JNJ": "healthcare", "SPY": "index", "NVDA": "tech", "TSLA": "consumer"}
     dm = V.DriftMonitor(style, sectors)
-    assert dm.check("a", {"KO": 40, "JNJ": 40, "SPY": 20}) == []
-    assert dm.check("a", {"NVDA": 80, "TSLA": 20})
+    assert dm.check("a", {"KO": 40, "JNJ": 40, "SPY": 20}, ("KO", 10)) == []
+    assert dm.check("a", {"NVDA": 80, "TSLA": 20}, ("NVDA", 10))                    # moves an off-style book further away
+    assert dm.check("a", {"NVDA": 80, "TSLA": 20}, ("KO", 10)) == []                # moving back toward the style is never held
+    small = V.DriftMonitor(style, sectors, min_book_usd=1_000)
+    assert small.check("a", {"NVDA": 80}, ("NVDA", 10)) == []                       # too small a book to measure a style
     for i in range(30):
         dm.update("a", "NVDA" if i % 2 else "KO", True, i)
     assert "a" in dm.alarmed
@@ -160,10 +163,15 @@ def test_herding_is_keyed_on_behaviour_not_declared_identity():
     sectors = {"NVDA": "tech", "MSFT": "tech", "AMZN": "consumer", "KO": "staples", "XOM": "energy"}
     hm = V.HerdingMonitor(sectors, cluster_cap_usd=20_000, refresh=10, min_similarity=0.7)
     for o in orders:
-        hm.observe(o["agent"], o["symbol"], o["side"], o["notional"])
+        hm.observe(o["agent"], o["symbol"], o["side"], o["notional"], root="independent-doc" if o["agent"] == "independent" else "rumour")
     assert hm.check("momentum-bot", "NVDA", "buy", 1000)
     assert hm.check("independent", "NVDA", "buy", 1000) is None
     assert hm.check("momentum-bot", "NVDA", "sell", 1000) is None                       # reducing is never held
+    # the same flows on independent sources are a diversified population, not a herd
+    hm2 = V.HerdingMonitor(sectors, cluster_cap_usd=20_000, refresh=10, min_similarity=0.7)
+    for i, o in enumerate(orders):
+        hm2.observe(o["agent"], o["symbol"], o["side"], o["notional"], root=f"doc-{i % 12}")
+    assert hm2.cluster_of("momentum-bot") is None
 
 
 def test_loop_signal_counts_near_identical_repeats():
@@ -174,16 +182,20 @@ def test_loop_signal_counts_near_identical_repeats():
     assert V.loop_signal(varied) == 0.0
 
 
-def test_pacing_keeps_one_fast_agent_from_starving_the_rest():
-    p = V.PacingController(budget_usd=100_000, steps=100, agents=("fast", "a", "b", "c"), slack=0.5)
-    spent_fast = 0
-    for step in range(10):
-        for _ in range(10):
-            if p.check("fast", step, 2000) is None:
-                p.record("fast", 2000)
-                spent_fast += 2000
-    assert spent_fast <= 25_000 * 0.15 + 2000
-    assert p.check("a", 10, 2000) is None
+def test_pacing_guarantees_each_agent_its_share_and_releases_unclaimed_capacity():
+    p = V.PacingController(budget_usd=70_000, steps=100, agents=("fast",) + tuple(f"s{i}" for i in range(6)))
+    fast = 0
+    for step in range(20):
+        if p.check("fast", step, 5_000) is None:
+            p.record("fast", 5_000)
+            fast += 5_000
+    assert fast <= 10_000 + 70_000 * 0.2 + 5_000                 # its own share plus what the fading reservations released
+    for i in range(6):                                           # every slow agent still finds its full share at step 20
+        assert p.check(f"s{i}", 20, 8_000) is None
+        p.record(f"s{i}", 8_000)
+    late = V.PacingController(budget_usd=70_000, steps=100, agents=("fast", "idle"))
+    assert late.check("fast", 99, 60_000) is None                 # at the end of the day nothing is held back for an idle agent
+    assert V.PacingController(100_000, 100, ("x", "y")).check("x", 0, 50_000) is None   # inside its own share: never paced
 
 
 def test_step_escalation_ladder():
@@ -198,3 +210,30 @@ def test_step_escalation_ladder():
     assert V.step({"loop": 0.9}) == C.SUSPEND_NEW_RISK
     with pytest.raises(TypeError):
         V.step(None)
+
+
+def test_loop_signal_uses_a_time_window():
+    same = [("order", "KO buy 100 62.1")] * 6
+    assert V.loop_signal(same, times=[0, 10, 20, 30, 40, 50]) >= 0.8                 # six identical calls in a minute
+    assert V.loop_signal(same, times=[0, 3600, 7200, 10800, 14400, 18000]) == 0.0    # the same trade once an hour is not a loop
+    with pytest.raises(ValueError):
+        V.loop_signal(same, times=[0])
+
+
+def test_theme_herd_buying_different_names_clusters_at_sector_level():
+    sectors = {"NVDA": "tech", "MSFT": "tech", "GOOGL": "tech", "AMZN": "consumer", "TSLA": "consumer"}
+    rng = random.Random(3)
+    orders = []
+    for _ in range(12):
+        for a in ("h1", "h2", "h3"):
+            orders.append({"agent": a, "symbol": rng.choice(list(sectors)), "side": "buy", "notional": 1000, "root": "note"})
+    assert V.herding_clusters(orders, 0.75, 3, require_shared_source=True, key=sectors.get)
+
+
+def test_pacing_counts_net_exposure_so_rotation_is_free():
+    p = V.PacingController(budget_usd=20_000, steps=100, agents=("a", "b"))
+    for _ in range(10):                                           # buy 5k, sell 5k, ten times: turnover 100k, net 0
+        assert p.check("a", 1, 5_000) is None
+        p.record("a", 5_000)
+        p.record("a", -5_000)
+    assert p.spent["a"] == 0

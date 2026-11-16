@@ -8,11 +8,11 @@ evolving portfolio and every outstanding agent action. Four parts, one module ea
     admission    the admission controller (hard checks decide; model-based checks can only tighten)
     supervise    the continuous feedback loop (leases with epochs, drift, herding, loops, budget pacing)
 
-Plus `risk` (counterfactual, incremental portfolio risk), `certificate` (proof-carrying orders and receipts) and `judgement`
-(a research proposal for a long-horizon judgement model).
+Plus `risk` (counterfactual, incremental portfolio risk), `certificate` (proof-carrying orders and receipts), `judgement` (a
+calibrated long-horizon baseline, advisory and tighten-only) and `bench` (the four-system benchmark on the simulated market).
 
-Design and rationale: docs/vision/AUTONOMY.md. Each interface here is the agreed shape of a component; anything not yet built raises
-NotImplementedError naming the design section it implements, so nothing in this package can be mistaken for a working control.
+Design and rationale: docs/vision/AUTONOMY.md. Benchmark: docs/vision/BENCHMARK.md. Judgement research plan: docs/vision/JUDGEMENT.md.
+Simulation and paper only: nothing in this package places an order with a real broker.
 """
 
 DESIGN = "docs/vision/AUTONOMY.md"

@@ -215,3 +215,17 @@ def test_rebase_returns_diversification_and_flags_upward_remeasure():
     assert a.path in root.over_reserved()
     with pytest.raises(S.EscrowExhausted):
         a.reserve(_wo(2), 1, 10)
+
+
+def test_idle_capacity_returns_to_the_root_and_debt_stays():
+    root, book, (a, b, c) = _tree()
+    r = a.reserve(_wo(1), 300, 20)
+    a.release(r.reservation_id, 300, 20)                            # a no longer needs anything
+    root.return_idle()
+    assert a.capacity_usd == 0 and book.capacity_usd == 0 and root.free_usd == root.capacity_usd
+    r2 = b.reserve(_wo(2), 400, 30)
+    b.settle(r2.reservation_id, 400, 30)
+    b.rebase_filled(400, 60)                                        # re-measured over its capacity: in debt
+    root.return_idle()
+    assert b.free_risk < 0 and b.capacity_usd >= 400                # debt is not erased by returning idle capacity
+    assert root.check_invariants() == []

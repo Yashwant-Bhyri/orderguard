@@ -70,6 +70,7 @@ def req(ctl, agent, symbol, side, qty, *, limit=None, key=None, kind="fundamenta
     if intent:
         rec = V.IntentRecord(agent, ctl.contract.contract_id, ctl.contract.autonomy["objective"]["id"], action, kind, symbol, side, qty,
                              ikw.pop("thesis", "position sized to the signed plan"), 30,
-                             tuple(evidence if evidence is not None else (ctl.doc.sha256,)), ikw.pop("claims", ()))
+                             tuple(evidence if evidence is not None else (ctl.doc.sha256,)), ikw.pop("claims", ()),
+                             intent_id=f"i{_seq[0]}")
     return ActionRequest(agent, symbol, side, qty, limit, key or f"k{_seq[0]}", rec, ctl.test_leases.get(agent), **ikw)
 

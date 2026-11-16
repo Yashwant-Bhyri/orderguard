@@ -47,6 +47,7 @@ class DecisionCertificate:
     lease_epoch: int = 0
     lineage: str = ""
     order_id: str = ""
+    reduces_position: bool = False    # admitted as risk-reducing: it reserved no dollars, and the receiver re-checks that it still reduces
     issued_at: float = 0.0
     decision: str = "allow"
     issuer_key: str = ""
@@ -121,8 +122,14 @@ def verify(cert: DecisionCertificate, state, *, max_evidence_age_s: float | None
     ck("reservation", ok_res, "no matching reservation is held for this exact order")
     if ok_res:
         need = float(cert.order["quantity"]) * float(cert.order["limit_price"])
-        ck("reservation_covers", res.notional_usd + 1e-6 >= need,
-           f"reservation ${res.notional_usd:,.2f} does not cover ${need:,.2f} at the limit price")
+        if cert.reduces_position:
+            pos = float(getattr(state, "positions", {}).get(cert.order["symbol"], 0.0))
+            signed = float(cert.order["quantity"]) * (1 if cert.order["side"] == "buy" else -1)
+            ck("still_reduces", pos * signed < 0 and abs(signed) <= abs(pos) + 1e-9,
+               "admitted as risk-reducing, but against the ledger now it would add to or flip the position")
+        else:
+            ck("reservation_covers", res.notional_usd + 1e-6 >= need,
+               f"reservation ${res.notional_usd:,.2f} does not cover ${need:,.2f} at the limit price")
     if max_evidence_age_s is not None and now is not None:
         old = [e.source_id for e in cert.evidence if now - float(e.observed_at) > max_evidence_age_s]
         ck("evidence_fresh", not old, f"evidence too old: {', '.join(old)}")

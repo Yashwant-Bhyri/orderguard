@@ -131,6 +131,8 @@ class AdmissionController:
         self._recent: dict[str, deque] = defaultdict(lambda: deque(maxlen=200))
         self._actions: dict[str, deque] = defaultdict(lambda: deque(maxlen=20))
         self._res_of: dict[str, tuple[str, EscrowNode, float, float]] = {}
+        self._intent_used: dict[str, float] = defaultdict(float)      # intent hash -> quantity admitted under it
+        self._intent_of: dict[str, tuple[str, float]] = {}
         self.held: dict[str, ActionRequest] = {}
         self._seq = 0
         self.suspended: set[str] = set()
@@ -205,8 +207,12 @@ class AdmissionController:
             risk_available=risk_available, es_before=es_b, es_after=es_a)
 
     # ---- admit -----------------------------------------------------------------------------------------------------
-    def admit(self, request: ActionRequest, contract: C.AutonomyContract | None = None, state=None) -> Admission:
-        """Evaluate one proposed action against the signed contract and the projected portfolio state."""
+    def admit(self, request: ActionRequest, contract: C.AutonomyContract | None = None, state=None, *,
+              reviewed: bool = False) -> Admission:
+        """Evaluate one proposed action against the signed contract and the projected portfolio state.
+
+        `reviewed=True` is used only by `resolve_hold` after a person approved a held order: the person's decision replaces the
+        model checks and the review threshold, and every other hard check runs again against the state as it is now."""
         t0 = time.perf_counter()
         contract = contract or self.contract
         with self.ledger.lock:
@@ -227,7 +233,7 @@ class AdmissionController:
             adds_risk = self._adds_risk(state, request)
             ctx = self.context(request, state, now)
             for p in self.predicates:
-                if not p.hard or p.check is None:
+                if not p.hard or p.check is None or (reviewed and p.name == "review_above"):
                     continue
                 why = p.check(ctx)
                 if why:
@@ -238,6 +244,11 @@ class AdmissionController:
                 mismatch = intent_problems(request.intent, {**request.order()}, contract.autonomy["objective"]["id"], pos)
                 if request.intent is not None and (request.intent.agent != request.agent or request.intent.contract_id != contract.contract_id):
                     mismatch.append("intent record belongs to a different agent or contract")
+                if request.intent is not None and not mismatch:
+                    used = self._intent_used[request.intent.sha256()]
+                    if used + float(request.quantity) > float(request.intent.quantity) + 1e-9:
+                        hard.append(f"intent: this decision authorized {request.intent.quantity:g}; {used:g} is already working or "
+                                    "filled under it (a retry with a new key is not a new decision)")
                 hard += [f"intent: {m}" for m in mismatch]
             node = self.nodes.get(request.agent)
             reserve_usd = max(ctx.notional, float(request.quantity) * float(request.limit_price))
@@ -248,7 +259,7 @@ class AdmissionController:
             hard_decision = Decision.REFUSE if hard else Decision.HOLD if hard_hold else Decision.ALLOW
 
             model_decision, control = Decision.ALLOW, Control.CONTINUE
-            if hard_decision != Decision.REFUSE:
+            if hard_decision != Decision.REFUSE and not reviewed:
                 model_decision, control, model = self._model_checks(request, ctx, state, now, adds_risk, bool(mismatch))
             final = combine(hard_decision, model_decision)
             if mismatch:
@@ -256,17 +267,22 @@ class AdmissionController:
             if final == Decision.REFUSE:
                 return Admission(final, tuple(hard), tuple(model), None, control=control.value,
                                  latency_us=(time.perf_counter() - t0) * 1e6)
-            # reserve: ALLOW and HOLD both hold capacity, so an approval later cannot oversubscribe
+            if final == Decision.HOLD:
+                # A held order reserves nothing: it waits for a person, and an approval is a fresh admission against the state at
+                # that moment (resolve_hold), so a hold can neither starve other agents nor oversubscribe anything when approved.
+                self._seq += 1
+                hold_id = f"hold-{self._seq}"
+                self.held[hold_id] = request
+                return Admission(final, tuple(hard + hard_hold), tuple(model), None, hold_id, None, control.value,
+                                 (time.perf_counter() - t0) * 1e6)
             self._seq += 1
             oid = f"{request.agent}-{self._seq}"
             wo = WorkingOrder(oid, request.agent, contract.contract_id, request.symbol, request.side, float(request.quantity), 0.0,
                               float(request.limit_price), L.RISK_RESERVED, request.idempotency_key, request.venue)
             usd = reserve_usd if adds_risk else 0.0
             risk = ctx.risk_units if adds_risk else 0.0
-            if final == Decision.HOLD:
-                # A model-based shortfall must stay a hold, never become a refusal: a held order reserves its dollars (a hard
-                # resource) and only the risk budget that is actually available. A person approving it decides about the rest.
-                risk = min(risk, node.obtainable()[1])
+            if reviewed:
+                risk = max(0.0, min(risk, node.obtainable()[1]))   # the person accepted the model's risk concern; dollars stay hard
             try:
                 res = node.reserve(wo, usd, risk)
             except EscrowExhausted as e:
@@ -276,13 +292,13 @@ class AdmissionController:
                                 "reservation": {"reservation_id": res.reservation_id, "order_id": oid, "domain": res.domain,
                                                 "notional_usd": res.notional_usd, "risk_units": res.risk_units}})
             self._res_of[oid] = (res.reservation_id, node, res.notional_usd, res.risk_units)
+            if request.intent is not None:
+                ih = request.intent.sha256()
+                self._intent_used[ih] += float(request.quantity)
+                self._intent_of[oid] = (ih, float(request.quantity))
             self._recent[request.agent].append(now)
-            cert = None
-            if final == Decision.ALLOW:
-                self._observe_allowed(request, ctx)
-                cert = self._certificate(request, contract, oid, res.reservation_id, now)
-            else:
-                self.held[oid] = request
+            self._observe_allowed(request, ctx)
+            cert = self._certificate(request, contract, oid, res.reservation_id, now, reduces=not adds_risk)
             return Admission(final, tuple(hard + hard_hold), tuple(model), res.reservation_id, oid, cert, control.value,
                              (time.perf_counter() - t0) * 1e6)
 
@@ -318,7 +334,8 @@ class AdmissionController:
         if self.drift is not None and self.sup.drift:
             self.drift.update(req.agent, req.symbol, adds_risk, self.step_clock())
             if adds_risk:
-                d = self.drift.check(req.agent, self._agent_book(state, req.agent))
+                sign = 1.0 if req.side == "buy" else -1.0
+                d = self.drift.check(req.agent, self._agent_book(state, req.agent), (req.symbol, sign * ctx.notional))
                 if d:
                     obs["drift_alarm"] = True
                     reasons += d
@@ -334,8 +351,8 @@ class AdmissionController:
                 reasons.append(p)
         if self.sup.loops:
             acts = self._actions[req.agent]
-            acts.append(("order", f"{req.symbol} {req.side} {req.quantity} {req.limit_price}"))
-            lp = loop_signal(list(acts))
+            acts.append((now, ("order", f"{req.symbol} {req.side} {req.quantity} {req.limit_price}")))
+            lp = loop_signal([a for _, a in acts], [t for t, _ in acts])
             obs["loop"] = lp
             if lp >= 0.5:
                 reasons.append(f"loop: {lp:.0%} of this agent's recent orders repeat")
@@ -358,11 +375,16 @@ class AdmissionController:
 
     def _observe_allowed(self, req: ActionRequest, ctx: C.OrderContext) -> None:
         if self.herding is not None:
-            self.herding.observe(req.agent, req.symbol, req.side, ctx.notional)
-        if self.pacing is not None and self._adds_risk(self.ledger.state, req):
-            self.pacing.record(req.agent, ctx.notional)
+            root = None
+            if req.intent is not None and req.intent.evidence and self.evidence is not None:
+                roots = sorted(self.evidence._roots(req.intent.evidence[0]))
+                root = roots[0] if roots else None
+            self.herding.observe(req.agent, req.symbol, req.side, ctx.notional, root)
+        if self.pacing is not None:
+            self.pacing.record(req.agent, ctx.notional if self._adds_risk(self.ledger.state, req) else -ctx.notional)
 
-    def _certificate(self, req: ActionRequest, contract: C.AutonomyContract, oid: str, rid: str, now: float) -> DecisionCertificate | None:
+    def _certificate(self, req: ActionRequest, contract: C.AutonomyContract, oid: str, rid: str, now: float, *,
+                     reduces: bool = False) -> DecisionCertificate | None:
         if self.issuer_key is None:
             return None
         ev = ()
@@ -376,20 +398,18 @@ class AdmissionController:
                                    portfolio_snapshot=self.ledger.state.snapshot, reservation_id=rid, contract_sha256=contract.sha256(),
                                    intent_sha256=req.intent.sha256() if req.intent else "", lease_id=lease.lease_id if lease else "",
                                    lease_epoch=lease.epoch if lease else 0, lineage=lease.lineage if lease else "", order_id=oid,
-                                   issued_at=now, decision="allow")
+                                   reduces_position=reduces, issued_at=now, decision="allow")
         return issue(cert, self.issuer_key)
 
     # ---- human review ----------------------------------------------------------------------------------------------
-    def resolve_hold(self, order_id: str, approve: bool) -> DecisionCertificate | None:
-        """A person decides a held order. Approval uses the capacity reserved when it was held; denial releases it."""
+    def resolve_hold(self, hold_id: str, approve: bool) -> Admission | None:
+        """A person decides a held order. Denial drops it. Approval admits it afresh with the person's decision standing in for the
+        model checks and the review threshold; every other hard check (caps, scenarios, escrow, lease, intent) runs again now."""
         with self.ledger.lock:
-            req = self.held.pop(order_id)
+            req = self.held.pop(hold_id)
             if not approve:
-                self.on_terminal(order_id, Lifecycle.CANCELED, 0.0)
                 return None
-            ctx = self.context(req, self.ledger.state, self.clock())
-            self._observe_allowed(req, ctx)
-            return self._certificate(req, self.contract, order_id, self._res_of[order_id][0], self.clock())
+            return self.admit(req, reviewed=True)
 
     # ---- lifecycle from the broker ---------------------------------------------------------------------------------
     def on_status(self, order_id: str, to: Lifecycle, filled: float | None = None) -> None:
@@ -406,6 +426,9 @@ class AdmissionController:
             if wo.state == L.RISK_RESERVED and to in (L.FILLED,):
                 self.ledger.transition(order_id, L.SUBMITTED)
             self.ledger.transition(order_id, to, filled)
+            if order_id in self._intent_of:                          # the unfilled part of a decision can be tried again
+                ih, q = self._intent_of.pop(order_id)
+                self._intent_used[ih] -= max(0.0, q - float(filled))
             entry = self._res_of.pop(order_id, None)
             if entry is not None:
                 rid, node, usd, risk = entry
@@ -435,8 +458,15 @@ class AdmissionController:
         if self.risk_model is not None:
             stressed = bool(self.regime and self.regime.stressed)
             risk = R.group_euler(self.risk_model, books, self.alpha, df=self.es_df, stressed=stressed)
+        roots = set()
         for a, node in self.nodes.items():
             node.rebase_filled(sum(abs(v) for v in books[a].values()), max(0.0, risk.get(a, 0.0)))
+            r = node
+            while r.parent is not None:
+                r = r.parent
+            roots.add(r)
+        for r in roots:
+            r.return_idle()                                 # idle capacity goes back to the firm, where any agent can draw it
 
     # ---- authority -------------------------------------------------------------------------------------------------
     def quarantine(self, agent: str, reason: str = "") -> None:
