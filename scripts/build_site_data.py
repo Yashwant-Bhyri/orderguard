@@ -1437,6 +1437,124 @@ def risk_families(r: Reader) -> dict:
             "detectors": fact(len(units), num(len(units)), M, "/units")}
 
 
+ENGINE_GROUPS = {
+    "Against the mandate": ["cap_ratio", "stepup_ratio", "log_notional", "near_cap", "order_share_daily", "env_day_demand", "env_pace",
+                            "agent_day_share", "agent_capfrac", "agent_nearcap_rate", "listed", "is_transfer", "band_pos", "limit_dev", "cross_band"],
+    "Against the agent's own rhythm": ["agent_day_n", "size_z", "agent_n", "agent_ticker_n", "side_flip", "inter_arrival", "agent_burst", "dup_recent",
+                                       "dup_key", "size_jump", "size_vs_max", "rate_break", "agent_rate60", "dup_exact", "dup_run", "new_ticker",
+                                       "off_cadence", "cadence_n", "off_rate"],
+    "Across other agents": ["xa_short", "xa_med", "xa_near_env", "sizesim", "same_step", "strong_nbrs", "strong_frac", "side_pressure", "ticker_flow",
+                            "rate_peer", "usd_peer", "usd_day_peer", "hot_peers", "sync_size_agents"],
+    "Against the market": ["trig", "vol_short", "vol_ratio", "dev_ratio", "dev_vol", "abs_dev"],
+}
+
+
+def engine(r: Reader) -> dict:
+    """The swarm risk model on real orders: the recorded thousand-agent run is scored inline, one event at a time, by the shipped model,
+    exactly as the receiver would. For five orders (one honest, four from labelled failure families) this keeps what the model saw and
+    did: every signal as a percentile of the run, each detector's activation, each tree's leaf value, the combined risk and the action."""
+    import bisect
+    from orderguard_risk import features as F
+    from orderguard_risk import program as G
+    from orderguard_risk.scorer import RiskScorer, arena_event
+    M, STREAM = "data/models/order_risk.json", "results/arena/arena-s7-k1000-t2000.jsonl"
+    r.json(M)
+    rows = [json.loads(l) for l in r.path(STREAM).open(encoding="utf-8")]
+    meta = rows[0]
+    events = [x for x in rows if "order" in x]
+    sc = RiskScorer.load(r.path(M))
+    sc.set_envelopes({e["name"]: {"per_order": e["per_order"], "daily": e["daily"], "step_up": e.get("step_up"), "band_pct": e.get("band_pct")}
+                      for e in meta["envelopes"]}, int(meta["config"]["steps_per_day"]))
+    names = list(sc.model["feature_names"])
+    assert sorted(sum(ENGINE_GROUPS.values(), [])) == sorted(names), "every signal the model reads sits in one group"
+    ix = [F.IX[n_] for n_ in names]
+    want = {"legit": "An honest order", "collusion": "Agents splitting one position", "runaway_loop": "Runaway loop",
+            "fat_finger": "Fat finger", "compromised_sell_all": "Hijacked agent"}
+    cols = [[] for _ in names]
+    picked, tape = {}, []
+    for e in events:
+        ev = arena_event(e)
+        x = sc.engine.featurize(ev)
+        res = sc.score(ev)
+        sc.observe(ev)
+        o = e["order"]
+        line = (o["side"].upper() + " " + num(o["quantity"]) + " " + o["ticker"]) if o.get("ticker") else "transfer"
+        tape.append(line)
+        if e.get("d") != "allow" or e.get("replay"):
+            continue
+        for i, c in enumerate(ix):
+            cols[i].append(x[c])
+        lab = e["label"]
+        if lab in want and lab not in picked and e["step"] >= 300:
+            if (lab == "legit" and res["action"] == "none" and e["risk"] > 2000 and e["env"] == "core") or (lab != "legit" and res["action"] != "none"):
+                xs = [x[c] for c in sc.cols]
+                leaves = []
+                for t in sc.ens.trees:
+                    f, th, lft, rgt = t["f"], t["t"], t["l"], t["r"]
+                    n = 0
+                    while f[n] >= 0:
+                        n = lft[n] if xs[f[n]] <= th[n] else rgt[n]
+                    leaves.append(round(t["v"][n], 4))
+                units = [{"name": u["name"].replace("_", " "), "family": u["family"], "pi": round(u["pi"], 4),
+                          "a": round(G.unit_value(u["terms"], x), 3)} for u in sc.units]
+                contrib = [(v, sc.ens.names[k]) for v, k in sc.ens.contributions(xs)[:4] if v > 0]
+                picked[lab] = {"label": lab, "title": want[lab], "step": e["step"], "agent": e["agent"], "env": e["env"],
+                               "order": line + " @ " + usd(o["limit_price"]) if o.get("limit_price") else line, "usd": usd(e["risk"]),
+                               "x": list(x), "leaves": leaves, "units": units,
+                               "top": [{"f": n_, "why": F.explain(n_, x[F.IX[n_]])} for _v, n_ in contrib],
+                               "p_trees": round(res.get("learned_risk", 0.0), 4), "risk": round(res["risk"], 4), "action": res["action"],
+                               "p_text": f"{res.get('learned_risk', 0.0):.3f}", "risk_text": f"{res['risk']:.3f}",
+                               "o": {"side": o["side"], "qty": o["quantity"], "ticker": o["ticker"], "limit": o["limit_price"], "tp": e["tp"], "usd": e["risk"]},
+                               "tape": tape[-7:-1]}
+    assert set(picked) == set(want), sorted(picked)
+    sorted_cols = [sorted(c) for c in cols]
+    for ex in picked.values():
+        xv = ex.pop("x")
+        ex["pct"] = [round(bisect.bisect_left(sorted_cols[i], xv[c]) / max(1, len(sorted_cols[i])), 3) for i, c in enumerate(ix)]
+    th = sc.model["thresholds"]
+    for ex in picked.values():
+        for t_ in ex["top"]:
+            t_["why"] = re.sub(r"^1 orders", "One order", t_["why"])
+    # the honest order, checked against each rule of the mandate it traded under, in the gate's own terms
+    hon = picked["legit"]["o"]
+    env = next(e for e in meta["envelopes"] if e["name"] == picked["legit"]["env"])
+    dev = abs(hon["limit"] - hon["tp"]) / hon["tp"] * 100
+    picked["legit"]["check"] = {
+        "names": hon["ticker"] + " is on the list", "sides": hon["side"] + " is allowed",
+        "per": usd(hon["usd"]) + " ≤ " + usd(env["per_order"]), "step": usd(hon["usd"]) + " ≤ " + usd(env["step_up"]) + ", no hold needed",
+        "daily": "inside today's budget", "band": f"{dev:.2f}% from the trusted price ≤ {env['band_pct']:g}%", "exp": "before expiry",
+        "sig": "signature verified"}
+    order = ["legit", "collusion", "runaway_loop", "fat_finger", "compromised_sell_all"]
+    return {"src": [M, STREAM], "names": names, "groups": [{"name": k, "f": v} for k, v in ENGINE_GROUPS.items()],
+            "examples": [picked[k] for k in order], "hold": round(th["hold"], 4), "refuse": round(th["refuse"], 4),
+            "n_trees": fact(len(sc.ens.trees), num(len(sc.ens.trees)), M, "/trees/trees"),
+            "n_scored": fact(len(events), num(len(events)), STREAM, "rows with an order"),
+            "note": "Real orders from the recorded thousand-agent run, scored inline by the shipped model."}
+
+
+def benchmark(r: Reader) -> dict:
+    """Leave one failure family out: a standard learned model never shown the failure, OrderGuard's model never shown it, and OrderGuard's
+    model trained on it, each measured on recorded runs it never trained on (results/risk/oneshot.json)."""
+    O = "results/risk/oneshot.json"
+    o = r.json(O)
+    names = [("collusion", "Agents splitting one position"), ("runaway", "Runaway loop"), ("fat_finger", "Fat finger"),
+             ("stale_price", "Order placed on a stale price"), ("compromised", "Hijacked agent"), ("adaptive_colluders", "Adaptive colluders")]
+    rows = []
+    for k, label in names:
+        b = o[k]
+        if k == "adaptive_colluders":
+            base, zero, full = b["v2_learned_only"]["zero_shot"], b["v2_programmed"]["zero_shot"], b["full_retrain_half_the_adaptive_runs"]
+            pb, pz, pf = f"/{k}/v2_learned_only/zero_shot", f"/{k}/v2_programmed/zero_shot", f"/{k}/full_retrain_half_the_adaptive_runs"
+            size = "attackers that change size, timing and names"
+        else:
+            base, zero, full = b["learned_only"]["zero_shot"], b["programmed"]["zero_shot"], b["full_retrain"]
+            pb, pz, pf = f"/{k}/learned_only/zero_shot", f"/{k}/programmed/zero_shot", f"/{k}/full_retrain"
+            size = num(b["test_orders"]) + " harmful orders, " + usd_short(b["test_usd"]) + " in all"
+        fx = lambda v, ptr: fact(v, pct(v, 1).replace(".0%", "%"), O, ptr)
+        rows.append({"k": k, "name": label, "size": size, "base": fx(base, pb), "zero": fx(zero, pz), "full": fx(full, pf),
+                     "gain": round((full - base) * 100, 1)})
+    return {"src": [O], "rows": rows}
+
 def launch_more(r: Reader, doc: dict) -> dict:
     """v9 launch data: the swarm benchmark and how the model works, the adapter's two checkpoints, a labelled memory
     illustration for long-running agents, and the film cues that run beside each part."""
@@ -1532,7 +1650,7 @@ def launch_more(r: Reader, doc: dict) -> dict:
     films = {
         "mandate": {"clip": ["order", 0.2, 19.8], "title": "One synthetic order, slowed down",
                     "cues": [[0.2, "trace"], [2.2, "token"], [9.6, "recheck"], [15.6, "ledger"]]},
-        "data": {"clip": ["order", 36.0, 46.0], "title": "Every trade carries its chain of reasoning",
+        "data": {"clip": ["order", 36.0, 54.0], "title": "Every trade carries its chain of reasoning",
                  "cues": [[36.0, "chain"], [40.0, "sources"], [44.0, "cut"]]},
         "verify": {"clip": ["order", 46.0, 60.2], "title": "Independent agents check every claim",
                    "cues": [[46.0, "check"], [54.0, "act"]]},
@@ -1743,6 +1861,8 @@ def build() -> tuple[dict, dict[str, bytes]]:
     doc["launch"]["adapter2"] = adapter_examples(r)
     doc["launch"]["families"] = risk_families(r)
     doc["launch"].update(launch_more(r, doc))
+    doc["launch"]["engine"] = engine(r)
+    doc["launch"]["bench2"] = benchmark(r)
     doc["launch"]["contagion"] = {
         "note": "Illustration with fictional tickers, redrawn from the film's opening scene. Not a recorded run.",
         "ask": "Watch robotics stocks.", "name": "TALN", "name_note": "loosely related, jumps", "order": "BUY 5,000 TALN",

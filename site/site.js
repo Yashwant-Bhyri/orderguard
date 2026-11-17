@@ -434,114 +434,7 @@ function loopOnView(node, s) {
   }), { threshold: 0.3 }).observe(node);
 }
 
-/* words in a part's headline light up with the piece of the figure they name, and the other way round */
-function highlighter(part) {
-  const words = $$("[data-hl]", part);
-  const set = (k) => {
-    words.forEach((w) => w.classList.toggle("on", w.dataset.hl === k));
-    $$("[data-hk]", part).forEach((n) => n.classList.toggle("lit", n.dataset.hk.split(" ").includes(k)));
-  };
-  words.forEach((w) => {
-    w.tabIndex = 0;
-    w.addEventListener("pointerenter", () => { part.classList.add("hover"); set(w.dataset.hl); });
-    w.addEventListener("focus", () => set(w.dataset.hl));
-    w.addEventListener("pointerleave", () => part.classList.remove("hover"));
-  });
-  return (k) => { if (!part.classList.contains("hover")) set(k); };
-}
 
-/* ---------------------------------------------------------------- the hero: orders flow from agents through three checks to the broker */
-function thesisHero() {
-  const fig = $("#thesis");
-  if (!fig) return;
-  const lay = $("#th-tokens"), blocks = $("#th-blocks"), fills = $("#th-fills"), heldN = $("#th-held");
-  const gates = { signed: $('[data-g="signed"]', fig), checked: $('[data-g="checked"]', fig), together: $('[data-g="together"]', fig) };
-  const rows = (g) => $$(".gate-l li", gates[g]);
-  const agents = { chat: $('[data-a="chat"]', fig), research: $('[data-a="research"]', fig), bot: $('[data-a="bot"]', fig) };
-  const order = ["signed", "checked", "together"];
-  const fl = D.flows.flows;
-  const aapl = D.tape.rows.filter((r) => / AAPL /.test(r.what));
-  const allowed = aapl.filter((r) => r.v === "ALLOW").map((r) => r.what);
-  const rumour = D.tape.rows.find((r) => r.v === "HOLD" && /second/.test(r.why));
-  const stale = D.story.checks.find((c) => c.k === "stale");
-  const events = [
-    { a: "chat", what: fl[0].order },
-    { a: "research", what: stale.order, stop: "checked", row: 0, d: "refuse" },
-    { a: "bot", what: allowed[0] || fl[0].order },
-    { a: "research", what: fl[1].order, stop: "together", row: 0, d: "hold" },
-    { a: "chat", what: "transfer_funds " + L().page.amount.text, stop: "signed", row: 0, d: "refuse" },
-    { a: "bot", what: allowed[3] || fl[0].order },
-    { a: "research", what: "Buy on revenue " + L().figure.claim.split(": ").pop(), stop: "checked", row: 1, d: "refuse" },
-    { a: "chat", what: "BUY " + D.mandate_demo.extra[0], stop: "signed", row: 1, d: "refuse" },
-    { a: "research", what: rumour ? rumour.what : fl[0].order, stop: rumour ? "checked" : null, row: 2, d: "hold" },
-    { a: "bot", what: allowed[6] || fl[0].order },
-  ];
-  let held = 0;
-  const px = aapl.map((r) => Number(r.tp));
-  const spark = $("#th-spark"), pxT = $("#th-px");
-  let k = 0;
-  function drawSpark() {
-    const w = 200, h = 56, n = 28, xs = [];
-    for (let i = 0; i < n; i++) xs.push(px[(k + i) % px.length]);
-    const lo = Math.min(...xs), hi = Math.max(...xs);
-    const pts = xs.map((v, i) => (i * w / (n - 1)).toFixed(1) + "," + (h - 6 - ((v - lo) / (hi - lo || 1)) * (h - 12)).toFixed(1));
-    spark.replaceChildren(S("polyline", { points: pts.join(" "), fill: "none", stroke: "currentColor", "stroke-width": "1.6", "vector-effect": "non-scaling-stroke" }));
-    pxT.textContent = aapl[(k + n - 1) % px.length].tp;
-    k++;
-  }
-  drawSpark();
-  if (!reduce.matches) setInterval(drawSpark, 1400);
-  const box = () => fig.getBoundingClientRect();
-  const mid = (n) => { const r = n.getBoundingClientRect(), b = box(); return { x: r.left - b.left + r.width / 2, y: r.top - b.top + r.height / 2, r: r.right - b.left, l: r.left - b.left, t: r.top - b.top, bt: r.bottom - b.top }; };
-  const addBlock = (d) => { blocks.append(el("i", { cls: "blk-" + d })); while (blocks.children.length > 18) blocks.firstChild.remove(); };
-  const addFill = (what) => { fills.prepend(el("p", {}, [el("span", { text: what }), pill("allow", "Filled")])); while (fills.children.length > 3) fills.lastChild.remove(); };
-  function tick(g) { rows(g).forEach((li, i) => setTimeout(() => { li.classList.add("ok"); setTimeout(() => li.classList.remove("ok"), 700); }, i * 45)); gates[g].classList.add("pass"); setTimeout(() => gates[g].classList.remove("pass"), 420); }
-  async function send(ev) {
-    const a = mid(agents[ev.a]);
-    const horiz = mid(gates.signed).x < mid(gates.checked).x - 10;
-    const core = mid($(".th-core", fig)), lane = mid($(".gate-track", gates.signed)).y, laneX = core.r - 30;
-    const pts = [horiz ? { x: a.r + 8, y: a.y } : { x: a.x, y: a.bt + 8 }];
-    pts.push(horiz ? { x: core.l + 6, y: lane } : { x: laneX, y: core.t + 6 });
-    for (const g of order) { const m = mid(gates[g]); pts.push(horiz ? { x: m.x, y: lane, g } : { x: laneX, y: m.y, g }); if (ev.stop === g) break; }
-    const end = ev.stop ? null : mid($(".th-quote", fig));
-    if (end) pts.push(horiz ? { x: core.r - 6, y: lane } : { x: laneX, y: core.bt - 6 }, horiz ? { x: end.l - 8, y: end.y } : { x: end.x, y: end.t - 8 });
-    const tok = el("span", { cls: "tok", text: ev.what });
-    lay.append(tok);
-    const tw = tok.offsetWidth, th = tok.offsetHeight, W = fig.clientWidth;
-    const at = (p) => "translate(" + (Math.min(W - tw - 4, Math.max(4, p.x - tw / 2))).toFixed(1) + "px," + (p.y - th / 2).toFixed(1) + "px)";
-    tok.style.transform = at(pts[0]);
-    for (let i = 1; i < pts.length; i++) {
-      await tok.animate([{ transform: at(pts[i - 1]) }, { transform: at(pts[i]) }], { duration: 520, easing: "cubic-bezier(.45,0,.25,1)", fill: "forwards" }).finished;
-      const g = pts[i].g;
-      if (!g) continue;
-      if (ev.stop !== g) { tick(g); continue; }
-      const li = rows(g)[ev.row];
-      tok.classList.add(ev.d); gates[g].classList.add("stop-" + ev.d); li.classList.add("bad-" + ev.d);
-      addBlock(ev.d);
-      if (ev.d === "hold") {
-        await wait(900);
-        const p = mid($(".th-person", fig));
-        await tok.animate([{ transform: at(pts[i]) }, { transform: at({ x: p.x, y: p.y }), opacity: 0.2 }], { duration: 900, easing: "cubic-bezier(.45,0,.25,1)", fill: "forwards" }).finished;
-        held++; heldN.textContent = String(held);
-        heldN.classList.remove("bump"); void heldN.offsetWidth; heldN.classList.add("bump");
-      } else {
-        await tok.animate([{ transform: at(pts[i]) + " translateX(-6px)" }, { transform: at(pts[i]) + " translateX(6px)" }, { transform: at(pts[i]) }], { duration: 260 }).finished;
-        await wait(1100);
-        await tok.animate([{ opacity: 1 }, { opacity: 0, transform: at(pts[i]) + " scale(.9)" }], { duration: 400, fill: "forwards" }).finished;
-      }
-      setTimeout(() => { gates[g].classList.remove("stop-" + ev.d); li.classList.remove("bad-" + ev.d); }, 700);
-      tok.remove();
-      return;
-    }
-    addBlock("allow"); addFill(ev.what);
-    await tok.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }).finished;
-    tok.remove();
-  }
-  if (reduce.matches) { events.slice(0, 6).forEach((e) => addBlock(e.d || "allow")); return; }
-  let i = 0, on = false, t = 0;
-  const pump = () => { if (!on) return; send(events[i % events.length]); i++; t = setTimeout(pump, 2300); };
-  new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting && !on) { on = true; pump(); } else if (!e.isIntersecting) { on = false; clearTimeout(t); } }), { threshold: 0.2 }).observe(fig);
-}
 
 /* ---------------------------------------------------------------- the story stage: pinned, scroll-driven */
 const CH = [
@@ -673,10 +566,12 @@ function storyStage() {
   const steps = [
     { ph: "swarm", head: "A recorded run", say: sc.total_agents.text + " AI agents trading one book for " + word(run.days.value) + " days: " + sc.run_orders.text + " orders.", zoom: 0, ms: 3600 },
     { ph: "swarm", head: "Follow one of them", say: "A chat assistant, given a broker's trading tools and a research team.", zoom: 1, card: assistantCard, ms: 5200 },
-    { ph: "without", head: "The problem", say: "You ask it to watch robotics stocks. A related name jumps, so it buys.", card: contagionCard, ms: 8200 },
+    { ph: "without", head: "The problem", say: "You ask it to watch robotics stocks. Only to watch.", card: () => contagionCard(0), ms: 5000 },
+    { ph: "without", head: "The problem", say: "A loosely related name jumps. The agent reads the jump as a signal and buys, though nobody asked it to.", card: () => contagionCard(1), ms: 7000 },
+    { ph: "without", head: "The problem", say: "Its order trips a risk rule elsewhere in the book. That rule sells, which trips the next. One small order spreads.", card: () => contagionCard(2), ms: 8600 },
     { ph: "without", head: W, say: "Week one. Its notes carry a revenue figure it remembered, not one it read in the filing.", fall: 1, card: () => noteCard(false), ms: 5200 },
     { ph: "without", head: W, say: "Week two. A plugin adds a line to its notes: the owner prefers large positions.", fall: 2, card: () => memoCard(false), ms: 5000 },
-    { ph: "without", head: W, say: "It plans an order in the morning and sends it in the afternoon. The market has moved.", fall: 3, card: () => priceCard(false), ms: 5000 },
+    { ph: "without", head: W, say: "It plans an order in the morning and sends it in the afternoon. The market has moved, but the order still carries the morning price.", fall: 3, card: () => priceCard(false), ms: 7000 },
     { ph: "without", head: W, say: "Its research agents read the same story and pile in. Each order is under the limit.", fall: 4, card: () => herdCard(false), ms: 5200 },
     { ph: "without", head: W, say: "Their buying lifts the price, and the rise looks like proof. They buy more.", fall: 5, card: () => spiralCard(false), ms: 5000 },
     { ph: "without", head: W, say: "To free up cash, it moves money to another account. Nobody asked for that.", fall: 6, card: () => moneyCard(false), ms: 4800 },
@@ -684,7 +579,7 @@ function storyStage() {
     { ph: "with", head: G, say: "The same month, with OrderGuard between the agents and the broker.", fix: 0, card: assistantCard, ms: 3800 },
     { ph: "with", head: G, say: "The figure is traced to the SEC filing. It doesn't match, so it isn't used.", fix: 1, card: () => noteCard(true), ms: 4800 },
     { ph: "with", head: G, say: "The note has no known author and isn't in what you signed. It isn't used.", fix: 2, card: () => memoCard(true), ms: 4800 },
-    { ph: "with", head: G, say: "Right before it's sent, the order is checked at the live price. It goes back to be re-planned.", fix: 3, card: () => priceCard(true), ms: 5000 },
+    { ph: "with", head: G, say: "Right before it's sent, the order is checked at the live price. It is too far from the market, so it goes back to be re-planned.", fix: 3, card: () => priceCard(true), ms: 6600 },
     { ph: "with", head: G, say: "The swarm risk model sees " + word(sc.agents.value) + " agents building one position, and holds it for a person.", fix: 4, card: () => herdCard(true), ms: 5000 },
     { ph: "with", head: G, say: "Supervision sees the crowd forming and slows new buying.", fix: 5, card: () => spiralCard(true), ms: 4800 },
     { ph: "with", head: G, say: "Moving money was never in the mandate you signed. The receiver refuses it.", fix: 6, card: () => moneyCard(true), ms: 4600 },
@@ -721,7 +616,7 @@ function storyStage() {
   new IntersectionObserver((es) => es.forEach((e) => { const was = live; live = e.isIntersecting; if (live && !was) requestAnimationFrame(paint); }), { threshold: 0 }).observe(stage);
 
   const pnl = $("#st-pnl");
-  const level = [0, 0, 0, 6, 14, 22, 34, 50, 64, 70];
+  const level = [0, 0, 0, 0, 0, 6, 14, 22, 34, 50, 64, 70];
   const pnlPath = (drop) => { const pts = []; for (let i = 0; i <= 24; i++) { const t = i / 24; pts.push((t * 240).toFixed(1) + "," + (30 + Math.sin(i * 1.3) * 2 + drop * Math.pow(t, 1.6) * 0.8).toFixed(1)); } return "M" + pts.join(" L"); };
   const ghost = S("path", { cls: "pnl-ghost", d: pnlPath(level[9]) }), line = S("path", { cls: "pnl-line", d: pnlPath(0) });
   pnl.append(S("line", { x1: 0, x2: 240, y1: 30, y2: 30, cls: "pnl-base" }), ghost, line);
@@ -744,10 +639,10 @@ function storyStage() {
       n.classList.toggle("fallen", j < falls && s.ph !== "with");
       n.classList.toggle("ghost", s.ph === "with" && j >= fixes);
       n.classList.toggle("fixed", s.ph === "with" && j < fixes);
-      n.classList.toggle("now", (s.ph === "without" && j === falls - 1 && i <= 8) || (s.ph === "with" && j === fixes - 1 && i <= 16));
+      n.classList.toggle("now", (s.ph === "without" && j === falls - 1 && i <= 10) || (s.ph === "with" && j === fixes - 1 && i <= 18));
     });
     harms.forEach((h, j) => { h.classList.toggle("in", j < falls); h.classList.toggle("undone", j < fixes); });
-    line.setAttribute("d", pnlPath(s.ph === "without" ? level[Math.min(9, i)] : 0));
+    line.setAttribute("d", pnlPath(s.ph === "without" ? level[Math.min(11, i)] : 0));
     stage.classList.toggle("ghosted", s.ph === "with");
     stage.classList.toggle("film-lead", !!s.film);
     if (s.film) {
@@ -769,328 +664,655 @@ function storyStage() {
     onPlay: (on) => { if (steps[cur].film) { if (on) video.play().catch(() => {}); else video.pause(); } } });
 }
 
-/* ---------------------------------------------------------------- the film leads, the drawing waits in the corner; at the end of the clip they trade places */
-function duo(root, viz, film, onCue) {
-  const stage = el("div", { cls: "duo-stage" });
-  const fwrap = el("div", { cls: "duo-film" });
-  const swapB = el("button", { type: "button", cls: "duo-swap" });
-  const side = el("div", { cls: "duo-side" }, [el("p", { cls: "duo-now" }), swapB]);
+
+
+
+
+/* ---------------------------------------------------------------- part: the swarm risk model */
+function spec(dl, rows) {
+  for (const [k, v, sub] of rows) dl.append(el("div", {}, [el("dt", { text: k }), el("dd", {}, [el("b", { text: v }), sub ? el("small", { text: sub }) : null])]));
+}
+
+/* ---------------------------------------------------------------- attention: one thing lit at a time, the rest recedes; numbers count up the first time they are lit */
+function countUp(node) {
+  if (!node || node.dataset.counted || reduce.matches) return;
+  node.dataset.counted = "1";
+  const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  const jobs = [];
+  for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+    const m = /(\d[\d,]*\.?\d*)/.exec(t.nodeValue);
+    if (!m) continue;
+    const raw = m[1], dec = (raw.split(".")[1] || "").length, val = parseFloat(raw.replace(/,/g, "")), comma = raw.includes(",");
+    if (!isFinite(val) || val === 0) continue;
+    jobs.push({ t, pre: t.nodeValue.slice(0, m.index), post: t.nodeValue.slice(m.index + raw.length), val, dec, comma, orig: t.nodeValue });
+  }
+  if (!jobs.length) return;
+  const t0 = performance.now(), D_ = 900;
+  const fmt = (v, j) => { let s = v.toFixed(j.dec); if (j.comma) { const [a, b] = s.split("."); s = a.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b ? "." + b : ""); } return s; };
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / D_), e = 1 - Math.pow(1 - k, 3);
+    for (const j of jobs) j.t.nodeValue = k >= 1 ? j.orig : j.pre + fmt(j.val * e, j) + j.post;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function highlighter(part) {
+  const words = $$("[data-hl]", part);
+  let cur = "";
+  const set = (k) => {
+    cur = k;
+    const keys = (k || "").split(" ").filter(Boolean);
+    words.forEach((w) => w.classList.toggle("on", keys.includes(w.dataset.hl)));
+    let any = false;
+    $$("[data-hk]", part).forEach((n) => {
+      const on = n.dataset.hk.split(" ").some((x) => keys.includes(x));
+      n.classList.toggle("lit", on);
+      if (on) { any = true; if (n.matches(".spec > div")) countUp($("dd b", n)); }
+    });
+    part.classList.toggle("focus", any);
+  };
+  words.forEach((w) => {
+    w.tabIndex = 0;
+    w.addEventListener("pointerenter", () => { part.classList.add("hover"); set(w.dataset.hl); });
+    w.addEventListener("focus", () => set(w.dataset.hl));
+    w.addEventListener("pointerleave", () => part.classList.remove("hover"));
+  });
+  return (k) => { if (!part.classList.contains("hover")) set(k); };
+}
+
+/* ---------------------------------------------------------------- a planned timeline: segments of drawing and film, played in order; the film and the drawing trade places on schedule */
+function director(root, cfg) {
+  const viz = cfg.viz, film = cfg.film;
+  const segs = cfg.segs.map((s) => Object.assign({}, s, { dur: s.kind === "film" ? s.t1 - s.t0 : s.ms / 1000 }));
+  let acc = 0; segs.forEach((s) => { s.start = acc; acc += s.dur; });
+  const total = acc;
+  const stage = el("div", { cls: "duo-stage" + (film ? "" : " solo") });
   root.prepend(stage);
   viz.classList.add("duo-viz");
-  stage.append(viz, fwrap, side);
-  let lead = "film", hold = 0, pinned = false;
-  const fp = filmPane(film, onCue, {
-    host: root,
-    onEnd: (go) => { if (pinned) { go(); return; } setLead("viz"); clearTimeout(hold); hold = setTimeout(() => { setLead("film"); go(); }, 6500); },
-  });
-  fwrap.append($(".fp-v", fp));
-  const ctl = $(".fp-ctl", fp);
-  fp.replaceChildren(ctl);
-  fp.classList.add("duo-ctl");
-  root.append(fp);
+  stage.append(viz);
+  let v = null, fwrap = null;
+  const chip = el("span", { cls: "duo-chip" }), nowEl = el("div", { cls: "duo-now" });
+  if (film) {
+    v = el("video", { playsinline: "", preload: "none", poster: "media/og-" + film + ".jpg", "aria-hidden": "true" });
+    v.muted = true; v.defaultMuted = true;
+    fwrap = el("div", { cls: "duo-film" }, [v, el("span", { cls: "duo-film-k", text: "From the film" })]);
+    stage.append(fwrap, chip, nowEl);
+  }
+  const btn = el("button", { type: "button", cls: "dr-play", "aria-label": "Pause" }, [el("i")]);
+  const bar = el("div", { cls: "dr-bar", role: "slider", tabindex: "0", "aria-label": "Position in this part", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" });
+  const segEls = [];
+  const fills = segs.map((s) => { const f = el("i"); bar.append(el("span", { cls: "dr-seg dr-" + s.kind, style: "flex:" + s.dur.toFixed(2) + " 1 0" }, [el("b", { cls: "dr-track" }, [f]), el("small", {}, [s.kind === "film" ? el("em", { text: "Film" }) : null, T(s.label)])])); segEls.push(bar.lastChild); return f; });
+  const sound = film ? el("button", { type: "button", cls: "dr-sound", text: "Watch with sound" }) : null;
+  root.append(el("div", { cls: "dr-ctl" }, [btn, bar, sound]));
+  let g = 0, cur = 0, fired = 0, user = false, seen = false, raf = 0, last = 0, stallAt = 0, loaded = false, lead = "";
+  const segAt = (t) => { for (let i = segs.length - 1; i >= 0; i--) if (t >= segs[i].start) return i; return 0; };
   const narrow = () => matchMedia("(max-width: 720px)").matches;
+  function load() { if (loaded || !v) return; loaded = true; v.preload = "auto"; v.src = "media/og-" + film + ".mp4"; }
+  function vidAt(t) {
+    if (!v) return;
+    load();
+    if (v.readyState >= 1) { if (Math.abs(v.currentTime - t) > 0.25) v.currentTime = t; }
+    else v.addEventListener("loadedmetadata", () => { v.currentTime = t; }, { once: true });
+  }
   function layout() {
+    if (!film) return;
     if (narrow()) { root.classList.add("stacked"); viz.style.transform = ""; fwrap.style.transform = ""; fwrap.style.width = fwrap.style.height = ""; return; }
     root.classList.remove("stacked");
-    const W = stage.clientWidth, H = stage.clientHeight, vw = viz.offsetWidth, vh = viz.offsetHeight, m = 16;
-    const Rw = Math.round(W * 0.22), Lw = W - Rw - 3 * m, Lh = H - 2 * m, Rx = W - m - Rw;
+    const W = stage.clientWidth, H = stage.clientHeight, vw = viz.offsetWidth, vh = viz.offsetHeight, m = 18;
+    const Rw = Math.round(W * 0.21), Lw = W - Rw - 3 * m, Lh = H - 2 * m, Rx = W - m - Rw;
     const fw = Math.min(Lw, Lh * 16 / 9), fh = fw * 9 / 16;
     fwrap.style.width = fw + "px"; fwrap.style.height = fh + "px";
     const big = Math.min(1, Lw / vw, Lh / vh), small = Rw / vw, fs = Rw / fw;
-    let insetH;
+    let ih;
     if (lead === "film") {
       fwrap.style.transform = "translate(" + (m + (Lw - fw) / 2).toFixed(1) + "px," + (m + (Lh - fh) / 2).toFixed(1) + "px)";
-      viz.style.transform = "translate(" + Rx + "px," + m + "px) scale(" + small.toFixed(4) + ")";
-      insetH = vh * small;
+      viz.style.transform = "translate(" + Rx + "px," + (m + 22) + "px) scale(" + small.toFixed(4) + ")";
+      ih = vh * small;
     } else {
       viz.style.transform = "translate(" + (m + (Lw - vw * big) / 2).toFixed(1) + "px," + (m + (Lh - vh * big) / 2).toFixed(1) + "px) scale(" + big.toFixed(4) + ")";
-      fwrap.style.transform = "translate(" + Rx + "px," + m + "px) scale(" + fs.toFixed(4) + ")";
-      insetH = fh * fs;
+      fwrap.style.transform = "translate(" + Rx + "px," + (m + 22) + "px) scale(" + fs.toFixed(4) + ")";
+      ih = fh * fs;
     }
-    side.style.left = Rx + "px"; side.style.top = (m + insetH + 12) + "px"; side.style.width = Rw + "px";
+    chip.style.left = Rx + "px"; chip.style.top = m + "px";
+    nowEl.style.left = Rx + "px"; nowEl.style.width = Rw + "px"; nowEl.style.top = (m + 22 + ih + 18).toFixed(1) + "px";
+    chip.textContent = lead === "film" ? "The drawing, live" : "The film, " + (segs.some((s, j) => j > cur && s.kind === "film") ? "next" : "paused");
   }
   function setLead(k) {
-    lead = k;
-    root.dataset.lead = k;
-    viz.classList.toggle("inset", k !== "viz");
-    fwrap.classList.toggle("inset", k !== "film");
-    $(".duo-now", side).textContent = k === "film" ? "The drawing follows the film, step by step. Click it to make it larger." : "The film keeps its place here. Click it to make it larger.";
-    swapB.textContent = k === "film" ? "Show the drawing" : "Show the film";
+    if (!film) return;
+    if (k !== lead) { lead = k; root.dataset.lead = k; viz.classList.toggle("inset", k !== "viz"); fwrap.classList.toggle("inset", k !== "film"); }
     layout();
   }
-  const swap = (e) => { e.preventDefault(); e.stopPropagation(); clearTimeout(hold); pinned = true; setLead(lead === "film" ? "viz" : "film"); };
-  swapB.addEventListener("click", swap);
-  viz.addEventListener("click", (e) => { if (viz.classList.contains("inset")) swap(e); }, true);
-  fwrap.addEventListener("click", (e) => { if (fwrap.classList.contains("inset")) swap(e); }, true);
-  setLead("film");
-  addEventListener("resize", layout);
-  if (window.ResizeObserver) new ResizeObserver(layout).observe(viz);
-  return fp;
-}
-
-/* ---------------------------------------------------------------- a film clip beside a drawing: it plays in view, loops, and its cues drive the drawing */
-function filmPane(film, onCue, opts) {
-  opts = opts || {};
-  const clip = film.clip[0], t0 = film.clip[1], t1 = film.clip[2], span = t1 - t0;
-  const v = el("video", { playsinline: "", preload: "none", poster: "media/og-" + clip + ".jpg", "aria-label": "Film: " + film.title });
-  v.muted = true; v.defaultMuted = true;
-  const fill = el("i", { cls: "fp-fill" });
-  const bar = el("span", { cls: "fp-bar", role: "slider", tabindex: "0", "aria-label": "Position in the clip", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": "0" }, [fill]);
-  film.cues.forEach((c) => bar.append(el("em", { style: "left:" + ((c[0] - t0) / span * 100).toFixed(2) + "%" })));
-  const btn = el("button", { type: "button", cls: "fp-play", "aria-label": "Pause" }, [el("i")]);
-  const sound = el("button", { type: "button", cls: "fp-sound", text: "With sound" });
-  const box = el("figure", { cls: "fp" }, [el("div", { cls: "fp-v" }, [v]), el("figcaption", { cls: "fp-ctl" }, [btn, el("span", { cls: "fp-t" }, [el("small", { text: "From the film" }), T(film.title)]), bar, sound])]);
-  /* time comes from the video; if the video can't play (autoplay blocked, no decoder), a clock stands in so the drawing still runs */
-  let cue = -2, loaded = false, user = false, seen = false, raf = 0, clock = false, vt = t0, last = 0, watch = 0, ending = false;
-  const now = () => (clock ? vt : v.currentTime || t0);
-  const running = () => (clock ? seen && !user && !ending : !v.paused);
-  const at = (t) => { let k = -1; film.cues.forEach((c, i) => { if (t >= c[0] - 0.05) k = i; }); return k; };
-  const fire = (t) => { const k = at(t); if (k !== cue) { cue = k; if (onCue) onCue(k >= 0 ? film.cues[k][1] : "reset", k); } };
-  function paint(ts) {
-    if (clock && running()) { if (last) vt += Math.min(0.1, (ts - last) / 1000); last = ts; if (vt >= t1) { vt = t1; atEnd(); } }
-    const f = Math.max(0, Math.min(1, (now() - t0) / span));
-    fill.style.transform = "scaleX(" + f.toFixed(4) + ")";
-    bar.setAttribute("aria-valuenow", String(Math.round(f * 100)));
-    fire(now());
-    if (!clock && !v.paused && v.currentTime >= t1 - 0.05) { v.pause(); atEnd(); }
-    cancelAnimationFrame(raf);
-    if (running()) raf = requestAnimationFrame(paint); else last = 0;
+  function enter(i, u) {
+    cur = i; fired = 0; stallAt = 0;
+    const s = segs[i];
+    setLead(s.lead || (s.kind === "film" ? "film" : "viz"));
+    if (s.kind === "film") { vidAt(s.t0 + u); if (running()) v.play().catch(() => {}); }
+    else if (v) { v.pause(); const nx = segs.find((x, j) => j > i && x.kind === "film"); if (nx && loaded) vidAt(nx.t0); }
+    bar.dataset.at = String(i);
+    segEls.forEach((x, k) => x.classList.toggle("on", k === i));
+    if (film) {
+      const nx = segs[(i + 1) % segs.length];
+      nowEl.replaceChildren(el("small", { text: s.kind === "film" ? "Now, in the film" : "Now, in the drawing" }), el("b", { text: s.label }),
+        segs.length > 1 ? el("small", { cls: "nx", text: "Next: " + nx.label.charAt(0).toLowerCase() + nx.label.slice(1) }) : null);
+    }
   }
-  function toClock() {
-    if (clock) return;
-    clock = true; vt = Math.max(t0, Math.min(t1, v.currentTime || t0)); last = 0;
-    box.classList.add("still");
-    cancelAnimationFrame(raf); raf = requestAnimationFrame(paint);
+  function fireTo(u, instant) {
+    const s = segs[cur], st = s.steps || [], lim = s.kind === "film" ? s.t0 + u : u * 1000;
+    while (fired < st.length && st[fired][0] <= lim + 1e-6) { st[fired][1](instant); fired++; }
   }
-  function load() {
-    if (loaded) return;
-    loaded = true;
-    v.src = "media/og-" + clip + ".mp4#t=" + t0;
-    v.addEventListener("loadedmetadata", () => { if (v.currentTime < t0 - 0.2 || v.currentTime > t1) v.currentTime = t0; }, { once: true });
-    v.addEventListener("error", toClock, { once: true });
+  function seekTo(t) {
+    t = Math.max(0, Math.min(total - 0.02, t));
+    if (cfg.reset) cfg.reset();
+    const i = segAt(t);
+    for (let j = 0; j < i; j++) { cur = j; fired = 0; fireTo(segs[j].dur + 1, true); }
+    const u = t - segs[i].start;
+    enter(i, u); fireTo(u, true);
+    g = t; paint();
   }
-  function play() {
-    box.classList.remove("paused"); btn.setAttribute("aria-label", "Pause");
-    if (clock) { last = 0; cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); return; }
-    load();
-    const from = v.currentTime;
-    v.play().then(() => { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); }, toClock);
-    clearTimeout(watch);
-    watch = setTimeout(() => { if (!clock && seen && !user && Math.abs(v.currentTime - from) < 0.05) toClock(); }, 3500);
+  const running = () => seen && !user;
+  function paint() {
+    fills.forEach((f, j) => { const s = segs[j], k = j < cur ? 1 : j > cur ? 0 : Math.max(0, Math.min(1, (g - s.start) / s.dur)); f.style.transform = "scaleX(" + k.toFixed(4) + ")"; });
+    bar.setAttribute("aria-valuenow", String(Math.round(g / total * 100)));
   }
-  function pause() { if (!clock) v.pause(); box.classList.add("paused"); btn.setAttribute("aria-label", "Play"); requestAnimationFrame(paint); }
-  function atEnd() {
-    if (ending) return;
-    ending = true;
-    const go = () => {
-      ending = false; cue = -2;
-      if (clock) { vt = t0; last = 0; if (!user && seen) { cancelAnimationFrame(raf); raf = requestAnimationFrame(paint); } return; }
-      v.addEventListener("seeked", () => { if (!user && seen) v.play().catch(() => {}); }, { once: true });
-      v.currentTime = t0;
-    };
-    if (opts.onEnd) opts.onEnd(go); else go();
+  function tick(ts) {
+    raf = 0;
+    const dt = last ? Math.min(0.1, (ts - last) / 1000) : 0;
+    last = ts;
+    if (running()) {
+      const s = segs[cur];
+      let u = g - s.start;
+      if (s.kind === "film") {
+        const ok = v.readyState >= 3 && !v.paused && !v.seeking;
+        if (ok) { u = v.currentTime - s.t0; stallAt = 0; }
+        else {
+          if (!stallAt) stallAt = ts;
+          if (ts - stallAt > 1200) u += dt;
+          if (v.readyState >= 2 && Math.abs(v.currentTime - (s.t0 + u)) > 0.6) v.currentTime = s.t0 + u;
+          if (v.paused && loaded) v.play().catch(() => {});
+        }
+      } else u += dt;
+      if (u >= s.dur) {
+        fireTo(s.dur + 1, false);
+        if (cur + 1 >= segs.length) { if (cfg.reset) cfg.reset(); g = 0; enter(0, 0); fireTo(0, false); }
+        else { g = segs[cur + 1].start; enter(cur + 1, 0); fireTo(0, false); }
+      } else { g = s.start + Math.max(0, u); fireTo(Math.max(0, u), false); }
+    }
+    paint();
+    if (running()) raf = requestAnimationFrame(tick); else last = 0;
   }
-  function seek(f) {
-    const t = t0 + Math.max(0, Math.min(0.995, f)) * span;
-    if (clock) vt = t;
-    else { load(); if (v.readyState >= 1) v.currentTime = t; else v.addEventListener("loadedmetadata", () => { v.currentTime = t; }, { once: true }); }
-    fill.style.transform = "scaleX(" + Math.max(0, Math.min(1, f)).toFixed(4) + ")";
-    fire(t);
-  }
-  v.addEventListener("timeupdate", () => { if (!clock && v.currentTime >= t1 - 0.12) { if (!v.paused) v.pause(); atEnd(); } });
-  v.addEventListener("pause", () => { if (!clock && v.currentTime >= t1 - 0.4 && !user && seen) atEnd(); });
-  v.addEventListener("play", () => requestAnimationFrame(paint));
-  v.addEventListener("seeked", () => requestAnimationFrame(paint));
-  const fx = (e) => { const r = bar.getBoundingClientRect(); return (e.clientX - r.left) / r.width; };
-  bar.addEventListener("pointerdown", (e) => { bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); seek(fx(e)); });
-  bar.addEventListener("pointermove", (e) => { if (bar.classList.contains("drag")) seek(fx(e)); });
-  const up = () => bar.classList.remove("drag");
+  function go() { root.classList.remove("paused"); btn.setAttribute("aria-label", "Pause"); if (segs[cur].kind === "film") v.play().catch(() => {}); if (!raf) raf = requestAnimationFrame(tick); }
+  function stop() { if (v) v.pause(); cancelAnimationFrame(raf); raf = 0; last = 0; root.classList.add("paused"); btn.setAttribute("aria-label", "Play"); }
+  btn.addEventListener("click", () => { user = !user; if (user) stop(); else go(); });
+  const fx = (e) => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+  bar.addEventListener("pointerdown", (e) => { bar.setPointerCapture(e.pointerId); bar.classList.add("drag"); seekTo(fx(e) * total); });
+  bar.addEventListener("pointermove", (e) => { if (bar.classList.contains("drag")) seekTo(fx(e) * total); });
+  const up = () => { if (!bar.classList.contains("drag")) return; bar.classList.remove("drag"); if (running()) go(); };
   bar.addEventListener("pointerup", up);
   bar.addEventListener("pointercancel", up);
   bar.addEventListener("keydown", (e) => {
-    const d = e.key === "ArrowRight" ? 0.05 : e.key === "ArrowLeft" ? -0.05 : 0;
-    if (d) { e.preventDefault(); seek((now() - t0) / span + d); }
+    const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const i = Math.max(0, Math.min(segs.length - 1, cur + d));
+    seekTo(segs[i].start); if (running()) go();
   });
-  btn.addEventListener("click", () => { if (box.classList.contains("paused")) { user = false; if (ending) { ending = false; atEnd(); } else play(); } else { user = true; pause(); } });
-  v.addEventListener("click", () => btn.click());
-  sound.addEventListener("click", () => {
-    user = true; pause();
+  if (sound) sound.addEventListener("click", () => {
+    user = true; stop();
+    const s = segs[cur].kind === "film" ? segs[cur] : segs.find((x) => x.kind === "film");
     const dlg = $("#film-dlg"), fv = $("#film-v");
-    fv.poster = "media/og-" + clip + ".jpg"; fv.src = "media/og-" + clip + ".mp4#t=" + t0; fv.muted = false;
+    fv.poster = "media/og-" + film + ".jpg"; fv.src = "media/og-" + film + ".mp4#t=" + s.t0; fv.muted = false;
     dlg.showModal(); fv.play().catch(() => {});
   });
-  if (reduce.matches) {
-    box.classList.add("paused"); btn.setAttribute("aria-label", "Play");
-    if (onCue) onCue(film.cues[film.cues.length - 1][1], film.cues.length - 1);
-    return box;
-  }
+  addEventListener("resize", layout);
+  if (window.ResizeObserver) new ResizeObserver(layout).observe(stage);
+  seekTo(0);
+  if (reduce.matches) { user = true; seekTo(total - 0.05); stop(); return; }
+  root.classList.add("paused");
+  if (v) new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) load(); }), { rootMargin: "0px 0px 1200px 0px" }).observe(root);
   new IntersectionObserver((es) => es.forEach((e) => {
     seen = e.isIntersecting;
-    if (seen && !user) play();
-    else if (!seen) { if (!clock && !v.paused) v.pause(); cancelAnimationFrame(raf); last = 0; }
-  }), { threshold: 0.35 }).observe(opts.host || box);
-  return box;
+    if (seen && !user) go(); else if (!seen) { if (v) v.pause(); cancelAnimationFrame(raf); raf = 0; last = 0; }
+  }), { threshold: 0.3 }).observe(root);
 }
 
-/* ---------------------------------------------------------------- part: the signed mandate, the envelope the owner seals around the agents */
+function scramble(node, target, instant) {
+  if (instant || reduce.matches) { node.textContent = target; return; }
+  const abc = Array.from({ length: 62 }, (_, i) => String.fromCharCode(i < 26 ? 65 + i : i < 52 ? 71 + i : i - 4)).join("");
+  const t0 = performance.now(), D_ = 1300;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / D_), keep = Math.floor(k * target.length);
+    let s = target.slice(0, keep);
+    for (let i = keep; i < target.length; i++) s += target[i] === "…" ? "…" : abc[(Math.random() * abc.length) | 0];
+    node.textContent = s;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function typeIn(node, text, instant) {
+  if (instant || reduce.matches) { node.textContent = text; return; }
+  const t0 = performance.now(), D_ = Math.min(1600, text.length * 28);
+  const step = (now) => { const k = Math.min(1, (now - t0) / D_); node.textContent = text.slice(0, Math.round(k * text.length)); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+
+/* ---------------------------------------------------------------- part: the signed mandate, as a document: written, drafted, checked and signed, then one order through it */
+function mandateDoc(opts) {
+  const m = D.story.mandate, R = Object.fromEntries(m.rows), LM = D.layers.mandate;
+  const band = R["Limit price within"].split(" ")[0];
+  const syms = m.rows[0][1].split(", ");
+  const rows = {};
+  const rule = (k, label, value, formula) => {
+    const f = el("code", { cls: "md-f", text: formula });
+    const n = el("div", { cls: "md-row", "data-hk": "row-" + k + " " + (opts.keys[k] || "") }, [el("span", { cls: "md-k", text: label }), el("span", { cls: "md-v" }, value), f, el("i", { cls: "md-ok" })]);
+    n._f = f; n._formula = formula; rows[k] = n;
+    return n;
+  };
+  const body = el("div", { cls: "md-rows" }, [
+    rule("names", "Names it may trade", syms.map((s) => el("code", { cls: "md-chip", text: s })), "ticker ∈ the list"),
+    rule("sides", "Buy or sell", [T(R["Buy or sell"])], "side ∈ { buy, sell }"),
+    rule("per", "Largest single order", [T(R["Largest single order"])], "qty × trusted price ≤ " + R["Largest single order"]),
+    rule("step", "A person approves above", [T(R["A person approves any order over"])], "value > " + R["A person approves any order over"] + " → a person decides"),
+    rule("daily", "All agents, per day", [T(R["All agents together, per day"])], "today, all agents, + order ≤ " + R["All agents together, per day"]),
+    rule("band", "Limit price", [T("within " + band + " of the market")], "| limit − trusted | ÷ trusted ≤ " + band),
+    rule("exp", "Expires", [T(R["Expires"])], "now < expiry"),
+  ]);
+  const purpose = el("span", { cls: "md-purpose" });
+  const sig = el("code", { cls: "md-sig", text: m.signature });
+  const seal = el("div", { cls: "md-seal", "data-hk": "row-sig key" }, [
+    el("i", { cls: "md-stamp" }),
+    el("div", {}, [el("small", { text: "Signature, Ed25519, over the canonical body" }), sig]),
+    el("div", {}, [el("small", { text: "Your public key" }), el("code", { text: m.key })]),
+    el("p", { cls: "md-nokey" }, [el("i", { cls: "ic ic-key" }), T("The agent never holds this key")]),
+  ]);
+  rows.sig = seal; seal._f = null;
+  const doc = el("div", { cls: "mdoc" }, [
+    el("header", { cls: "md-head", "data-hk": "row-purpose" }, [el("span", { cls: "md-title" }, [el("b", { text: "Signed mandate" }), el("small", { text: LM.name })]), el("span", { cls: "md-pk", text: "Purpose" }), purpose]),
+    body,
+    el("p", { cls: "md-more" }, [el("b", { text: "Also available" }), T(" a daily cap per name, a maximum position, a maximum number of orders a day")]),
+    seal,
+  ]);
+  return { doc, rows, purpose, sig, purposeText: LM.purpose, signature: m.signature };
+}
 function partMandate() {
   const fig = $("#envelope"), part = $("#p-mandate");
   if (!fig) return;
-  const m = D.story.mandate, rows = Object.fromEntries(m.rows);
   const hl = highlighter(part);
-  const list = $("#mandate-rows");
-  const edgeOf = ["top", "", "right", "left", "bottom", "", ""];
-  m.rows.forEach(([k, v], i) => {
-    const li = el("li", { "data-hk": edgeOf[i] ? "edge-" + edgeOf[i] : "doc" }, [el("span", { text: k }), el("b", { text: v })]);
-    if (edgeOf[i]) {
-      li.addEventListener("pointerenter", () => fig.classList.add("show-" + edgeOf[i]));
-      li.addEventListener("pointerleave", () => fig.classList.remove("show-" + edgeOf[i]));
-    }
-    list.append(li);
-  });
-  const make = $("#make");
-  const syms = el("span", { cls: "ev-syms" }, m.rows[0][1].split(", ").map((s) => el("code", { text: s })));
-  const box = el("div", { cls: "ev-box" });
-  for (let i = 0; i < 9; i++) box.append(el("i", { cls: "ev-agent", style: "--x:" + (14 + (i % 3) * 30 + (i * 7) % 11) + "%;--y:" + (18 + Math.floor(i / 3) * 28 + (i * 5) % 9) + "%;--d:" + (i * 0.37).toFixed(2) + "s" }));
-  const probe = el("span", { cls: "ev-probe", text: "BUY " + m.rows[0][1].split(", ")[0] });
-  const say = el("p", { cls: "ev-say" });
-  box.append(probe);
-  const receipts = el("ol", { cls: "ev-rc" }, ["Quote, signed by market data", "Risk check, signed", "Approval, signed"].map((t) => el("li", { text: t })));
-  const seal = el("div", { cls: "ev-seal", "data-hk": "sign key" }, [el("i", { cls: "ic ic-key" }), el("span", {}, [el("b", { text: "Signed by you" }), el("small", { text: "Ed25519, key " + m.key })])]);
-  fig.append(
-    el("div", { cls: "ev-edge top", "data-hk": "edge-top inside" }, [el("small", { text: "May trade" }), syms]),
-    el("div", { cls: "ev-edge right", "data-hk": "edge-right inside" }, [el("small", { text: "Largest order" }), el("b", { text: rows["Largest single order"] })]),
-    el("div", { cls: "ev-edge bottom", "data-hk": "edge-bottom inside" }, [el("small", { text: "All agents together, per day" }), el("b", { text: rows["All agents together, per day"] })]),
-    el("div", { cls: "ev-edge left", "data-hk": "edge-left inside" }, [el("small", { text: "A person approves above" }), el("b", { text: rows["A person approves any order over"] })]),
-    box, seal, receipts, say,
-  );
-  const says = ["Here is one order, slowed down", "A permission for one service and one action. Market data signs a quote, marked untrusted",
-    "Rechecked against every edge of your signed mandate. Each check signs a receipt", "The ledger verifies every receipt itself, and commits once"];
-  duo($("#mandate-duo"), fig, L().films.mandate, (name, k) => {
-    const s = Math.max(0, k);
-    fig.classList.toggle("probe", s >= 1);
-    ["top", "right", "bottom", "left"].forEach((e) => fig.classList.toggle("show-" + e, s === 2));
-    fig.classList.toggle("rc", s >= 2);
-    fig.classList.toggle("sealed", s >= 3);
-    seal.classList.toggle("lit", s >= 3);
-    say.textContent = says[s];
-    if (s === 0) { make.classList.remove("go"); void make.offsetWidth; make.classList.add("go"); }
-    hl(s === 0 ? "sign" : s === 3 ? "key" : "inside");
-  });
+  const M_ = mandateDoc({ keys: { names: "tok", sides: "tok", per: "chk", step: "chk", daily: "chk", band: "chk", exp: "chk" } });
+  const ex = L().engine.examples[0], chk = ex.check;
+  const probe = el("div", { cls: "md-probe" }, [el("small", { text: "One order, checked line by line" }), el("b", { text: ex.order }), el("span", { cls: "md-verdict" }, [pill("allow", "Allowed"), T(" Sent to the broker, with a signed receipt")])]);
+  fig.classList.add("mandate");
+  fig.append(M_.doc, probe);
+  const mk = $$("#make li");
+  const lightMk = (i) => mk.forEach((li, j) => { li.classList.toggle("lit", j === i); li.classList.toggle("done", j < i); });
+  const order = ["names", "sides", "per", "step", "daily", "band", "exp"];
+  const reset = () => {
+    fig.classList.remove("drafted", "scan", "signing", "signed", "probing", "passed");
+    order.forEach((k) => { const r = M_.rows[k]; r.classList.remove("in", "ok", "pass"); r._f.textContent = r._formula; });
+    M_.purpose.textContent = ""; M_.sig.textContent = M_.signature; lightMk(-1); hl("");
+  };
+  const s1 = [
+    [0, (i) => { lightMk(0); hl("row-purpose"); typeIn(M_.purpose, M_.purposeText, i); }],
+    [2400, () => { lightMk(1); fig.classList.add("drafted"); }],
+    ...order.map((k, j) => [2400 + j * 360, () => { M_.rows[k].classList.add("in"); hl("row-" + k); }]),
+    [5600, () => { lightMk(2); fig.classList.add("scan"); hl("scan"); }],
+    ...order.map((k, j) => [5900 + j * 280, () => M_.rows[k].classList.add("ok")]),
+    [8400, (i) => { lightMk(3); fig.classList.add("signing"); hl("row-sig"); scramble(M_.sig, M_.signature, i); }],
+    [10000, () => { fig.classList.add("signed"); hl("key"); }],
+  ];
+  const s3 = [
+    [0, () => { lightMk(-1); fig.classList.add("probing"); hl("chk"); }],
+    ...order.map((k, j) => [300 + j * 520, () => { const r = M_.rows[k]; r._f.textContent = chk[k]; r.classList.add("pass"); hl("row-" + k); }]),
+    [300 + order.length * 520 + 200, () => { M_.rows.sig.classList.add("pass"); hl("row-sig"); }],
+    [300 + order.length * 520 + 900, () => { fig.classList.add("passed"); hl("inside"); }],
+  ];
+  director($("#mandate-duo"), { viz: fig, film: "order", reset, segs: [
+    { kind: "viz", ms: 11500, label: "The mandate, written and signed", steps: s1 },
+    { kind: "film", t0: 0.2, t1: 19.8, label: "One order, slowed down", steps: [[0.2, () => { lightMk(-1); hl("inside"); }], [2.2, () => hl("tok")], [9.6, () => hl("chk")], [15.6, () => hl("row-sig key")]] },
+    { kind: "viz", ms: 7600, label: "Checked line by line", steps: s3 },
+  ] });
 }
 
-/* ---------------------------------------------------------------- part: trusted data, three lanes and three checkpoints */
+/* ---------------------------------------------------------------- part: trusted data, a month of notes, then the film, then what the order may use */
 function partData() {
   const fig = $("#memory"), part = $("#p-data");
   if (!fig) return;
   const M_ = L().memory, hl = highlighter(part);
   const verdict = { sourced: ["allow", "Matches the filing"], drift: ["refuse", "Doesn't match"], undeclared: ["refuse", "No author"],
     vague: ["hold", "Nothing to check"], stale: ["refuse", "Price moved"], single: ["hold", "One source"] };
-  const hk = { drift: "figure", undeclared: "nosrc", vague: "nosrc", stale: "price", single: "nosrc", sourced: "figure" };
+  const hk = { drift: "figure drift", undeclared: "nosrc ver", vague: "nosrc", stale: "price", single: "nosrc ver", sourced: "figure" };
   const rows = M_.entries.map((e, i) => el("li", { cls: "mm-e", "data-kind": e.kind, "data-hk": hk[e.kind], style: "--i:" + i }, [
     el("span", { cls: "mm-day", text: e.day }),
     el("span", { cls: "mm-body" }, [el("b", { text: e.text }), el("small", { text: e.from }), e.check ? el("em", { cls: "mm-chk", text: e.check }) : null]),
     el("span", { cls: "mm-v" }, [pill(verdict[e.kind][0], verdict[e.kind][1])]),
   ]));
-  const order = el("div", { cls: "mm-order" }, [
+  const order = el("div", { cls: "mm-order", "data-hk": "order" }, [
     el("span", { cls: "mm-ok" }, [el("small", { text: "The order it builds" }), el("b", { text: M_.order })]),
     el("span", { cls: "mm-uses", text: "relies on " + word(M_.entries.length - 1) + " notes" }),
     el("span", { cls: "mm-out" }, [pill("hold", "Sent back"), T(" Rebuilt only on what has a source")]),
   ]);
   fig.append(el("p", { cls: "mo-k", text: "One agent's notes over a month" }), el("ol", { cls: "mm-log" }, rows), order, el("p", { cls: "fig-note", text: "Illustration. The figure and the price are recorded cases." }));
-  duo($("#data-duo"), fig, L().films.data, (name, k) => {
-    const s = Math.max(0, k);
-    fig.classList.toggle("built", s >= 0);
-    fig.classList.toggle("checked", s >= 1);
-    fig.classList.toggle("cut", s >= 2);
-    if (s === 0) { fig.classList.remove("built"); void fig.offsetWidth; fig.classList.add("built"); }
-    hl(s === 0 ? "drift" : s === 1 ? "figure" : "nosrc");
-  });
+  const reset = () => { fig.classList.remove("built", "checked", "cut"); hl(""); };
+  director($("#data-duo"), { viz: fig, film: "order", reset, segs: [
+    { kind: "viz", ms: 7200, label: "A month of notes", steps: [[0, () => { fig.classList.add("built"); hl("drift"); }], [3600, () => hl("nosrc")], [5600, () => hl("order")]] },
+    { kind: "film", t0: 36, t1: 54, label: "Every claim, traced", steps: [[36, () => hl("figure")], [40, () => { fig.classList.add("checked"); hl("price"); }], [44, () => { fig.classList.add("cut"); hl("nosrc"); }], [46, () => hl("ver")]] },
+    { kind: "viz", ms: 6400, label: "What the order may use", steps: [[0, () => { fig.classList.add("checked", "cut"); hl("figure"); }], [2600, () => hl("order")]] },
+  ] });
 }
 
-/* ---------------------------------------------------------------- part: the swarm risk model */
-function spec(dl, rows) {
-  for (const [k, v, sub] of rows) dl.append(el("div", {}, [el("dt", { text: k }), el("dd", {}, [el("b", { text: v }), sub ? el("small", { text: sub }) : null])]));
+/* ---------------------------------------------------------------- part: the final check, the film first, then wave after wave */
+function partFinal() {
+  const fig = $("#final"), part = $("#p-final");
+  if (!fig) return;
+  const F = L().final, hl = highlighter(part);
+  const checks = el("ol", { cls: "fn-checks", "data-hk": "facts" }, F.checks.map((c) => el("li", {}, [el("i"), el("span", { text: c })])));
+  const now = el("p", { cls: "fn-now" });
+  const why = el("p", { cls: "fn-why" });
+  const waves = F.waves.map((w, wi) => el("div", { cls: "fn-wave", "data-hk": "waves" }, [el("small", { text: "Wave " + word(wi + 1) }), el("ol", {}, w.map((o) => el("li", { text: o.o })))]));
+  const broker = el("div", { cls: "fn-broker" }, [el("small", { text: "Your broker" }), el("ol", { cls: "fn-sent" })]);
+  fig.append(el("div", { cls: "fn-waves" }, waves), el("div", { cls: "fn-gate", "data-hk": "facts" }, [el("p", { cls: "mo-k", text: "The final check" }), now, checks, why]), broker,
+    el("p", { cls: "fig-note", text: F.note }));
+  const sent = $(".fn-sent", broker), cl = $$("li", checks);
+  const steps = [];
+  let t = 300;
+  F.waves.forEach((w, wi) => {
+    steps.push([t, () => { waves.forEach((x, j) => x.classList.toggle("on", j === wi)); hl("waves"); }]);
+    t += 450;
+    w.forEach((o, oi) => {
+      const li = $$("li", waves[wi])[oi];
+      steps.push([t, () => { li.classList.add("at"); now.textContent = o.o; why.textContent = ""; fig.classList.remove("fail"); cl.forEach((c) => c.classList.remove("ok", "bad")); hl("facts"); }]);
+      F.checks.forEach((c, ci) => { if (o.fail !== undefined && ci > o.fail) return; steps.push([t + 200 + ci * 160, () => cl[ci].classList.add(o.fail === ci ? "bad" : "ok")]); });
+      t += 200 + (o.fail === undefined ? F.checks.length : o.fail + 1) * 160 + 240;
+      steps.push([t, () => {
+        li.classList.remove("at");
+        if (o.fail === undefined) { li.classList.add("gone"); sent.append(el("li", { text: o.o })); }
+        else { li.classList.add("back"); fig.classList.add("fail"); why.textContent = o.why; }
+      }]);
+      t += o.fail === undefined ? 260 : 1800;
+    });
+  });
+  const reset = () => { sent.replaceChildren(); $$(".fn-wave li", fig).forEach((li) => li.classList.remove("at", "gone", "back")); waves.forEach((x) => x.classList.remove("on")); cl.forEach((c) => c.classList.remove("ok", "bad")); now.textContent = ""; why.textContent = ""; fig.classList.remove("fail"); hl(""); };
+  director($("#final-duo"), { viz: fig, film: "fits", reset, segs: [
+    { kind: "film", t0: 6.4, t1: 17.6, label: "At the broker, before any effect", steps: [[6.4, () => hl("facts")], [12, () => hl("waves")]] },
+    { kind: "viz", ms: t + 1600, label: "Wave after wave", steps },
+  ] });
 }
+
+/* ---------------------------------------------------------------- part: the swarm risk model, its engine on real orders, then the benchmark */
 function partRisk() {
   const fig = $("#swarmfig"), part = $("#p-risk");
   if (!fig) return;
-  const B = L().bench, H = L().herd, how = L().how;
-  const hl = highlighter(part);
-  const cv = el("canvas", { cls: "sw-cv" });
-  const tag = el("p", { cls: "sw-tag" }, [el("b"), el("span")]);
-  const verdict = el("p", { cls: "sw-v" });
-  const head = el("div", { cls: "bn-h" }, [el("span", { text: "Benchmark" }), el("span", { text: "Baseline: per-order limits" }), el("span", { text: "Held-out runs" }), el("span", { text: "Adaptive attackers" })]);
-  const cell = (f, cls) => (f ? el("span", { cls: "bn-c " + (cls || "") }, [el("i", { style: "width:" + Math.max(2, f.value * 100).toFixed(1) + "%" }), el("b", { text: f.text })]) : el("span", { cls: "bn-c na", text: "not run" }));
-  const list = el("ol", { cls: "bn-rows", "data-hk": "whole" }, B.map((f) => el("li", { "data-k": f.k }, [
-    el("span", { cls: "bn-n" }, [el("b", { text: f.name }), el("small", { text: f.sig })]), cell(f.base, "base"), cell(f.held), cell(f.adaptive),
-  ])));
-  const foot = el("p", { cls: "bn-foot" }, [T("Replayed on public market data with a thousand agents: "), el("b", { text: how.replay_bad.text }), T(" of harmful orders, "),
-    el("b", { cls: "good", text: how.replay_stopped.text }), T(" stopped, "), el("b", { text: how.replay_honest.text }), T(" of honest orders tightened.")]);
-  fig.append(el("div", { cls: "sw-stage" }, [cv, tag, verdict]), el("p", { cls: "mo-k sw-k", text: "Swarm benchmark: share of harmful dollars stopped. Every harmful order here passed every per-order limit" }), head, list, foot);
+  const E = L().engine, how = L().how, hl = highlighter(part);
+  const N = E.names.length, ix = Object.fromEntries(E.names.map((n, i) => [n, i]));
+  const tape = el("ol", { cls: "eg-tape" });
+  const ocard = el("div", { cls: "eg-card" }, [el("small", { text: "Order under review" }), el("b", { cls: "eg-o" }), el("span", { cls: "eg-meta" }), el("span", { cls: "eg-truth" })]);
+  const cells = new Array(N);
+  const groups = E.groups.map((gp) => el("div", { cls: "eg-grp" }, [el("small", { text: gp.name }), el("div", { cls: "eg-cells" }, gp.f.map((f) => { const c = el("i", { title: f }); cells[ix[f]] = c; return c; }))]));
+  const whys = el("ol", { cls: "eg-why" });
+  const units = el("ol", { cls: "eg-units" }, E.examples[0].units.map((u) => el("li", {}, [el("span", {}, [el("b", { text: u.name }), el("small", { text: u.family.replace("_", " ") })]), el("i", { cls: "eg-ubar" }, [el("em")]), el("code", { text: "π " + u.pi })])));
+  const trees = el("div", { cls: "eg-trees" });
+  const leaves = []; for (let i = 0; i < E.examples[0].leaves.length; i++) { const c = el("i", { style: "--k:" + i }); leaves.push(c); trees.append(c); }
+  const pv = el("b"), rv = el("b", { cls: "eg-risk" });
+  const needle = el("i", { cls: "eg-needle" });
+  const gauge = el("div", { cls: "eg-gauge" }, [el("span", { cls: "eg-arc" }), el("em", { cls: "eg-th hold", style: "--a:" + Math.sqrt(E.hold).toFixed(4) }), el("em", { cls: "eg-th refuse", style: "--a:" + Math.sqrt(E.refuse).toFixed(4) }), needle]);
+  const act = el("p", { cls: "eg-act" });
+  const col = (cls, title, hk, kids) => el("div", { cls: "eg-col " + cls, "data-hk": hk }, [el("p", { cls: "eg-h" }, title), ...kids]);
+  fig.classList.add("engine");
+  fig.append(
+    col("eg-in", [T("Every order, as it arrives")], "p1", [tape, ocard]),
+    col("eg-sig", [el("b", { "data-f": "launch.risk.features" }), T(" signals, each against the run so far")], "p2", [...groups, whys]),
+    col("eg-model", [el("b", { text: L().families.detectors.text }), T(" detectors and "), el("b", { text: E.n_trees.text }), T(" trees")], "p3", [units, el("small", { cls: "eg-sub", text: "Trees, each one's vote" }), trees]),
+    col("eg-out", [T("One score, one decision")], "p4", [
+      el("code", { cls: "eg-formula", text: "risk = 1 − (1 − p) × Π (1 − π·u)" }),
+      el("p", { cls: "eg-kv" }, [el("span", { text: "p, from the trees" }), pv]),
+      gauge, el("p", { cls: "eg-kv big" }, [el("span", { text: "Risk" }), rv]), act,
+      el("p", { cls: "eg-lat" }, [T("Scored in "), el("b", { text: how.latency_p50.text }), T(", median")]),
+    ]),
+    el("p", { cls: "fig-note eg-note", text: E.note }),
+  );
+  bind(fig);
+  const actName = { none: ["allow", "Allowed"], hold: ["hold", "Held for a person"], refuse: ["refuse", "Refused"] };
+  function show(i) {
+    const x = E.examples[i];
+    tape.replaceChildren(...x.tape.map((t) => el("li", { text: t })), el("li", { cls: "now", text: x.order.split(" @ ")[0] }));
+    $(".eg-o", ocard).textContent = x.order;
+    $(".eg-meta", ocard).textContent = x.usd + " · agent " + x.agent + " · " + x.env + " mandate";
+    $(".eg-truth", ocard).replaceChildren(el("small", { text: "Recorded as" }), el("b", { text: x.title }));
+    x.pct.forEach((p, j) => { cells[j].style.setProperty("--p", p); cells[j].classList.remove("top"); });
+    whys.replaceChildren(...x.top.slice(0, 3).map((t) => el("li", {}, [el("code", { text: t.f }), T(" " + t.why)])));
+    $$("li", units).forEach((li, j) => { li.style.setProperty("--a", x.units[j].a); li.classList.toggle("fired", x.units[j].a > 0); });
+    const mx = Math.max(...x.leaves.map(Math.abs)) || 1;
+    leaves.forEach((c, j) => c.style.setProperty("--v", (x.leaves[j] / mx).toFixed(3)));
+    pv.textContent = x.p_text; rv.textContent = x.risk_text;
+    needle.style.setProperty("--a", Math.sqrt(Math.min(1, x.risk)).toFixed(4));
+    act.replaceChildren(pill(actName[x.action][0], actName[x.action][1]));
+    fig.dataset.act = x.action;
+  }
+  const ph = (n) => { fig.classList.remove("ph1", "ph2", "ph3", "ph4", "ph5", "ph6"); for (let k = 1; k <= n; k++) fig.classList.add("ph" + k); };
+  const segs = E.examples.map((x, i) => ({ kind: "viz", ms: 7600, label: x.title, steps: [
+    [0, () => { show(i); ph(1); hl("p1 spread"); }],
+    [700, () => { ph(2); hl("p2"); }],
+    [1900, () => { x.top.slice(0, 3).forEach((t) => cells[ix[t.f]] && cells[ix[t.f]].classList.add("top")); ph(3); }],
+    [3000, () => { ph(4); hl("p3 trained"); }],
+    [4400, () => { ph(5); hl("p4 speed"); }],
+    [5600, () => { ph(6); hl(x.action === "none" ? "p4 honest" : "p4 whole precision"); }],
+  ] }));
+  director($("#risk-duo"), { viz: fig, reset: () => ph(0), segs });
+  benchChart();
+}
+function benchChart() {
+  const fig = $("#bench");
+  if (!fig) return;
+  const B = L().bench2;
+  const legend = el("div", { cls: "bc-legend" }, [
+    el("span", { cls: "k0", text: "A standard learned model, never shown this failure" }),
+    el("span", { cls: "k1", text: "OrderGuard's model, never shown it" }),
+    el("span", { cls: "k2", text: "OrderGuard's model, trained on it" }),
+  ]);
+  const bar = (cls, f) => el("div", { cls: "bc-b " + cls }, [el("i", { style: "--w:" + Math.max(0.006, f.value).toFixed(4) }), el("b", { text: f.text })]);
+  const rows = B.rows.map((r, i) => el("li", { style: "--i:" + i }, [
+    el("div", { cls: "bc-n" }, [el("b", { text: r.name }), el("small", { text: r.size })]),
+    el("div", { cls: "bc-bars" }, [bar("k0", r.base), bar("k1", r.zero), bar("k2", r.full)]),
+    el("div", { cls: "bc-gain" }, [el("b", { text: "+" + r.gain }), el("small", { text: "points over the standard model" })]),
+  ]));
+  fig.append(el("div", { cls: "bc-head" }, [el("p", { cls: "bc-t", text: "Swarm benchmark: share of harmful dollars stopped, on recorded runs the model never trained on" }), legend]),
+    el("ol", { cls: "bc-rows" }, rows),
+    el("p", { cls: "fig-note", text: "Per-order limits alone stop none of these: every harmful order in this benchmark passed every per-order limit." }));
+  onView(fig, (on) => { if (!on || fig.classList.contains("in")) return; fig.classList.add("in"); $$(".bc-gain b", fig).forEach((b, i) => setTimeout(() => countUp(b), 300 + i * 120)); }, 0.25);
+}
+
+/* ---------------------------------------------------------------- hero: three central features, each shown working */
+function heroFeatures() {
+  const root = $("#feat");
+  if (!root) return;
+  const tabs = $$(".ft-tab", root), panels = $$(".ft-panel", root);
+  const m = D.story.mandate, R = Object.fromEntries(m.rows), ex = L().engine.examples[0];
+  /* one: signed mandate */
+  const p1 = panels[0];
+  const M_ = mandateDoc({ keys: {} });
+  const probes = el("div", { cls: "hp-probes" }, [
+    el("div", { cls: "hp-probe ok" }, [el("code", { text: ex.order }), el("span", { cls: "hp-res" }, [pill("allow", "Inside every rule")])]),
+    el("div", { cls: "hp-probe no" }, [el("code", { text: "transfer_funds " + L().page.amount.text }), el("span", { cls: "hp-res" }, [pill("refuse", "Not in the mandate")])]),
+  ]);
+  p1.append(el("div", { cls: "hp-doc" }, [M_.doc]), probes);
+  const order = ["names", "sides", "per", "step", "daily", "band", "exp"];
+  const run1 = (i) => [
+    [0, () => { p1.classList.remove("signing", "signed", "pr1", "pr2"); order.forEach((k) => M_.rows[k].classList.remove("in", "lit")); M_.purpose.textContent = ""; typeIn(M_.purpose, M_.purposeText, i); }],
+    ...order.map((k, j) => [500 + j * 330, () => { order.forEach((q) => M_.rows[q].classList.remove("lit")); M_.rows[k].classList.add("in", "lit"); }]),
+    [500 + order.length * 330, () => { order.forEach((q) => M_.rows[q].classList.remove("lit")); p1.classList.add("signing"); scramble(M_.sig, M_.signature, i); }],
+    [4200, () => p1.classList.add("signed")],
+    [5200, () => p1.classList.add("pr1")],
+    [6900, () => p1.classList.add("pr2")],
+  ];
+  /* two: the sandbox */
+  const p2 = panels[1];
+  const P = L().price, F_ = L().figure;
+  const calls = [
+    { c: "get_quote AAPL", port: "data", r: "OrderGuard's own feed: " + P.truth, k: "ok" },
+    { c: "get_filing AAPL 10-K", port: "data", r: "SEC filing: revenue " + F_.truth, k: "ok" },
+    { c: "read_web analyst blog", port: "web", r: "page text passed through the screen, hidden line removed", k: "warn" },
+    { c: "place_order " + ex.order.split(" @ ")[0], port: "broker", r: "signed, checked, sent by OrderGuard", k: "ok" },
+    { c: "transfer_funds " + L().page.amount.text, port: "none", r: "no such door: not in the mandate, and no key", k: "no" },
+  ];
+  const log = el("ol", { cls: "sb-log" });
+  const ports = { data: el("span", { cls: "sb-port p-data", text: "Trusted data" }), web: el("span", { cls: "sb-port p-web", text: "The open web, screened" }), broker: el("span", { cls: "sb-port p-broker", text: "Receiver" }) };
+  p2.append(el("div", { cls: "sb" }, [
+    el("div", { cls: "sb-out sb-src" }, [el("b", { text: "Sources the agent can't touch" }), el("small", { text: "OrderGuard's price feed · SEC filings · two news outlets" })]),
+    el("div", { cls: "sb-box" }, [el("p", { cls: "sb-k" }, [el("i", { cls: "sb-lock" }), T("Sandboxed runtime")]), el("div", { cls: "sb-agent" }, [el("i", { cls: "ic ic-bot" }), el("span", { text: "Your agent" })]), el("div", { cls: "sb-ports" }, [el("small", { text: "Its only doors" }), ports.data, ports.web, ports.broker]), log]),
+    el("div", { cls: "sb-out sb-broker" }, [el("b", { text: "Your broker" }), el("small", { text: "The key lives in OrderGuard's vault, never with the agent" }), el("i", { cls: "sb-vault" })]),
+  ]));
+  const run2 = () => [[0, () => { log.replaceChildren(); Object.values(ports).forEach((x) => x.classList.remove("on", "no")); p2.classList.remove("blocked"); }],
+    ...calls.flatMap((c, j) => [
+      [400 + j * 1500, () => { Object.values(ports).forEach((x) => x.classList.remove("on")); log.append(el("li", { cls: "sb-c" }, [el("code", { text: "› " + c.c })])); if (ports[c.port]) ports[c.port].classList.add("on"); else p2.classList.add("blocked"); }],
+      [400 + j * 1500 + 700, () => log.append(el("li", { cls: "sb-r " + c.k, text: c.r }))],
+    ])];
+  /* three: the swarm */
+  const p3 = panels[2];
+  const cv = el("canvas", { cls: "sw3" });
+  const H = L().herd, risk = L().risk;
+  p3.append(cv, el("div", { cls: "sw3-read" }, [
+    el("p", {}, [el("b", { text: risk.corpus.text }), T(" labelled orders, self-trained")]),
+    el("p", {}, [el("b", { text: risk.features.text }), T(" signals, "), el("b", { text: L().families.detectors.text }), T(" detectors, "), el("b", { text: L().engine.n_trees.text }), T(" trees")]),
+    el("p", {}, [el("b", { text: L().how.latency_p50.text }), T(" per order")]),
+    el("p", { cls: "sw3-v" }, [pill("hold", "Held for a person"), T(" " + word(H.agents.value, true) + " agents, one position: " + H.combined.text)]),
+  ]));
   const cx = cv.getContext("2d");
-  let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const ds = []; for (let i = 0; i < 160; i++) ds.push({ x: rnd(), y: rnd(), p: rnd() * 6.28, s: 0.4 + rnd() });
-  const ring = [3, 27, 58, 91, 120].slice(0, H.agents.value).map((i) => ds[i]);
-  const actor = { runaway: ds[40], fat_finger: ds[70], stale_price: ds[100], compromised: ds[20] };
-  let fam = "collusion", phase = 0, t0 = performance.now(), live = false;
-  function paint(now) {
+  let seed = 5; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const dots = []; for (let i = 0; i < 420; i++) dots.push({ a: rnd() * 6.283, r: 0.28 + rnd() * 0.7, s: (rnd() - 0.5) * 0.0016, p: rnd() * 6.28 });
+  const ring = [11, 97, 160, 233, 301].map((i) => dots[i]);
+  let swOn = false, pulses = [], held = 0, t0s = 0;
+  function paintSw(now) {
+    if (!swOn) return;
     const w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
     if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, w, h);
-    const t = (now - t0) / 1000, grey = css("--dot"), vio = css("--risk"), red = css("--refuse");
-    const P = (d) => ({ x: (d.x * 0.92 + 0.04) * w + Math.sin(t * d.s + d.p) * 6, y: (d.y * 0.84 + 0.12) * h + Math.cos(t * d.s * 0.8 + d.p) * 6 });
-    const hot = fam === "collusion" ? (phase >= 1 ? ring : []) : phase >= 1 ? [actor[fam]] : [];
-    if (fam === "collusion" && phase >= 1) {
-      const c = ring.map(P), mx = c.reduce((a, p) => a + p.x, 0) / c.length, my = c.reduce((a, p) => a + p.y, 0) / c.length;
-      cx.strokeStyle = vio; cx.globalAlpha = 0.5; cx.lineWidth = 1.2;
-      for (const p of c) { cx.beginPath(); cx.moveTo(mx, my); cx.lineTo(p.x, p.y); cx.stroke(); }
-      cx.globalAlpha = 0.12; cx.fillStyle = vio; cx.beginPath();
-      c.sort((a, b) => Math.atan2(a.y - my, a.x - mx) - Math.atan2(b.y - my, b.x - mx)).forEach((p, i) => (i ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y)));
-      cx.closePath(); cx.fill(); cx.globalAlpha = 1;
+    const ox = w * 0.5, oy = h * 0.5, R0 = Math.min(w, h) * 0.46, t = (now - t0s) / 1000;
+    const grey = css("--dot"), vio = css("--risk"), acc = css("--accent");
+    cx.strokeStyle = vio; cx.globalAlpha = 0.25 + 0.15 * Math.sin(t * 2); cx.lineWidth = 1.2;
+    cx.beginPath(); cx.arc(ox, oy, 26, 0, 6.283); cx.stroke();
+    cx.globalAlpha = 1; cx.fillStyle = vio; cx.beginPath(); cx.arc(ox, oy, 6, 0, 6.283); cx.fill();
+    if (rnd() < 0.5) { const d = dots[(rnd() * dots.length) | 0]; pulses.push({ d, k: 0 }); }
+    for (const q of pulses) q.k += 0.025;
+    pulses = pulses.filter((q) => q.k < 1);
+    const pos = (d) => { const a = d.a + t * d.s * 40; return [ox + Math.cos(a) * d.r * R0, oy + Math.sin(a) * d.r * R0 * 0.62]; };
+    cx.fillStyle = acc;
+    for (const q of pulses) { const [x, y] = pos(q.d); cx.globalAlpha = 0.6 * (1 - q.k); cx.beginPath(); cx.arc(x + (ox - x) * q.k, y + (oy - y) * q.k, 1.6, 0, 6.283); cx.fill(); }
+    const hot = held > 0;
+    if (hot) {
+      const pts = ring.map(pos);
+      cx.strokeStyle = vio; cx.globalAlpha = Math.min(1, held) * 0.55;
+      for (const [x, y] of pts) { cx.beginPath(); cx.moveTo(ox, oy); cx.lineTo(x, y); cx.stroke(); }
+      cx.globalAlpha = Math.min(1, held) * 0.12; cx.fillStyle = vio; cx.beginPath();
+      const mx = pts.reduce((a, p) => a + p[0], 0) / 5, my = pts.reduce((a, p) => a + p[1], 0) / 5;
+      pts.sort((a, b) => Math.atan2(a[1] - my, a[0] - mx) - Math.atan2(b[1] - my, b[0] - mx)).forEach((p, i) => (i ? cx.lineTo(p[0], p[1]) : cx.moveTo(p[0], p[1])));
+      cx.closePath(); cx.fill();
     }
-    if (fam !== "collusion" && phase >= 1) {
-      const d = actor[fam];
-      if (fam === "compromised") { d.x += (rnd() - 0.5) * 0.004; d.y += (rnd() - 0.5) * 0.004; d.x = Math.min(0.97, Math.max(0.03, d.x)); d.y = Math.min(0.97, Math.max(0.03, d.y)); }
-      const p = P(d);
-      cx.strokeStyle = fam === "compromised" ? red : vio; cx.lineWidth = 1.4;
-      if (fam === "runaway") for (let k = 0; k < 6; k++) { const f = (t * 1.6 + k / 6) % 1; cx.globalAlpha = 1 - f; cx.beginPath(); cx.arc(p.x, p.y, 6 + f * 46, 0, 6.283); cx.stroke(); }
-      if (fam === "fat_finger") { const f = Math.min(1, (t % 2.4) / 0.6); cx.globalAlpha = 0.18; cx.fillStyle = vio; cx.beginPath(); cx.arc(p.x, p.y, 8 + f * 44, 0, 6.283); cx.fill(); }
-      if (fam === "stale_price") { cx.globalAlpha = 0.8; cx.setLineDash([4, 4]); cx.beginPath(); cx.moveTo(p.x, p.y); cx.lineTo(p.x + 70, p.y - 34); cx.stroke(); cx.setLineDash([]); cx.beginPath(); cx.moveTo(p.x + 62, p.y - 34); cx.lineTo(p.x + 90, p.y - 34); cx.stroke(); }
-      if (fam === "compromised") { cx.globalAlpha = 0.35; cx.beginPath(); cx.arc(p.x, p.y, 16, 0, 6.283); cx.stroke(); }
-      cx.globalAlpha = 0.9; cx.strokeStyle = vio; cx.beginPath(); cx.arc(p.x, p.y, 26, 0, 6.283); cx.stroke();
-      cx.globalAlpha = 1;
-    }
-    for (const d of ds) {
-      const p = P(d), on = hot.includes(d);
-      cx.fillStyle = on ? (fam === "compromised" ? red : vio) : grey;
-      cx.beginPath(); cx.arc(p.x, p.y, on ? 4.5 : 2.2, 0, 6.283); cx.fill();
-    }
-    if (live && !reduce.matches) requestAnimationFrame(paint);
+    for (const d of dots) { const [x, y] = pos(d), on = hot && ring.includes(d); cx.globalAlpha = 1; cx.fillStyle = on ? vio : grey; cx.beginPath(); cx.arc(x, y, on ? 3.6 : 1.6, 0, 6.283); cx.fill(); }
+    if (held > 0 && held < 1) held = Math.min(1, held + 0.03);
+    requestAnimationFrame(paintSw);
   }
-  new IntersectionObserver((es) => es.forEach((e) => { const was = live; live = e.isIntersecting; if (live && !was) requestAnimationFrame(paint); }), { threshold: 0 }).observe(fig);
-  const lis = $$("li", list);
-  function focusOn(f, ph) {
-    fam = f.k; phase = ph;
-    lis.forEach((li) => li.classList.toggle("on", li.dataset.k === f.k));
-    tag.firstChild.textContent = f.name;
-    tag.lastChild.textContent = f.sig;
-    verdict.replaceChildren(...(f.k === "collusion" ? [el("b", { text: H.combined.text }), T(" one position, " + H.times.text + " the approval line "), pill("hold", "Held for a person")] : [pill(f.k === "compromised" ? "refuse" : "hold", f.k === "compromised" ? "Stopped" : "Held for a person")]));
+  const run3 = () => [[0, () => { held = 0; p3.classList.remove("held"); if (!swOn) { swOn = true; t0s = performance.now(); requestAnimationFrame(paintSw); } }], [3200, () => { held = 0.01; }], [4600, () => p3.classList.add("held")]];
+  /* the rotation */
+  const runs = [run1, run2, run3], DUR = [9200, 9000, 8200];
+  let cur = -1, timers = [], live = false, user = false;
+  function go(i, instant) {
+    timers.forEach(clearTimeout); timers = [];
+    if (cur === 2 && i !== 2) swOn = false;
+    cur = i;
+    tabs.forEach((t, j) => { t.setAttribute("aria-selected", String(j === i)); t.classList.toggle("on", j === i); t.style.setProperty("--d", DUR[j] + "ms"); });
+    panels.forEach((p, j) => p.classList.toggle("on", j === i));
+    root.dataset.f = String(i);
+    for (const [ms, fn] of runs[i](instant)) { if (instant) fn(true); else timers.push(setTimeout(fn, ms)); }
+    if (!instant && live && !user) timers.push(setTimeout(() => go((i + 1) % runs.length), DUR[i]));
   }
-  const pipe = $$("#risk-pipe li");
-  const steps = [];
-  B.forEach((f, i) => {
-    const t = i * 3800;
-    steps.push([t + 200, () => { focusOn(f, 0); fig.classList.remove("held"); hl(i ? "whole" : "spread"); pipe.forEach((p, j) => p.classList.toggle("on", j === 0)); }],
-      [t + 1100, () => { phase = 1; hl("whole"); pipe.forEach((p, j) => p.classList.toggle("on", j === 1)); }],
-      [t + 1900, () => pipe.forEach((p, j) => p.classList.toggle("on", j === 2))],
-      [t + 2600, () => { fig.classList.add("held"); pipe.forEach((p, j) => p.classList.toggle("on", j === 3)); }]);
+  tabs.forEach((t, i) => t.addEventListener("click", () => { user = false; go(i); }));
+  root.addEventListener("pointerenter", () => root.classList.add("hov"));
+  root.addEventListener("pointerleave", () => root.classList.remove("hov"));
+  if (reduce.matches) { go(0, true); return; }
+  new IntersectionObserver((es) => es.forEach((e) => {
+    if (e.isIntersecting && !live) { live = true; go(cur < 0 ? 0 : cur); }
+    else if (!e.isIntersecting && live) { live = false; timers.forEach(clearTimeout); timers = []; swOn = false; }
+  }), { threshold: 0.3 }).observe(root);
+}
+
+/* ---------------------------------------------------------------- where you are: a rail down the left, with an order travelling along it */
+function chapterRail() {
+  const rail = $("#rail");
+  if (!rail) return;
+  const parts = [
+    { id: "top", label: "OrderGuard" },
+    { id: "story", label: "The problem" },
+    { id: "system", label: "How it works", subs: [["p-mandate", "Signed mandate"], ["p-data", "Trusted data"], ["p-risk", "Swarm risk model"], ["p-adapter", "Decision adapter"], ["p-super", "Supervision"], ["p-final", "Final check"], ["p-queue", "Review queue"], ["p-ledger", "Ledger"]] },
+    { id: "together", label: "Together" },
+    { id: "scale", label: "At scale" },
+    { id: "start", label: "Developers" },
+  ];
+  const line = el("span", { cls: "rl-line" }, [el("i", { cls: "rl-fill" })]);
+  const token = el("span", { cls: "rl-token" }, [el("i"), el("b")]);
+  const list = el("ol", { cls: "rl-list" });
+  const nodes = [];
+  parts.forEach((p, i) => {
+    const a = el("a", { href: "#" + p.id, cls: "rl-a" }, [el("span", { cls: "rl-n", text: String(i + 1).padStart(2, "0") }), el("span", { cls: "rl-t", text: p.label })]);
+    const li = el("li", { cls: "rl-ch" }, [a]);
+    nodes.push({ id: p.id, li, label: p.label });
+    if (p.subs) {
+      const sub = el("ol", { cls: "rl-sub" }, p.subs.map(([id, t]) => { const s = el("li", {}, [el("a", { href: "#" + id, text: t })]); nodes.push({ id, li: s, label: t, sub: true, parent: li }); return s; }));
+      li.append(sub);
+    }
+    list.append(li);
   });
-  loopOnView(fig, {
-    reset: () => { fig.classList.remove("held"); focusOn(B[0], 0); },
-    steps, end: B.length * 3800 + 400,
-    still: () => { focusOn(B[0], 1); fig.classList.add("held"); requestAnimationFrame(paint); },
+  rail.append(line, token, list);
+  const targets = nodes.map((n) => ({ n, el: n.id === "top" ? $(".x-hero") : document.getElementById(n.id) })).filter((x) => x.el);
+  let ticking = false;
+  function update() {
+    ticking = false;
+    const y = scrollY + innerHeight * 0.38, max = document.documentElement.scrollHeight - innerHeight;
+    let on = targets[0], onSub = null;
+    for (const t of targets) { const top = t.el.getBoundingClientRect().top + scrollY; if (top <= y) { if (t.n.sub) onSub = t; else { on = t; onSub = null; } } }
+    if (onSub && onSub.n.parent !== on.n.li) onSub = null;
+    nodes.forEach((n) => { n.li.classList.toggle("on", n === on.n || n === (onSub && onSub.n)); });
+    rail.classList.toggle("in-sys", on.n.id === "system");
+    rail.classList.toggle("in-story", on.n.id === "story");
+    const f = Math.max(0, Math.min(1, scrollY / (max || 1)));
+    line.firstChild.style.transform = "scaleY(" + f.toFixed(4) + ")";
+    const a = (onSub ? onSub.n.li : on.n.li).getBoundingClientRect(), r = rail.getBoundingClientRect();
+    token.style.transform = "translateY(" + (a.top - r.top + a.height / 2).toFixed(1) + "px)";
+    $("b", token).textContent = onSub ? onSub.n.label : on.n.label;
+    rail.classList.toggle("show", scrollY > innerHeight * 0.5);
+  }
+  addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } }, { passive: true });
+  addEventListener("resize", update);
+  update();
+}
+
+function contagionCard(stage) {
+  const C = L().contagion, cols = 6, src = C.tiles.indexOf(C.name);
+  const dist = (i) => Math.hypot((i % cols) - (src % cols), Math.floor(i / cols) - Math.floor(src / cols));
+  const tiles = C.tiles.map((t, i) => {
+    const held = C.held.includes(t), me = t === C.name;
+    return el("div", { cls: "cg-t" + (held ? " held" : "") + (me ? " src" : ""), style: "--d:" + (0.5 + dist(i) * 0.42).toFixed(2) + "s" },
+      [el("b", { text: t }), el("small", { text: me ? "bought" : held ? "held" : dist(i) % 2 < 1 ? "forced sell" : "rule fired" })]);
   });
+  const spike = S("svg", { viewBox: "0 0 120 36", cls: "cg-spark", "aria-hidden": "true" }, [S("path", { d: "M0 30 L20 29 L36 31 L52 28 L66 29 L78 26 L88 10 L96 4 L104 8 L120 3" })]);
+  const film = el("button", { type: "button", cls: "link cg-film", text: "Watch this scene in the film" });
+  film.addEventListener("click", () => {
+    const f = D.layers.clips.problem, dlg = $("#film-dlg"), v = $("#film-v");
+    v.poster = "media/og-" + f[0] + ".jpg"; v.src = "media/og-" + f[0] + ".mp4#t=" + f[1]; dlg.showModal(); v.play().catch(() => {});
+  });
+  const foot = [
+    [T("You asked for watching, not buying.")],
+    [T("A loose link and a price jump read as a signal. "), el("b", { text: "Nobody asked for this order." })],
+    [T("Each forced sale trips the next rule, and the damage spreads. "), el("small", { cls: "cg-note", text: "Illustration, fictional tickers." }), film],
+  ][stage];
+  return el("div", { cls: "mo mo-cg cg-s" + stage }, [
+    el("div", { cls: "cg-head" }, [
+      el("p", { cls: "as-me", text: C.ask }),
+      el("div", { cls: "cg-name" }, [el("b", { text: C.name }), el("small", { text: C.name_note }), spike]),
+      el("div", { cls: "cg-order" }, [el("code", { text: C.order }), el("span", { cls: "cg-stamp", text: "Not what you asked for" })]),
+    ]),
+    el("p", { cls: "mo-k", text: "The portfolio" }),
+    el("div", { cls: "cg-grid" }, tiles),
+    el("p", { cls: "mo-foot" }, foot),
+  ]);
 }
 
 /* ---------------------------------------------------------------- part: the decision adapter, purpose against the draft */
@@ -1152,9 +1374,9 @@ function partAdapter() {
   const STEP = 5200, steps = [];
   items.forEach((it, i) => {
     const t = i * STEP;
-    steps.push([t, () => { render(i); hl(it.st === "draft" ? "asked" : "runs"); }], [t + 1200, () => hl(it.st === "draft" ? "asks" : "runs")],
-      [t + 2100, () => { fig.classList.add("scored"); const s = scoreOf(i); needle.style.left = (s.value * 100).toFixed(1) + "%"; score.textContent = s.text; }],
-      [t + 3000, () => judge(i)]);
+    steps.push([t, () => { render(i); hl(it.st === "draft" ? "asked code" : "runs code"); }], [t + 1200, () => hl(it.st === "draft" ? "asks params model" : "runs params model")],
+      [t + 2100, () => { hl("scope speed"); fig.classList.add("scored"); const s = scoreOf(i); needle.style.left = (s.value * 100).toFixed(1) + "%"; score.textContent = s.text; }],
+      [t + 3000, () => { judge(i); hl(it.st === "draft" ? "asks rank auth" : "runs held auth"); }]);
   });
   loopOnView(fig, { reset: () => render(0), steps, end: items.length * STEP,
     still: () => { render(1); fig.classList.add("scored"); const s = scoreOf(1); needle.style.left = (s.value * 100) + "%"; score.textContent = s.text; judge(1); } });
@@ -1185,47 +1407,6 @@ function partSuper() {
   });
 }
 
-/* ---------------------------------------------------------------- part: the final check, wave after wave, right before an order reaches the broker */
-function partFinal() {
-  const fig = $("#final"), part = $("#p-final");
-  if (!fig) return;
-  const F = L().final, hl = highlighter(part);
-  const checks = el("ol", { cls: "fn-checks", "data-hk": "facts" }, F.checks.map((c) => el("li", {}, [el("i"), el("span", { text: c })])));
-  const now = el("p", { cls: "fn-now" });
-  const why = el("p", { cls: "fn-why" });
-  const waves = F.waves.map((w, wi) => el("div", { cls: "fn-wave", "data-hk": "waves" }, [el("small", { text: "Wave " + word(wi + 1) }), el("ol", {}, w.map((o) => el("li", { text: o.o })))]));
-  const broker = el("div", { cls: "fn-broker" }, [el("small", { text: "Your broker" }), el("ol", { cls: "fn-sent" })]);
-  fig.append(el("div", { cls: "fn-waves" }, waves), el("div", { cls: "fn-gate", "data-hk": "facts" }, [el("p", { cls: "mo-k", text: "The final check" }), now, checks, why]), broker,
-    el("p", { cls: "fig-note", text: "Illustration of three waves. The failing reasons are the recorded price case and the shared daily budget." }));
-  const sent = $(".fn-sent", broker), cl = $$("li", checks);
-  const steps = [];
-  let t = 400;
-  F.waves.forEach((w, wi) => {
-    steps.push([t, () => { waves.forEach((x, j) => x.classList.toggle("on", j === wi)); hl("waves"); }]);
-    t += 500;
-    w.forEach((o, oi) => {
-      const li = $$("li", waves[wi])[oi];
-      steps.push([t, () => { li.classList.add("at"); now.textContent = o.o; why.textContent = ""; fig.classList.remove("fail"); cl.forEach((c) => c.classList.remove("ok", "bad")); hl("facts"); }]);
-      F.checks.forEach((c, ci) => {
-        if (o.fail !== undefined && ci > o.fail) return;
-        steps.push([t + 220 + ci * 170, () => cl[ci].classList.add(o.fail === ci ? "bad" : "ok")]);
-      });
-      t += 220 + (o.fail === undefined ? F.checks.length : o.fail + 1) * 170 + 260;
-      steps.push([t, () => {
-        li.classList.remove("at");
-        if (o.fail === undefined) { li.classList.add("gone"); sent.append(el("li", { text: o.o })); }
-        else { li.classList.add("back"); fig.classList.add("fail"); why.textContent = o.why; }
-      }]);
-      t += o.fail === undefined ? 280 : 1700;
-    });
-  });
-  loopOnView(fig, {
-    reset: () => { sent.replaceChildren(); $$(".fn-wave li", fig).forEach((li) => li.classList.remove("at", "gone", "back")); waves.forEach((x) => x.classList.remove("on")); cl.forEach((c) => c.classList.remove("ok", "bad")); now.textContent = ""; why.textContent = ""; fig.classList.remove("fail"); },
-    steps, end: t + 1800,
-    still: () => { cl.forEach((c) => c.classList.add("ok")); now.textContent = F.waves[0][0].o; },
-  });
-  duo($("#final-duo"), fig, L().films.final, (name, k) => hl(k <= 0 ? "facts" : "waves"));
-}
 
 /* ---------------------------------------------------------------- part: the review queue, sorted by money at stake */
 function partQueue() {
@@ -1321,34 +1502,6 @@ function together() {
     if (e.isIntersecting && !started) { started = true; stage.classList.add("drawn"); setTimeout(playFilm, 3200); }
     if (!e.isIntersecting) v.pause();
   }), { threshold: 0.45 }).observe(stage);
-}
-
-/* ---------------------------------------------------------------- at scale: three results, each drawn to its own scale */
-
-function contagionCard() {
-  const C = L().contagion, cols = 6, src = C.tiles.indexOf(C.name);
-  const dist = (i) => Math.hypot((i % cols) - (src % cols), Math.floor(i / cols) - Math.floor(src / cols));
-  const tiles = C.tiles.map((t, i) => {
-    const held = C.held.includes(t), me = t === C.name;
-    return el("div", { cls: "cg-t" + (held ? " held" : "") + (me ? " src" : ""), style: "--d:" + (1.9 + dist(i) * 0.22).toFixed(2) + "s" },
-      [el("b", { text: t }), el("small", { text: me ? "bought" : held ? "held" : dist(i) % 2 < 1 ? "forced sell" : "rule fired" })]);
-  });
-  const spike = S("svg", { viewBox: "0 0 120 36", cls: "cg-spark", "aria-hidden": "true" }, [S("path", { d: "M0 30 L20 29 L36 31 L52 28 L66 29 L78 26 L88 10 L96 4 L104 8 L120 3" })]);
-  const film = el("button", { type: "button", cls: "link cg-film", text: "Watch this scene in the film" });
-  film.addEventListener("click", () => {
-    const f = D.layers.clips.problem, dlg = $("#film-dlg"), v = $("#film-v");
-    v.poster = "media/og-" + f[0] + ".jpg"; v.src = "media/og-" + f[0] + ".mp4#t=" + f[1]; dlg.showModal(); v.play().catch(() => {});
-  });
-  return el("div", { cls: "mo mo-cg" }, [
-    el("div", { cls: "cg-head" }, [
-      el("p", { cls: "as-me", text: C.ask }),
-      el("div", { cls: "cg-name" }, [el("b", { text: C.name }), el("small", { text: C.name_note }), spike]),
-      el("div", { cls: "cg-order" }, [el("code", { text: C.order }), el("span", { cls: "cg-stamp", text: "Not what you asked for" })]),
-    ]),
-    el("p", { cls: "mo-k", text: "The portfolio" }),
-    el("div", { cls: "cg-grid" }, tiles),
-    el("p", { cls: "mo-foot" }, [T("Each order trips the next rule, and the damage spreads. "), el("small", { cls: "cg-note", text: "Illustration, fictional tickers." }), film]),
-  ]);
 }
 
 function sequencer(o) {
@@ -1587,7 +1740,7 @@ async function boot() {
   drawAll();
   compareSetup();
   codeTabs();
-  for (const f of [thesisHero, storyStage, partMandate, partData, partRisk, partAdapter, partSuper, partFinal, partQueue, partLedger, together, scaleZoom, navDepth, sign3Scene, concScene, cfScene, loopScene, certScene]) {
+  for (const f of [heroFeatures, chapterRail, storyStage, partMandate, partData, partRisk, partAdapter, partSuper, partFinal, partQueue, partLedger, together, scaleZoom, navDepth, sign3Scene, concScene, cfScene, loopScene, certScene]) {
     try { f(); } catch (e) { console.error(f.name, e); }
   }
   for (const id of ["#gap", "#parts", "#j-time"]) { const l = $(id); if (l) revealList(l, "on", id === "#j-time" ? 1100 : 450); }
