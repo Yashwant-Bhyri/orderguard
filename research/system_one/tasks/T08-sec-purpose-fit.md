@@ -62,3 +62,14 @@ So each fund gives us a stated purpose (its name) and an actual book (its holdin
 - The gray areas are documented.
 - The data stays under 2 GB.
 - No email addresses or personal data anywhere.
+
+## Lead review, 2026-11-19 (it overrides review item 3)
+
+- **The SEC refusal is not a block for this task.** The Internet Archive copy of the SEC's own published 2026q2 N-PORT data set is accepted as the data source. In REPORT.md, document the archive URL, the file size, the sha256, and the fact that SEC returned 403 for a client name with no contact. **Do not write BLOCKED.md.** If `SEC_USER_AGENT` is set in a later run, fetch directly from the SEC and compare sha256s.
+- **Defer the live EDGAR check of the flagged sample (C5)** until a contact user agent is approved by the founder. Make it a one-command script, `verify_edgar.py`, that runs when `SEC_USER_AGENT` is set. Without it, the script prints "skipped: no SEC_USER_AGENT".
+- **Do review items 1, 2, 4, 5 and 7 in full:**
+  - the fund-level clean sample;
+  - the flagged sample drawn from headline flags;
+  - an emerging-markets test by country, not every non-US sovereign;
+  - pacing every request;
+  - judgement calls with their alternatives.
