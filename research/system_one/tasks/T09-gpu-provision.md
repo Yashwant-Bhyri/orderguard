@@ -82,3 +82,10 @@ The path for round 2: when `ssh -o BatchMode=yes orderguard-gpu true` succeeds f
 - **Scheduler first:** check for the university's scheduler (`sbatch`, `srun`, `qsub` or a module system). If one exists, follow its normal job process. If not, run directly.
 - **GPU use:** check `nvidia-smi` immediately before every run, and use one A6000 that shows near-zero memory and utilisation.
 - **Weights:** download them on the host into the folder above, with `HF_HOME` set there.
+
+## Host facts from the machine's administrator, 2026-11-19
+
+- The machine has CUDA 11 and CUDA 12. Pick the one that matches the torch build.
+- **Home has too little space.** Every environment, cache and checkpoint goes under `/data_ft_7/wilson`.
+- **GPU limit:** the administrator allows up to two cards. The founder's rule for this lab is stricter: **one GPU at a time.**
+- The account is shared with the founder's team. Never change shell profiles, keys or anything outside the workspace folder.
