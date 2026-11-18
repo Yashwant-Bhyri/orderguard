@@ -48,9 +48,30 @@ Every entry states **what would reverse it**. That is the exit condition, and it
 - **Why:** The founder's direction. Quoting papers to support choices already made is the self-justification failure we design against.
 - **Would reverse it:** none. This is how the lab works.
 
+### D8. Sprint S1: prove the core on ground truth we did not write
+- **Date:** 2026-11-19
+- **Status:** active
+- **Decision:** Before building anything else, a short burst tests six claims (C1–C6 in `research/system_one/SPRINT.md`) on worlds written by independent models and on real SEC fund data. Every pass bar is written before the tests run.
+- **Why:** The founder asked for tangible, robust proof within days. The 0.97 baseline showed that a world we write ourselves proves little.
+- **Would reverse it:** if T01's world cannot be made rich enough to judge, stop and redesign the world before testing any model.
+
+### D9. Division of labour
+- **Date:** 2026-11-19
+- **Status:** active
+- **Decision:**
+  - DeepSeek, through OpenCode Go, does the work.
+  - Other labs' models write the held-out worlds and the red team, so that the authors are truly independent.
+  - Codex Luna (`xhigh`) reviews every round adversarially, in a fresh run.
+  - Codex Sol (`high`) answers only escalations that Luna has written down.
+  - Haiku audits while the lead is present.
+  - A disk-backed runner keeps all of this moving without the lead. The lead reviews at checkpoints.
+- **Why:** Claude and Codex usage are both limited and can run out unpredictably. The work must keep a principle to follow while the lead is away.
+- **Would reverse it:** if review rounds keep passing work that the lead later finds broken, then reviews move to Sol, or the lead reviews every task.
+
 ### D7. One GPU, approval-gated, as its own campaign
 - **Date:** 2026-11-19
 - **Status:** active
 - **Decision:** GPU work runs through the founder's Codex lab chat and job controller, as a campaign separate from the robotics campaign. It uses one A6000 at a time, with weights and data staged in advance. The founder approves the campaign and its GPU-hour cap.
 - **Why:** That machine is shared with other students, jobs there are network-isolated, and the controller requires a protected approval file.
 - **Would reverse it:** dedicated compute.
+- **Update, 2026-11-19:** the founder approved testing or deploying any model on that machine, strictly one GPU at a time. T09 provisions it. No GPU operator may type a password: any step that needs one goes back to the founder.
