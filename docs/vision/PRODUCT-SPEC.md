@@ -228,6 +228,17 @@ Our additions (BUILT):
 
 **Status: PROPOSAL.** It stays a proposal in public. It is the potential the launch points to, not a feature.
 
+**Superseded in part (2026-11-19).** The exploration in [SYSTEM-ONE.md](SYSTEM-ONE.md) and the research report in [reports/](reports/) refine this section. In short:
+
+- The target becomes the owner's *endorsement probability*.
+- Agent-native failures become shapes in a decision-time provenance graph.
+- Purpose attribution borrows Brinson and Euler from finance.
+- System One works at six levels.
+- The calibration target is split between in-distribution and shifted data.
+- The name carries a risk: it is already used by a decision-model vendor.
+
+Where they differ from this section, they win.
+
 ### 6.1 What the founder proposed (2026-11-16)
 
 - A *System One for financial intelligence for agents*: a decision model that understands what "does this still serve the purpose it was delegated for" means.
