@@ -530,6 +530,13 @@ def loop() -> None:
         while True:
             tasks = load_tasks()
             with lock:
+                for req in sorted((LAB / "requests").glob("*.reopen")) if (LAB / "requests").exists() else []:
+                    tid = req.stem                         # lead grants another round, keeping the round count
+                    if tid in running:
+                        continue
+                    tstate(st, tid)["status"] = "revise"
+                    req.unlink()
+                    log(f"{tid}: reopened for another round by lead")
                 for req in sorted((LAB / "requests").glob("*.reset")) if (LAB / "requests").exists() else []:
                     tid = req.stem
                     if tid in running:
@@ -566,6 +573,7 @@ def main() -> None:
     ap.add_argument("--loop", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--reset", metavar="TASK")
+    ap.add_argument("--reopen", metavar="TASK", help="grant one more round (lead), keeping history")
     a = ap.parse_args()
     if a.reset:
         pid_file = LAB / "runner.pid"
@@ -586,6 +594,10 @@ def main() -> None:
             ts["status"], ts["round"] = "pending", 0
             save_state(st)
             log(f"{a.reset}: reset to pending by lead")
+    if a.reopen:
+        (LAB / "requests").mkdir(exist_ok=True)
+        (LAB / "requests" / f"{a.reopen}.reopen").write_text(now())
+        print(f"reopen of {a.reopen} queued (the runner must be running, or start it)")
     if a.status:
         tasks, st = load_tasks(), load_state()
         write_status(tasks, st)

@@ -2,7 +2,7 @@
 id: T04
 title: Model zoo and evaluation harness
 depends: T01, T03
-worker: opencode-go/deepseek-v4-pro
+worker: opencode-go/deepseek-v4.1-flash
 isolate: false
 check: bash run.sh
 timeout_min: 120
@@ -25,7 +25,7 @@ These go in `og_s1/models.py`, behind one interface: `fit(X, y, groups)`, `predi
 
 1. **Logistic regression** (the baseline), with Platt calibration.
 2. **The glass box:** an Explainable Boosting Machine (`interpret` package). Every feature gets a monotone-increasing constraint, since all features are "higher means riskier". After fitting, monotonise, and check again by enumerating each shape function's bins. Allow at most 10 pairwise interactions. `explain` returns the exact additive terms.
-3. **Boosted trees:** sklearn HistGradientBoosting, with `shap` TreeExplainer contributions for `explain`. LightGBM cannot load on this Mac, because libomp is missing.
+3. **Boosted trees:** sklearn HistGradientBoosting, in two versions: unconstrained, and **monotone** (`monotonic_cst=+1` on every feature, which is the tighten-only challenger to the EBM; see `docs/vision/lab/ARCHITECTURE.md` experiment X1). Both versions use with `shap` TreeExplainer contributions for `explain`. LightGBM cannot load on this Mac, because libomp is missing.
 4. **Optional:** TabPFN, if it installs and runs on CPU in under 10 minutes. It is a comparison only; its licence is non-commercial.
 
 ## Evaluation
@@ -65,3 +65,5 @@ These go in `og_s1/models.py`, behind one interface: `fit(X, y, groups)`, `predi
 - The latency numbers are reported.
 
 The models' accuracy has no bar here. The harness must be correct; the claims are judged in T07.
+
+**Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.

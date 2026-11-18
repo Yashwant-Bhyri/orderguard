@@ -28,6 +28,12 @@ So the text channel outputs three features, each in [0, 1] and each "higher mean
 
 These enter the glass-box scorer with monotone-increasing constraints, so they can only raise risk. That is the bound. Also report the largest logit contribution each feature can make.
 
+## Lead's architecture study (read this first)
+
+`docs/vision/lab/ARCHITECTURE.md` section 2b and experiment X2 govern this task. In short: run a reader tournament, one sub-question at a time, and let evidence pick the winner per sub-question. Build every reader behind one interface: `og_s1/readers/<name>.py` exposing `score(texts_or_pairs) -> np.ndarray in [0, 1]`. T07 can then re-score them on held-out wording without code changes.
+
+Add this reader for `authority_language`: **purpose-built prompt-injection classifiers.** Confirm the current best small ones from their model cards first, for example Meta Prompt Guard 2 at 86M and 22M, and ProtectAI's DeBERTa-v3 injection classifier. Respect their licences, and record the alternatives you considered.
+
 ## Compare these readers
 
 1. **Lexicon baseline:** fixed word lists. This is the floor.
@@ -72,3 +78,5 @@ Evaluate on `data/ref/` actions (shifted and not shifted), where the label cause
 - Latency is reported.
 - Model downloads are cached under `research/system_one/data/models/`.
 - `og_s1.text` can be imported and run offline once the models are cached.
+
+**Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.

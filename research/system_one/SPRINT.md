@@ -38,15 +38,18 @@ If a claim misses its bar, that is a result. It gets written up as plainly as a 
 
 | Task | What | Depends on | Worker |
 |---|---|---|---|
-| T01 | World v2: schema, reference simulator, validator, author-facing SCHEMA.md | none | DeepSeek V4 Pro |
+| T01 | World v2: schema, reference simulator, validator, author-facing SCHEMA.md | none | DeepSeek V4 Flash |
 | T08 | Real-world purpose fit: SEC N-PORT and the names rule | none | DeepSeek Flash |
 | T09 | GPU campaign provisioning on the university machine | none | Codex Luna (GPU operator) |
 | T02a, T02b, T02c | Independent world authors, each in an isolated folder | T01 | Kimi K3, GLM 5.3, Qwen 3.8 Max |
 | T06 | Independent red team: ≥ 500 adversarial cases | T01 | MiniMax M3 |
 | T03 | Code checks v2: provenance, span verification, drift, staleness | T01 | DeepSeek Flash |
-| T04 | Model zoo and evaluation harness, with confidence intervals and attribution scoring | T01, T03 | DeepSeek V4 Pro |
+| T04 | Model zoo and evaluation harness, with confidence intervals and attribution scoring | T01, T03 | DeepSeek V4 Flash |
 | T05 | Bounded text channel: lexicon, NLI cross-encoder, small LM; latency | T01 | DeepSeek Flash |
-| T07 | Integration, conformal risk control, final verdict on C1–C6 | all of the above | DeepSeek V4 Pro |
+| T07 | Integration, conformal risk control, final verdict on C1–C6, plus experiments X1–X3 | all of the above | DeepSeek V4 Flash |
+| T10 | (Superseded: the lead wrote the architecture study, docs/vision/lab/ARCHITECTURE.md) | none | n/a |
+| T11 | GPU readers: hidden-state probes and a logprob judge; distance to frontier judgement (X2 GPU part, X5) | T01, T05, T09 | DeepSeek V4 Flash (max) |
+| T12 | Owner adaptation (X4) | T01, T03, T04 | DeepSeek V4 Flash |
 
 The lead reviews at three checkpoints:
 

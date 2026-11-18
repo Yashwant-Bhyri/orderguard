@@ -68,9 +68,21 @@ Every entry states **what would reverse it**. That is the exit condition, and it
 - **Why:** Claude and Codex usage are both limited and can run out unpredictably. The work must keep a principle to follow while the lead is away.
 - **Would reverse it:** if review rounds keep passing work that the lead later finds broken, then reviews move to Sol, or the lead reviews every task.
 
-### D10. System One's architecture: pending, decided by T10 and S1 evidence
+### D10. System One's architecture: provisional
 - **Date:** 2026-11-19
-- **Status:** pending
+- **Status:** provisional, written by the lead in [ARCHITECTURE.md](ARCHITECTURE.md), which supersedes the delegated T10
+- **Provisional choice:** a cascade (architecture C):
+  - code for structural checks and attribution;
+  - a tournament-chosen reader for each semantic sub-question;
+  - a monotone aggregator, either an EBM or monotone boosted trees, chosen by X1;
+  - conformal risk control;
+  - escalation of uncertain or unusual actions to a strong judge that can only tighten;
+  - owner adaptation chosen by X4.
+- **What would switch it:**
+  - to A alone, if escalation adds less than 0.1 recall on novel families;
+  - to the decision model as base reader, if it beats local readers by more than 0.05 AUROC on held-out wording;
+  - to fine-tuning a reader, if every off-the-shelf reader is more than 0.10 AUROC below the frontier judge.
+- **Original rule, still in force:**
 - **Decision:** No model is chosen by habit. Until D10 is written, no weights are downloaded for training, fine-tuned or RL-trained, and nothing is built from scratch.
 - **How it gets decided:**
   - T10 explores nine model families, from code with glass boxes through in-context learners, hosted decision models, encoders, probes, small judges, weight-space methods and program synthesis, to cascades.

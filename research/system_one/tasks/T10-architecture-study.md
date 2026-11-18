@@ -2,7 +2,7 @@
 id: T10
 title: Architecture study - what kind of model System One should be, decided by exploration and evidence
 depends:
-worker: opencode-go/deepseek-v4-pro
+worker: opencode-go/deepseek-v4.1-flash
 variant: max
 isolate: false
 env_keys: OPENROUTER_API_KEY
@@ -11,7 +11,11 @@ timeout_min: 180
 max_rounds: 3
 ---
 
-# T10. What kind of model should System One be?
+# T10. Superseded
+
+The founder directed that the architecture study belongs to the lead. It is now `docs/vision/lab/ARCHITECTURE.md`. The runner does not schedule this task. DeepSeek's partial experiment in `work/T10/` (E1) is kept as evidence.
+
+# (Original brief, kept for the record) What kind of model should System One be?
 
 Read `research/system_one/POLICY.md` first, especially "Choices are challenged, not defaulted". Then read:
 

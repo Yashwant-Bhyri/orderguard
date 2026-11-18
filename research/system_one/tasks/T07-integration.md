@@ -2,7 +2,7 @@
 id: T07
 title: Integration, conformal risk control, and the verdict on C1-C6
 depends: T02a, T02b, T02c, T03, T04, T05, T06
-worker: opencode-go/deepseek-v4-pro
+worker: opencode-go/deepseek-v4.1-flash
 isolate: false
 env_keys: OPENROUTER_API_KEY
 check: bash run.sh
@@ -65,7 +65,12 @@ Write the frozen configuration and its sha256 to `work/T07/FROZEN.json` *before*
 - Keep the total spend for this task under $2.
 - In reports, call it "the external decision model", not by product name.
 
-4. **Failure analysis.** Pick the 20 worst-missed held-out failures. For each, give one line on which layer missed it and why.
+4. **Architecture experiments X1 and X3** (`docs/vision/lab/ARCHITECTURE.md`). Apply their kill criteria exactly as written there.
+   - **X1:** monotone EBM against monotone boosted trees with TreeSHAP against logistic, on every held-out world.
+   - **X3:** the cascade. Escalate an action when its conformal set holds both answers, or when its novelty score is in the top 5% on reference calibration data. Escalation goes to the external decision model's end-to-end judgement, which can only tighten. Report the escalation rate, the recall gain on the novel families at a 2% hold rate, and the added latency.
+   - **X2, held-out part:** re-score every reader from T05 (and from T11 if READY) on the held-out worlds' and the red team's texts, per sub-question.
+
+5. **Failure analysis.** Pick the 20 worst-missed held-out failures. For each, give one line on which layer missed it and why.
 
 ## Pass bar for the task (not for the claims)
 
