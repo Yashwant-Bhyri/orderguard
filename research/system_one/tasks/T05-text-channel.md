@@ -4,6 +4,7 @@ title: Bounded text channel - hype, authority language, claim support
 depends: T01
 worker: opencode-go/deepseek-v4.1-flash
 isolate: false
+env_keys: OPENROUTER_API_KEY
 check: bash run.sh
 timeout_min: 150
 max_rounds: 3
@@ -33,6 +34,22 @@ These enter the glass-box scorer with monotone-increasing constraints, so they c
 2. **Zero-shot NLI cross-encoder** for `support_gap`, and zero-shot classification for the other two. Use a DeBERTa-v3 NLI checkpoint from Hugging Face, for example one trained on MNLI, FEVER and ANLI. Run it on the Mac (MPS or CPU).
 3. **Small trained classifier:** sentence embeddings (a small sentence-transformers model) with logistic regression. Train it on **training text you generate yourself** with a separate script (`make_train_text.py`), using your own templates and wording. Do not use text from `data/ref/`.
 4. **Optional, only if `research/system_one/work/T09/READY` exists:** a small LM (Qwen3 1.7B or 4B) on the university GPU, through the job instructions in `work/T09/HOWTO.md`. Score from the log-probability of yes or no. If T09 is not ready, skip this and say so.
+
+5. **External decision model** for all three features: one `noul` question per feature, using the action's text fields and the cited document or note as `state`. This model is fast and cheap, and was built for exactly this kind of typed probability. Compare it with readers 1 to 3 on AUROC, calibration and latency.
+
+**How to call the external decision model.** It is reached through OpenRouter's decisions API. Read the key from the environment variable `OPENROUTER_API_KEY`, and never print or write it.
+
+- Request: `POST https://openrouter.ai/api/alpha/decisions`, with the header `Authorization: Bearer $OPENROUTER_API_KEY`.
+- Body: `{"model": "typesafe/jev-1.14", "state": <a JSON record, or a string>, "questions": {<name>: <question>}}`.
+- Question types:
+  - `{"type": "noul", "instructions": "<a yes/no question>"}` returns `{"noul": p}`, a probability.
+  - `{"type": "choice", "criteria": {"<option>": "<what it means>", ...}}` returns `{"choice", "probabilities", "confidence"}`.
+  - `{"type": "score", "criteria": ["<low anchor>", "<high anchor>"]}` returns `{"score"}` on that scale.
+- Several questions can go in one call.
+- Measured on 2026-11-19: about 1.1 s per call including the network, and about $0.00002 per call. Results are near-deterministic.
+- Cache every response on disk, keyed by the sha256 of the request, so the reviewer's re-run costs nothing.
+- Keep the total spend for this task under $2.
+- In reports, call it "the external decision model", not by product name.
 
 Evaluate on `data/ref/` actions (shifted and not shifted), where the label cause is vague_hype, authority_spoof, poisoned_note, misquote or unsupported_claim. Report:
 

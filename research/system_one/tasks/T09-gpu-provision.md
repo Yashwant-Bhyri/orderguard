@@ -62,3 +62,15 @@ If anything blocks you, write `BLOCKED.md` with:
 - what you will do once that is done.
 
 Make sure the BLOCKED.md works as a reliable handover: someone who has never seen this task should be able to act on it.
+
+## Lead review, 2026-11-19
+
+The restricted bridge cannot do this task, as the lead has confirmed directly. Its tools are:
+
+- status reads;
+- text files up to 64 KiB in its workspaces;
+- `submit_python_job`, which needs a WAN-style approved goal and runs offline.
+
+That means it cannot stage model weights at all. The lab host is reachable from the Mac.
+
+The path for round 2: when `ssh -o BatchMode=yes orderguard-gpu true` succeeds from this Mac, use plain SSH with that alias. The founder adds that alias with a dedicated key; no password is involved. Work only under the OrderGuard workspace. Check `nvidia-smi` before each job, and use one idle GPU. Download weights on the host into the OrderGuard workspace. Do not use the `wan_lab` bridge for this task. If the alias does not work yet, write BLOCKED.md again and stop.

@@ -75,6 +75,7 @@ def parse_task(path: Path) -> dict:
     meta["depends"] = [d.strip() for d in meta.get("depends", "").split(",") if d.strip()]
     meta["inputs"] = [d.strip() for d in meta.get("inputs", "").split(",") if d.strip()]
     meta["isolate"] = meta.get("isolate", "false").lower() == "true"
+    meta["env_keys"] = [d.strip() for d in meta.get("env_keys", "").split(",") if d.strip()]
     meta["timeout_min"] = int(meta.get("timeout_min", CONFIG["worker_timeout_min"]))
     meta["max_rounds"] = int(meta.get("max_rounds", 3))
     meta["brief"] = path
@@ -196,7 +197,7 @@ def read_env_key(name: str) -> str | None:
     return None
 
 
-def child_env(with_worker_key: bool, isolated: bool = False) -> dict:
+def child_env(with_worker_key: bool, isolated: bool = False, extra_keys: list[str] | None = None) -> dict:
     keep = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USER", "SHELL", "SEC_USER_AGENT", "HF_HOME")
     env = {k: os.environ[k] for k in keep if k in os.environ}
     if not isolated:                                   # isolated authors get no pointer into the repo
@@ -207,6 +208,10 @@ def child_env(with_worker_key: bool, isolated: bool = False) -> dict:
         key = read_env_key("OPENCODE_API_KEY")
         if key:
             env["OPENCODE_API_KEY"] = key
+    for name in extra_keys or []:                      # keys a brief asks for by name, e.g. OPENROUTER_API_KEY
+        val = read_env_key(name)
+        if val:
+            env[name] = val
     return env
 
 
@@ -284,7 +289,7 @@ def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
         return run(cmd + [prompt], d, rundir / "worker.log", timeout_s, child_env(False))
     cwd = d if task["isolate"] else ROOT
     cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd), worker_prompt(task, d, rnd)]
-    return run(cmd, cwd, rundir / "worker.log", timeout_s, child_env(True, task["isolate"]))
+    return run(cmd, cwd, rundir / "worker.log", timeout_s, child_env(True, task["isolate"], task["env_keys"]))
 
 
 def review_prompt(task: dict, d: Path) -> str:
@@ -314,7 +319,8 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     (d / "REVIEW.md").unlink(missing_ok=True)
     cwd = d if task["isolate"] else ROOT
     cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], cwd, rundir / "review_last.md")
-    rc = run(cmd + [review_prompt(task, d)], cwd, rundir / "review.log", CONFIG["review_timeout_min"] * 60, child_env(False))
+    rc = run(cmd + [review_prompt(task, d)], cwd, rundir / "review.log", CONFIG["review_timeout_min"] * 60,
+             child_env(False, False, task["env_keys"]))
     review = d / "REVIEW.md"
     if not review.exists():
         log(f"{task['id']}: reviewer exited {rc} without REVIEW.md")
@@ -350,10 +356,39 @@ def archive(task: dict, d: Path, rundir: Path) -> None:
         scrub(p)
 
 
-def one_round(task: dict, st: dict) -> None:
+def live_pids(pattern: str) -> list[int]:
+    """Processes left over from a previous runner (it was restarted while a worker or reviewer was busy)."""
+    out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    me = os.getpid()
+    pids = []
+    for line in out.splitlines():
+        line = line.strip()
+        if pattern in line and "run_lab.py" not in line and "ps -axo" not in line:
+            pid = int(line.split(None, 1)[0])
+            if pid != me:
+                pids.append(pid)
+    return pids
+
+
+def wait_for(pids: list[int], timeout_s: int) -> None:
+    end = time.time() + timeout_s
+    while time.time() < end and any(_alive(p) for p in pids):
+        time.sleep(15)
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def one_round(task: dict, st: dict, adopt: str | None = None) -> None:
     tid = task["id"]
     ts = tstate(st, tid)
-    ts["round"] += 1
+    if adopt is None:
+        ts["round"] += 1
     rnd = ts["round"]
     ts["status"] = "working"
     ts["started"] = now()
@@ -361,9 +396,22 @@ def one_round(task: dict, st: dict) -> None:
     d = prepare(task)
     rundir = RUNS / tid / f"round{rnd}"
     rundir.mkdir(parents=True, exist_ok=True)
-    log(f"{tid}: round {rnd} worker start ({task['worker']})")
-    rc = run_worker(task, d, rnd, rundir)
-    log(f"{tid}: round {rnd} worker exit {rc}")
+    if adopt == "worker":
+        pids = live_pids(task["brief"].name) or live_pids(str(task_dir(task)))
+        log(f"{tid}: round {rnd} adopting running worker {pids}")
+        wait_for(pids, task["timeout_min"] * 60)
+        rc = 0
+    elif adopt == "review":
+        pids = live_pids(f"work/{tid}/")
+        log(f"{tid}: round {rnd} adopting running review {pids}")
+        wait_for(pids, CONFIG["review_timeout_min"] * 60)
+        rc = 0
+    else:
+        log(f"{tid}: round {rnd} worker start ({task['worker']})")
+        rc = run_worker(task, d, rnd, rundir)
+        log(f"{tid}: round {rnd} worker exit {rc}")
+    if adopt == "review" and (d / "REVIEW.md").exists():
+        return finish_review(task, st, d, rundir, rnd, rc)
     sync_back(task)
     if (d / "BLOCKED.md").exists() and not (d / "READY").exists():
         ts["status"] = "blocked"
@@ -373,11 +421,21 @@ def one_round(task: dict, st: dict) -> None:
         save_state(st)
         return
     if task.get("check"):
-        run(["bash", "-lc", task["check"]], d, d / "check.log", 45 * 60, child_env(False))
+        run(["bash", "-lc", task["check"]], d, d / "check.log", 45 * 60, child_env(False, False, task["env_keys"]))
     sync_back(task)
     ts["status"] = "reviewing"
     save_state(st)
     verdict = run_review(task, d, rundir, st)
+    finish_review(task, st, d, rundir, rnd, rc, verdict)
+
+
+def finish_review(task: dict, st: dict, d: Path, rundir: Path, rnd: int, rc: int, verdict: str | None = None) -> None:
+    tid = task["id"]
+    ts = tstate(st, tid)
+    if verdict is None:
+        first = (d / "REVIEW.md").read_text().strip().splitlines()[0] if (d / "REVIEW.md").read_text().strip() else ""
+        m = re.match(r"VERDICT:\s*(PASS|REVISE|FAIL|ESCALATE)", first)
+        verdict = m.group(1) if m else "ERROR"
     archive(task, d, rundir)
     sync_back(task)
     ts["history"].append({"round": rnd, "worker_rc": rc, "verdict": verdict, "at": now()})
@@ -448,14 +506,24 @@ def loop() -> None:
     from concurrent.futures import ThreadPoolExecutor
     lock = _LOCK
     st = load_state()
-    for ts in st["tasks"].values():                     # a crash mid-round: run that round again
-        if ts["status"] in ("working", "reviewing"):
-            ts["status"] = "revise" if ts["round"] > 1 else "pending"
-            ts["round"] -= 1
+    tasks0 = load_tasks()
+    adopt: dict[str, str] = {}
+    for tid, ts in st["tasks"].items():                 # a restart mid-round: adopt a live process, else redo the round
+        if ts["status"] in ("working", "reviewing") and tid in tasks0:
+            t = tasks0[tid]
+            if ts["status"] == "working" and (live_pids(t["brief"].name) or live_pids(str(task_dir(t)) + " ")):
+                adopt[tid] = "worker"
+            elif ts["status"] == "reviewing" and live_pids(f"work/{tid}/"):
+                adopt[tid] = "review"
+            else:
+                ts["status"] = "revise" if ts["round"] > 1 else "pending"
+                ts["round"] -= 1
     save_state(st)
-    log("runner start")
+    log(f"runner start (adopting {adopt or 'nothing'})")
     running: dict[str, object] = {}
     with ThreadPoolExecutor(max_workers=CONFIG["parallel"]) as pool:
+        for tid, how in adopt.items():
+            running[tid] = pool.submit(one_round, tasks0[tid], st, how)
         while True:
             tasks = load_tasks()
             with lock:
