@@ -101,3 +101,16 @@ The model choice is not made yet; architecture study T10 makes it. So in this ta
   - run one smoke test: a fp16 and bf16 matmul throughput benchmark, plus a torch CUDA sanity check;
   - write HOWTO.md: how a Mac-side worker copies a script up with `scp` and runs it through `run_job.sh` with `ssh wilson-gpu`;
   - create READY when the wrapper and the smoke test work. Write SMOKE.md with the numbers.
+
+## Lead review 4, 2026-11-19: the idle rule was wrong (this supersedes the threshold in Lead review 3)
+
+"Under 1 GiB used" never holds on this shared host. Other students' processes keep 5–11 GB allocated even when their GPU is idle.
+
+**New rule:** a card qualifies when both of these hold:
+
+- its utilisation stays at or below 10% at every 2-second sample over 30 seconds;
+- it has at least the job's declared memory free. Default: 16 GiB. Jobs declare `ORDERGUARD_MIN_FREE_GIB`.
+
+Among qualifying cards, pick the one with the most free memory. Use one card only, as before.
+
+Update `run_job.sh` to this rule, run the smoke benchmark, and finish the task: SMOKE.md, HOWTO.md and READY. Do not touch or signal anyone else's processes.
