@@ -527,6 +527,15 @@ def loop() -> None:
         while True:
             tasks = load_tasks()
             with lock:
+                for req in sorted((LAB / "requests").glob("*.reset")) if (LAB / "requests").exists() else []:
+                    tid = req.stem
+                    if tid in running:
+                        continue                         # never reset a task mid-round; try again next loop
+                    ts = tstate(st, tid)
+                    ts["status"], ts["round"] = "pending", 0
+                    req.unlink()
+                    log(f"{tid}: reset to pending by lead")
+                save_state(st)
                 for tid in [k for k, f in running.items() if f.done()]:
                     exc = running.pop(tid).exception()
                     if exc:
@@ -556,11 +565,24 @@ def main() -> None:
     ap.add_argument("--reset", metavar="TASK")
     a = ap.parse_args()
     if a.reset:
-        st = load_state()
-        ts = tstate(st, a.reset)
-        ts["status"], ts["round"] = "pending", 0
-        save_state(st)
-        log(f"{a.reset}: reset to pending by lead")
+        pid_file = LAB / "runner.pid"
+        alive = False
+        if pid_file.exists():
+            try:
+                os.kill(int(pid_file.read_text()), 0)
+                alive = True
+            except (ProcessLookupError, ValueError):
+                pass
+        if alive:                                        # the running runner owns state.json: hand it a request
+            (LAB / "requests").mkdir(exist_ok=True)
+            (LAB / "requests" / f"{a.reset}.reset").write_text(now())
+            print(f"reset of {a.reset} queued for the running runner")
+        else:
+            st = load_state()
+            ts = tstate(st, a.reset)
+            ts["status"], ts["round"] = "pending", 0
+            save_state(st)
+            log(f"{a.reset}: reset to pending by lead")
     if a.status:
         tasks, st = load_tasks(), load_state()
         write_status(tasks, st)
