@@ -89,3 +89,15 @@ The path for round 2: when `ssh -o BatchMode=yes orderguard-gpu true` succeeds f
 - **Home has too little space.** Every environment, cache and checkpoint goes under `/data_ft_7/wilson`.
 - **GPU limit:** the administrator allows up to two cards. The founder's rule for this lab is stricter: **one GPU at a time.**
 - The account is shared with the founder's team. Never change shell profiles, keys or anything outside the workspace folder.
+
+## Lead review 3, 2026-11-19: scope cut (this supersedes "Goal" items (a) to (c) and steps 3 and 4)
+
+The model choice is not made yet; architecture study T10 makes it. So in this task:
+
+- **Do not** download Qwen, DeBERTa or any other model weights, and run no fine-tune.
+- **Do:**
+  - finish and verify the separate Python environment; reuse what round 1 installed if it is sound;
+  - write a model-agnostic job wrapper, `run_job.sh`, on the host. It picks one idle A6000 by `nvidia-smi` (memory under 1 GiB and utilisation under 5%), sets `CUDA_VISIBLE_DEVICES`, `HF_HOME` and the workspace paths, runs a given script with a timeout, logs to the workspace, and refuses if no GPU is idle;
+  - run one smoke test: a fp16 and bf16 matmul throughput benchmark, plus a torch CUDA sanity check;
+  - write HOWTO.md: how a Mac-side worker copies a script up with `scp` and runs it through `run_job.sh` with `ssh wilson-gpu`;
+  - create READY when the wrapper and the smoke test work. Write SMOKE.md with the numbers.

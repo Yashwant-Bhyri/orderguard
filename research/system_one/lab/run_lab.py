@@ -288,7 +288,10 @@ def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
         cmd = codex_cmd(CONFIG["gpu_model"], CONFIG["gpu_effort"], d, rundir / "worker_last.md")
         return run(cmd + [prompt], d, rundir / "worker.log", timeout_s, child_env(False))
     cwd = d if task["isolate"] else ROOT
-    cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd), worker_prompt(task, d, rnd)]
+    cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd)]
+    if task.get("variant"):
+        cmd += ["--variant", task["variant"]]
+    cmd.append(worker_prompt(task, d, rnd))
     return run(cmd, cwd, rundir / "worker.log", timeout_s, child_env(True, task["isolate"], task["env_keys"]))
 
 

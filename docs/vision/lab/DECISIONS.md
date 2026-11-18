@@ -68,6 +68,18 @@ Every entry states **what would reverse it**. That is the exit condition, and it
 - **Why:** Claude and Codex usage are both limited and can run out unpredictably. The work must keep a principle to follow while the lead is away.
 - **Would reverse it:** if review rounds keep passing work that the lead later finds broken, then reviews move to Sol, or the lead reviews every task.
 
+### D10. System One's architecture: pending, decided by T10 and S1 evidence
+- **Date:** 2026-11-19
+- **Status:** pending
+- **Decision:** No model is chosen by habit. Until D10 is written, no weights are downloaded for training, fine-tuned or RL-trained, and nothing is built from scratch.
+- **How it gets decided:**
+  - T10 explores nine model families, from code with glass boxes through in-context learners, hosted decision models, encoders, probes, small judges, weight-space methods and program synthesis, to cascades.
+  - It iterates its top designs against their strongest challengers.
+  - It runs the cheapest experiments that separate the final three.
+  - The S1 verdict (T07) adds the held-out evidence.
+- **Why:** The founder caught a defaulted choice: the first T09 brief staged Qwen and a QLoRA run before any architecture was decided. Every choice here now records its alternatives, and what evidence would flip it.
+- **Would reverse it:** n/a. This is a rule of process.
+
 ### D7. One GPU, approval-gated, as its own campaign
 - **Date:** 2026-11-19
 - **Status:** active

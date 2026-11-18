@@ -33,7 +33,7 @@ These enter the glass-box scorer with monotone-increasing constraints, so they c
 1. **Lexicon baseline:** fixed word lists. This is the floor.
 2. **Zero-shot NLI cross-encoder** for `support_gap`, and zero-shot classification for the other two. Use a DeBERTa-v3 NLI checkpoint from Hugging Face, for example one trained on MNLI, FEVER and ANLI. Run it on the Mac (MPS or CPU).
 3. **Small trained classifier:** sentence embeddings (a small sentence-transformers model) with logistic regression. Train it on **training text you generate yourself** with a separate script (`make_train_text.py`), using your own templates and wording. Do not use text from `data/ref/`.
-4. **Optional, only if `research/system_one/work/T09/READY` exists:** a small LM (Qwen3 1.7B or 4B) on the university GPU, through the job instructions in `work/T09/HOWTO.md`. Score from the log-probability of yes or no. If T09 is not ready, skip this and say so.
+4. **No GPU reader in this task.** Which model, if any, reads text on the GPU is decided by architecture study T10 and the lead's decision D10. Do not choose one here.
 
 5. **External decision model** for all three features: one `noul` question per feature, using the action's text fields and the cited document or note as `state`. This model is fast and cheap, and was built for exactly this kind of typed probability. Compare it with readers 1 to 3 on AUROC, calibration and latency.
 

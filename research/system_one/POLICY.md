@@ -86,3 +86,16 @@ The runner marks a checkpoint when a wave of tasks has passed or failed. Work ke
 ## Disk
 
 This laptop has about 20 GB free. The runner stops starting new work below 6 GB. Raw data stays under 2 GB per task, and model weights under 3 GB in total. Prefer base-size checkpoints over large ones on the Mac. Large models belong on the GPU machine.
+
+## Choices are challenged, not defaulted
+
+A model, method, dataset, metric or library is never picked because it is the usual one. Every significant choice is recorded in REPORT.md under "Judgement calls" as follows:
+
+- **The choice.**
+- **At least two real alternatives,** including at least one from a different paradigm. A classifier against an LLM against a decision model against code; training against in-context against weight-space editing.
+- **Why the choice wins on this project's criteria:** calibration under shift, robustness to adversarial text, latency, cost, data needed, time to working, debuggability, and provable bounds. "Popular" and "familiar" are not criteria.
+- **What evidence would flip the choice.** When that evidence appears, the choice is revisited.
+
+Reviewers fail any report whose major choices have no alternatives recorded.
+
+**No model weights are downloaded for training, fine-tuned or RL-trained until the lead's architecture decision (D10, from task T10) names the model and says why.** Inference with off-the-shelf models, to measure them, is allowed. Building a model from scratch is not on the table unless an experiment shows a gap that only that can close.
