@@ -74,3 +74,11 @@ The restricted bridge cannot do this task, as the lead has confirmed directly. I
 That means it cannot stage model weights at all. The lab host is reachable from the Mac.
 
 The path for round 2: when `ssh -o BatchMode=yes orderguard-gpu true` succeeds from this Mac, use plain SSH with that alias. The founder adds that alias with a dedicated key; no password is involved. Work only under the OrderGuard workspace. Check `nvidia-smi` before each job, and use one idle GPU. Download weights on the host into the OrderGuard workspace. Do not use the `wan_lab` bridge for this task. If the alias does not work yet, write BLOCKED.md again and stop.
+
+## Lead review 2, 2026-11-19 (this supersedes the alias and folder in "Lead review")
+
+- **SSH alias:** `wilson-gpu`, with a dedicated key and no password. It opens a normal shell. Use `orderguard-gpu` only if `wilson-gpu` does not exist.
+- **Folder:** keep every project file, environment, log, cache and checkpoint under `/data_ft_7/wilson/wan2.1_robotics_research/workspaces/claude_unrelated_test_20261119/`. Never touch the robotics campaign's own files, environment or controller.
+- **Scheduler first:** check for the university's scheduler (`sbatch`, `srun`, `qsub` or a module system). If one exists, follow its normal job process. If not, run directly.
+- **GPU use:** check `nvidia-smi` immediately before every run, and use one A6000 that shows near-zero memory and utilisation.
+- **Weights:** download them on the host into the folder above, with `HF_HOME` set there.
