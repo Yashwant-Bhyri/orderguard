@@ -256,12 +256,15 @@ def run(cmd: list[str], cwd: Path, logfile: Path, timeout_s: int, env: dict) -> 
         try:
             return p.wait(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            os.killpg(p.pid, signal.SIGTERM)
-            time.sleep(5)
-            try:
-                os.killpg(p.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            for sig in (signal.SIGTERM, signal.SIGKILL):      # macOS may refuse killpg on a group: fall back to the pid
+                try:
+                    os.killpg(p.pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    try:
+                        p.send_signal(sig)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                time.sleep(5)
             out.write(f"\n===== TIMEOUT after {timeout_s}s\n")
             return 124
 
@@ -344,7 +347,8 @@ def review_prompt(task: dict, d: Path) -> str:
         f"anything that would make the result weak or fragile. Do not edit the worker's code. Write REVIEW.md in {where}. Its "
         f"first line must be exactly one of: 'VERDICT: PASS', 'VERDICT: REVISE', 'VERDICT: FAIL', 'VERDICT: ESCALATE'. Then: "
         f"what you re-ran and what it printed; each pass-bar item with met/not met; a numbered list of required fixes in order "
-        f"of importance (for REVISE); loopholes found. PASS only if every pass-bar item is met and every number reproduces. Use "
+        f"of importance (for REVISE); loopholes found. Write REVIEW.md EARLY, with a provisional verdict line, and update it as you "
+        f"go, so a timeout never leaves you without a review. PASS only if every pass-bar item is met and every number reproduces. Use "
         f"ESCALATE only for a high-level question you cannot settle yourself: an architecture choice, whether a claim is sound, "
         f"or a methodology dispute. Never escalate a bug, a missing file, a style point or anything a REVISE can fix. Then also write ESCALATION.md with: the problem, what was "
         f"tried, the gray area, and one precise question, self-contained and under 600 words.")
