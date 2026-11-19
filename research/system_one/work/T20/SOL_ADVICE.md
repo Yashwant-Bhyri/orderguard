@@ -38,3 +38,23 @@ The lead drew 60 items from `handlabels.jsonl`, 15 per question kind, and remove
 
 - A decision model is acceptable as a **triage tool** only for questions where an independent reading agrees with our labels at least 0.85 of the time. Today that means `label_ok` and `finding_kind`. FinVerify categorisation needs a better reference before any model is scored on it. T19 and T24 should not use `finverify` labels from T20 as ground truth.
 - The 0.60 on `failure_kind` is a finding in itself. "Missing information" and "reasoning error" are not cleanly separable on unsourced claims. The taxonomy needs a rule for that case before it is used for training labels.
+
+## Addendum (2026-11-19, after round 5). It binds reviewers.
+
+The round-5 reviewer was right: the lead's blind items still carried `triage_rules`, and Haiku's reasons quote them. The lead reran the check with `triage_rules` removed (`blind_lead/items_norules.jsonl` → `labels_norules.jsonl`; counts in `blind_lead/agreement_norules.json`).
+
+| Question | Rule vs blind, rules shown | Rule vs blind, no rules | Reliable? |
+|---|---|---|---|
+| `finding_kind` | 0.93 | 0.93 (14/15) | **Yes**, the only one |
+| `label_ok` | 0.87 | 0.73 (22/30) | **No, not yet.** 6 of the 8 disagreements are the reference defect T31 fixes: the "clean" action argues about another stock, cites a figure from another company, or argues the wrong direction. There the blind reading is the right one. The other two (`ref:clean.shifted.jsonl:24:80`, `ref:poisoned_note.shifted.jsonl:188:33`) go to T31 to check |
+| `failure_kind` | 0.60 | 0.60 | No |
+| `finverify` | 0.53 | 0.47 | No |
+| `difficulty` (aligned) | 0.40 | 0.20 | No |
+
+**What changes for the final round (round 6):**
+1. Report both blind checks side by side, generated from the two agreement files, with one sentence on why the rerun was needed.
+2. **Rank only on `finding_kind`.** Report `label_ok` descriptively, with the note that its reference is defective until v2.1. State plainly that no hosted decision model is shown to beat the majority baseline on any reliable question.
+3. Make the reviewer's required fixes 1–5 from round 5.
+4. Do not re-fetch. The cache stays as it is.
+
+**After T31 passes,** the lab will rescore `label_ok` on reference v2.1. That needs no new spend for scoring, and at most $0.25 if new items are fetched. It is backlog item T32.
