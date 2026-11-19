@@ -52,6 +52,37 @@ def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Codex usage limits (2026-11-19): when Codex is out of quota, reviews and the steward fall back to DeepSeek at max
+# reasoning, Codex-worker tasks wait, escalations are skipped, and no round is spent on a quota failure.
+CODEX_DOWN_FILE = Path(__file__).resolve().parent / "codex_down_until"
+
+
+def codex_down() -> bool:
+    try:
+        until = CODEX_DOWN_FILE.read_text().strip()
+        return datetime.now(timezone.utc) < datetime.fromisoformat(until.replace("Z", "+00:00"))
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def quota_hit(log_file: Path) -> bool:
+    try:
+        return "hit your usage limit" in log_file.read_text(errors="ignore").rsplit("\n===== ", 1)[-1]
+    except FileNotFoundError:
+        return False
+
+
+def mark_codex_down(hours: float = 6) -> None:
+    from datetime import timedelta
+    until = (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    CODEX_DOWN_FILE.write_text(until)
+
+
+def deepseek_cmd(cwd: Path, variant: str = "max") -> list[str]:
+    return ["opencode", "run", "-m", CONFIG.get("fallback_model", "opencode-go/deepseek-v4.1-flash"), "--dir", str(cwd),
+            "--variant", variant]
+
+
 def log(msg: str) -> None:
     line = f"{now()} {msg}"
     with _LOCK:
@@ -327,10 +358,19 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     save_state(st)
     (d / "REVIEW.md").unlink(missing_ok=True)
     cwd = d if task["isolate"] else ROOT
-    cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], cwd, rundir / "review_last.md")
-    rc = run(cmd + [review_prompt(task, d)], cwd, rundir / "review.log", CONFIG["review_timeout_min"] * 60,
-             child_env(False, False, task["env_keys"]))
+    if codex_down():
+        log(f"{task['id']}: Codex is out of quota; reviewing with DeepSeek at max reasoning")
+        rc = run(deepseek_cmd(cwd) + [review_prompt(task, d)], cwd, rundir / "review.log",
+                 CONFIG["review_timeout_min"] * 60, child_env(True, task["isolate"], task["env_keys"]))
+    else:
+        cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], cwd, rundir / "review_last.md")
+        rc = run(cmd + [review_prompt(task, d)], cwd, rundir / "review.log", CONFIG["review_timeout_min"] * 60,
+                 child_env(False, False, task["env_keys"]))
     review = d / "REVIEW.md"
+    if not review.exists() and quota_hit(rundir / "review.log"):
+        mark_codex_down()
+        log(f"{task['id']}: Codex usage limit hit during review; round not counted, retrying with the fallback")
+        return "WAIT"
     if not review.exists():
         log(f"{task['id']}: reviewer exited {rc} without REVIEW.md")
         return "ERROR"
@@ -341,7 +381,7 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
 
 def run_escalation(task: dict, d: Path, rundir: Path, st: dict) -> bool:
     esc = d / "ESCALATION.md"
-    if not esc.exists() or not budget_ok(st, "escalations"):
+    if not esc.exists() or not budget_ok(st, "escalations") or codex_down():
         return False
     spend(st, "escalations")
     save_state(st)
@@ -410,6 +450,8 @@ def one_round(task: dict, st: dict, adopt: str | None = None) -> None:
         log(f"{tid}: round {rnd} adopting running worker {pids}")
         wait_for(pids, task["timeout_min"] * 60)
         rc = 0
+    elif adopt == "skipworker":
+        rc = 0
     elif adopt == "review":
         pids = live_pids(f"work/{tid}/")
         log(f"{tid}: round {rnd} adopting running review {pids}")
@@ -419,6 +461,13 @@ def one_round(task: dict, st: dict, adopt: str | None = None) -> None:
         log(f"{tid}: round {rnd} worker start ({task['worker']})")
         rc = run_worker(task, d, rnd, rundir)
         log(f"{tid}: round {rnd} worker exit {rc}")
+        if rc != 0 and task["worker"].startswith("codex") and quota_hit(rundir / "worker.log"):
+            mark_codex_down()
+            ts["round"] -= 1
+            ts["status"] = "pending" if ts["round"] == 0 else "revise"
+            save_state(st)
+            log(f"{tid}: Codex usage limit; round not counted, task waits for Codex")
+            return
     if adopt == "review" and (d / "REVIEW.md").exists():
         return finish_review(task, st, d, rundir, rnd, rc)
     sync_back(task)
@@ -480,6 +529,8 @@ def finish_review(task: dict, st: dict, d: Path, rundir: Path, rnd: int, rc: int
 def ready(task: dict, st: dict) -> bool:
     ts = tstate(st, task["id"])
     if ts["status"] not in ("pending", "revise"):
+        return False
+    if task["worker"].startswith("codex") and codex_down():
         return False
     return all(tstate(st, dep)["status"] == "passed" for dep in task["depends"])
 
@@ -551,6 +602,15 @@ def loop() -> None:
                     tstate(st, tid)["status"] = "revise"
                     req.unlink()
                     log(f"{tid}: reopened for another round by lead")
+                for req in sorted((LAB / "requests").glob("*.review")) if (LAB / "requests").exists() else []:
+                    tid = req.stem                         # lead (or a lead-run subagent) did the round's work
+                    if tid in running or tid not in tasks:
+                        continue
+                    req.unlink()
+                    ts = tstate(st, tid)
+                    ts["round"] += 1
+                    log(f"{tid}: round {ts['round']} work supplied by the lead; running check and review")
+                    running[tid] = pool.submit(one_round, tasks[tid], st, "skipworker")
                 for req in sorted((LAB / "requests").glob("*.reset")) if (LAB / "requests").exists() else []:
                     tid = req.stem
                     if tid in running:
@@ -628,6 +688,9 @@ def run_steward() -> int:
     rundir = ROOT / "runs" / "_steward" / now().replace(":", "")
     rundir.mkdir(parents=True, exist_ok=True)
     prompt = (LAB / "STEWARD_PROMPT.md").read_text()
+    if codex_down():
+        return run(deepseek_cmd(ROOT) + [prompt], ROOT, rundir / "steward.log", CONFIG["review_timeout_min"] * 60,
+                   child_env(True))
     cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], ROOT, rundir / "steward_last.md")
     return run(cmd + [prompt], ROOT, rundir / "steward.log", CONFIG["review_timeout_min"] * 60, child_env(False))
 
