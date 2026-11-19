@@ -583,6 +583,8 @@ def loop() -> None:
                 if free_gb() < CONFIG["min_free_gb"]:
                     log(f"disk low ({free_gb():.1f} GB); not starting new work")
                     todo = []
+                prio = CONFIG.get("priority", [])
+                todo.sort(key=lambda t: prio.index(t["id"]) if t["id"] in prio else len(prio))
                 for t in todo[: max(0, CONFIG["parallel"] - len(running))]:
                     tstate(st, t["id"])["status"] = "working"
                     running[t["id"]] = pool.submit(one_round, t, st)
