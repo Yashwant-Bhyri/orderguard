@@ -78,3 +78,5 @@ Write the frozen configuration and its sha256 to `work/T07/FROZEN.json` *before*
 - `FROZEN.json` was written before any held-out run; the reviewer checks the file timestamps and the logs.
 - Every number reproduces from `run.sh`.
 - Failed claims are reported as plainly as passed ones.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.

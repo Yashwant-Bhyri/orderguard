@@ -80,3 +80,5 @@ Evaluate on `data/ref/` actions (shifted and not shifted), where the label cause
 - `og_s1.text` can be imported and run offline once the models are cached.
 
 **Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.

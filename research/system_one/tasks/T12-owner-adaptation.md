@@ -58,3 +58,5 @@ Real owners differ. One tolerates momentum language. Another never wants small c
 - The kill criterion is applied, and the verdict is stated plainly.
 
 **Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.

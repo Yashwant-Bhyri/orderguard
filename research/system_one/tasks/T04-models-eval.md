@@ -67,3 +67,5 @@ These go in `og_s1/models.py`, behind one interface: `fit(X, y, groups)`, `predi
 The models' accuracy has no bar here. The harness must be correct; the claims are judged in T07.
 
 **Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.

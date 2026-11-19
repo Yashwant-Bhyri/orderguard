@@ -51,3 +51,5 @@ Every feature must be "higher means riskier", so the scorer can apply monotone c
 - For each cause group, the best-feature AUROC on the *shifted* reference data is ≥ 0.80, or REPORT.md explains why that cause cannot be caught structurally. That explanation is a valid result: those causes go to the text channel.
 
 **Leakage guard:** featurise and score only `og_s1.schema.model_view(episode)`. `meta` (which names the planted family) and `label` are for evaluation only. The reviewer checks this.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.

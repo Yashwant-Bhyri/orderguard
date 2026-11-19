@@ -68,3 +68,5 @@ It reproduces everything from cached outputs: the Mac-side cache, plus the host-
 - Every number reproduces from cache.
 - No more than two GPUs were ever used, which the wrapper's logs show.
 - Total API spend is at most $10.
+
+**Causal input (lead, after T01):** per-action features, readers and models must read only `og_s1.schema.model_view_at(episode, i)`, which holds just what was knowable at action *i*. The whole-episode `model_view` leaks the future: later documents, and the final status of each thesis. The reviewer checks this.
