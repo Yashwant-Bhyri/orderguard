@@ -74,8 +74,13 @@ def quota_hit(log_file: Path) -> bool:
 
 def mark_codex_down(hours: float = 6) -> None:
     from datetime import timedelta
-    until = (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    CODEX_DOWN_FILE.write_text(until)
+    until = datetime.now(timezone.utc) + timedelta(hours=hours)
+    try:                                   # never shorten a known, later reset time
+        known = datetime.fromisoformat(CODEX_DOWN_FILE.read_text().strip().replace("Z", "+00:00"))
+        until = max(until, known)
+    except (FileNotFoundError, ValueError):
+        pass
+    CODEX_DOWN_FILE.write_text(until.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
 
 def deepseek_cmd(cwd: Path, variant: str = "max") -> list[str]:
