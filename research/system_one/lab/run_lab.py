@@ -183,6 +183,7 @@ def write_opencode_config(d: Path, *, isolated: bool) -> None:
     cfg = {
         "$schema": "https://opencode.ai/config.json",
         "provider": {"opencode-go": {"options": {"apiKey": "{env:OPENCODE_API_KEY}"}}},
+        "snapshot": False,  # undo snapshots copied the whole repo (2.5 GB per run)
         "permission": {
             "edit": "allow",
             "webfetch": "allow",
