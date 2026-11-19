@@ -1,6 +1,6 @@
 # The System One lab: how we work without drifting
 
-Started 2026-11-19. These are the rules for every session, agent and GPU job that works on System One. They are short on purpose. Read this file, [DECISIONS.md](DECISIONS.md) and [QUESTIONS.md](QUESTIONS.md) before starting any work.
+Started 2026-11-19. These are the rules for every session, agent and GPU job that works on System One. They are short on purpose. Read this file, [DECISIONS.md](DECISIONS.md) and [QUESTIONS.md](QUESTIONS.md) before starting any work. The end-to-end plan is [BLUEPRINT.md](BLUEPRINT.md).
 
 ## The one question
 
