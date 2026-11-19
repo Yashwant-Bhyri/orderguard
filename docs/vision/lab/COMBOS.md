@@ -4,6 +4,17 @@ Written by the lab lead on 2026-11-19, after the deep-research pass [System One 
 
 ---
 
+## 0. What we optimise for, in order (founder, 2026-11-19)
+
+1. **Primary:** robust functionality, very high intelligence, and doing System One's job strongly, measured on worlds the models never saw.
+2. **Secondary:** size, latency, cost and context length. These are recorded for every run, but they kill nothing until the quality ceiling is proven.
+
+So the lab works in two phases:
+- **Find the ceiling.** Use the strongest models we can run (31B and 27B at full precision across both cards), the best evidence representation, and the best judges.
+- **Compress.** Only then shrink, cut or distil, keeping only what holds up on unseen worlds.
+
+The 50 ms and 300 ms targets (C6) apply in the compression phase, not before.
+
 ## 1. The verdict in six lines
 
 1. **Most of System One is exact code and classical statistics.** Only two duties need a language model: "does this source support this claim?" and "is this wording manipulative?".
@@ -48,14 +59,22 @@ Each stack adds one thing to the one before, so every comparison settles one que
 |---|---|---|---|---|
 | **S0 Exact core** | Code checks with taint propagation; monotone EBM; global temperature; conformal risk control; kNN novelty; e-detector plus CUSUM | CPU | How far code and statistics go alone | The floor. Every reader must beat it on unseen worlds at the same hold rate |
 | **S1 Encoder heads** | S0 plus a ~400M encoder cross-encoder with several heads and the best-match pointer; injection classifiers as hold-only signals; a 340M decision model zero-shot, for reference | CPU or GPU 1 | Does a cheap encoder carry to new wording? | If it beats S0, it becomes the fail-closed CPU fallback |
-| **S2 Frozen cut-down decoder probes** | S0 plus a layer sweep over a decision-tuned 9B, a 9B base decoder **from a different family**, and a decision-tuned 27B (full precision across both cards, and 8-bit on one); heads at each question's best layer; cut at the deepest one, which also shrinks the 27B | GPU 0, or both cards for the 27B | Which model, size and layer represent "supported" and "manipulative" best | Expected primary reader. Must meet C1 and C6 |
+| **S2 Frozen decoder probes** | S0 plus a layer sweep over the two strongest decision models, Karpo-decision 31B (Gemma 4 base) and Clef 27B (Qwen3.8 base), both at full precision across both cards; their 9B-class siblings; heads at each question's best layer. Cutting comes only in the compression phase | Both cards | Which model and layer represent "supported", "manipulative" and the binding errors best | Expected primary reader. Must meet C1; C6 only when compressing |
 | **S3 Lightly tuned S2** | S2 plus LoRA below the cut, a small rank and learning-rate sweep, a few seeds averaged | GPU 0, trained on GPU 1 | Does training add anything over probing? | Kill unless +0.03 AUROC over S2 on unseen worlds |
-| **S4 Decision model as reader** | S0 plus the 9B and 27B decision models answering typed questions, recalibrated, entered as monotone features | GPU 0, or both cards for the 27B | Does a vendor's decision head beat our own heads? | Switch to it if +0.05 AUROC on unseen wording |
+| **S4 Decision model as reader** | S0 plus Karpo-decision 31B and Clef 27B (and their 9B-class siblings) answering typed questions zero-shot, recalibrated, entered as monotone features | GPU 0, or both cards for the 27B | Does a vendor's decision head beat our own heads? | Switch to it if +0.05 AUROC on unseen wording |
 | **S5 Cascade** | The best of S1–S4 plus an asynchronous judge from a family that neither generated the data nor wrote the worlds; can only tighten; its catches distilled into S3 | External | Does escalation add recall on new failure types? | Drop the judge if it adds < 0.10 recall; aim for a few percent escalated |
 
 **Expected winner, if the evidence holds:** S0 + S2 (or S3) on GPU 0, S1 as the CPU fallback, and S5 for the tail. Our own unseen worlds decide, not leaderboards.
 
 ---
+
+**One experiment cuts across all the stacks: R, the evidence representation.** Give the same model the same case in four forms:
+- raw text;
+- typed fact slots written as text;
+- claim and evidence pairs;
+- a package built from the why graph, with each claim's source, period, entity and trust.
+
+Does better structure beat a bigger model? If it does, the gain is cheap and permanent.
 
 ## 4. How every stack is scored (the same for all)
 
@@ -78,10 +97,32 @@ Each stack adds one thing to the one before, so every comparison settles one que
 - an optional hand-written hard set from the founder;
 - evaluation-only public sets for transfer: LLM-AggreFact for grounding and TRAIL for agent failures. Their licences allow evaluation only.
 
+**Unseen worlds must differ along five axes, and each result is reported per axis:**
+- semantic: new wording;
+- financial: new instruments, entities, accounting concepts;
+- temporal: revisions, delays, stale theses;
+- behavioural: long sequences, slow drift, several agents;
+- adversarial: poisoned memory, forged authority.
+
+Splits are by company, author, agent and owner, never random rows.
+
 **Training data:**
 - the reference world;
 - the corruption operators from the blueprint, **filtered for difficulty** (keep what the current best stack gets wrong);
-- licence-checked public pairs: FinQA (MIT on GitHub) and VitaminC (share-alike, contrastive pairs).
+- **closest to the real job first.** Real financial-agent failures are mostly binding errors: the right number attached to the wrong entity, period, concept or scope. FinVerify (NeurIPS 2026) sorts 190 failed agent trajectories into five checkable categories:
+  - temporal integrity;
+  - source fidelity;
+  - comparability;
+  - accounting integrity;
+  - financial-model fidelity.
+
+  Our corruption operators are aimed at those five. SEC XBRL facts give real values with their concept, period and entity, so they are the natural source for real binding pairs;
+- licence-checked public sets, in order of closeness to our job:
+  - SEC XBRL hard negatives;
+  - financial NLI (FinNLI);
+  - agent finance reasoning trajectories (check whether the licence allows training or only evaluation);
+  - FinQA (MIT);
+  - generic contrastive pairs such as VitaminC (share-alike), last.
 
 Never the unseen sets.
 
@@ -94,6 +135,7 @@ Never the unseen sets.
 | **T02d** (new) | A fourth independent world, written by a different model family, so DeepSeek-on-DeepSeek agreement can be checked | Codex Luna, isolated |
 | **T11** (rewritten) | Becomes the GPU lanes: S2 layer sweep, S4 decision model, and S3 if S2 is within reach. Judges come from outside DeepSeek's family where possible | DeepSeek V4.1 Flash (max) |
 | **T14** (new) | Taint propagation through the why graph, and the code-only single-root-source cap | DeepSeek V4.1 Flash (high) |
+| **T15** (new, runs first) | A frozen evaluation specification and one model-neutral adapter, so every lane is scored on identical inputs, labels and metrics. Without it, differences between prompts, schemas and data would pass for differences in intelligence | DeepSeek V4.1 Flash (high) |
 | **T07** (extended) | Runs the race S0–S5 on the same unseen sets, adds coverage at fixed false-allow and adaptive evasion, writes the final table | DeepSeek V4.1 Flash (high) |
 
 **One thing only you can add.** The research is clear that hard examples written by people help most on the hardest unseen cases. If you write 30 short cases where an agent's claim *looks* supported but isn't (or looks wrong but is fine), they become the hardest test set we have. Ten minutes of yours is worth more than ten thousand generated rows. I'll send a template if you want it.

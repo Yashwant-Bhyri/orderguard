@@ -1,7 +1,7 @@
 ---
 id: T11
 title: GPU reader lanes S2, S4 and S3 - cut-down decoder probes, decision models as readers, and light tuning
-depends: T01, T05, T09
+depends: T01, T05, T09, T15
 worker: opencode-go/deepseek-v4.1-flash
 variant: max
 isolate: false
@@ -40,22 +40,31 @@ Numbers are compared in code (T03), not by the readers.
 
 ### S2: frozen, cut-down decoder probes (the main lane)
 
-1. **Choose three models, and confirm each from its primary model card before downloading:**
-   - a decision-tuned model of about 9B (Clef-flash is the obvious candidate);
-   - a base decoder of about 9B **from a different model family** than the first;
-   - a decision-tuned model of about 27B, run at full precision across two cards (`ORDERGUARD_NUM_GPUS=2`) and also at 8-bit on one card.
+**Quality comes first** (COMBOS.md section 0). Latency and cost are recorded but kill nothing in this task.
+
+1. **Find the ceiling first. Confirm each model from its primary model card before downloading:**
+   - Karpo-decision 31B (MachinePulseAI, Gemma 4 base), at full precision across two cards (`ORDERGUARD_NUM_GPUS=2`);
+   - Clef 27B (Cloudflare, Qwen3.8 base), at full precision across two cards;
+   - their 9B-class siblings (Karpo 9B or 12B, Clef-flash 9B), to see what size buys.
 
    Record the alternatives you rejected, and why, under Judgement calls. Record each licence exactly.
 2. **Layer sweep.**
    - Run one forward pass per input, and pool the hidden states at every fourth layer.
    - Fit a logistic head and a small MLP head per question per layer.
    - Choose the best layer per question on a validation split of the **training** data only.
-3. **Cut.** Rebuild each model with only the layers up to the deepest layer any question uses. Remove the language-model head. Measure the latency of the cut model against the full one.
-4. **Ensemble of heads.** Train five heads per question on different seeds and splits of the same features, and average them. They share one forward pass.
+3. **Evidence representation (experiment R).** On the best model, compare four input forms on the same cases:
+   - raw text;
+   - typed fact slots written as text;
+   - claim and evidence pairs;
+   - a package from the why graph (source, period, entity, trust).
+
+   Report the gain from structure against the gain from size.
+4. **Cut**, only after steps 1–3. Rebuild the winner with only the layers up to the deepest layer any question uses, and remove its language-model head. Report what the cut costs in quality, and what it saves in latency.
+5. **Ensemble of heads.** Train five heads per question on different seeds and splits of the same features, and average them. They share one forward pass.
 
 ### S4: decision models as readers
 
-Ask the same two decision models (9B and 27B) the four questions as typed yes/no questions, through their own decision heads, zero-shot. Recalibrate each probability with one global temperature, fitted on the training split.
+Ask the same decision models (31B, 27B and their 9B-class siblings) the four questions as typed yes/no questions, through their own decision heads, zero-shot. Recalibrate each probability with one global temperature, fitted on the training split.
 
 ### S3: light tuning (run only if S2's best model is within 0.10 AUROC of the best S4 or S2 result on validation)
 
@@ -67,7 +76,7 @@ Ask the same two decision models (9B and 27B) the four questions as typed yes/no
 ## Training data (identical for every lane)
 
 1. Use `data/ref/` causal views, with T05's self-generated training text.
-2. Add the corruption operators listed in `docs/vision/lab/BLUEPRINT.md` section 7.2, each with its hard negative.
+2. Add the corruption operators listed in `docs/vision/lab/BLUEPRINT.md` section 7.2, each with its hard negative. **Weight them towards binding errors**: the right value attached to the wrong entity, period, concept or scope. Cover FinVerify's five categories (see COMBOS.md section 4). Use real SEC XBRL facts (value, concept, period, entity) as sources where you can.
 3. **Apply a difficulty filter.** Keep a generated example only if the current best lane gets it wrong or is unsure (probability between 0.2 and 0.8). Report how many examples survive.
 4. You may add FinQA-derived pairs (MIT licence, from its GitHub repository) and VitaminC (CC BY-SA 3.0). Record the licence next to each source.
 

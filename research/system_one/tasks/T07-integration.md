@@ -1,7 +1,7 @@
 ---
 id: T07
 title: Integration, conformal risk control, and the verdict on C1-C6
-depends: T02a, T02b, T02c, T02d, T03, T04, T05, T06, T11, T14
+depends: T02a, T02b, T02c, T02d, T03, T04, T05, T06, T11, T14, T15
 worker: opencode-go/deepseek-v4.1-flash
 isolate: false
 env_keys: OPENROUTER_API_KEY
