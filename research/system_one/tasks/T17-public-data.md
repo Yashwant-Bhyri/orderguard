@@ -12,7 +12,7 @@ max_rounds: 4
 
 # T17. Public data, with licences, in our Case format
 
-Read `research/system_one/POLICY.md`, `docs/vision/lab/COMBOS.md` (section 4), `docs/vision/research_notes/System One functions and model combos/data_sources.md`, and `og_s1/eval/SPEC.md` from T15. Your task folder is `research/system_one/work/T17/`. Store data in `data/public/<source>/`, no more than 2 GB in total.
+Read `research/system_one/POLICY.md`, `docs/vision/lab/COMBOS.md` (section 4), `docs/vision/research_notes/System One functions and model combos/data_sources.md`, and `og_s1/eval/SPEC.md` from T15. Your task folder is `research/system_one/work/T17/`. Store raw downloads on the university host, in the OrderGuard workspace under `data/public/<source>/` (see `work/T09/HOWTO.md`). Convert them there with the host's CPUs. Copy back to the Mac only the converted cases, at most 500 MB in total, into `data/public/`.
 
 **Isolation rule:** do not open `work/T02*`, `work/T06`, `work/T16` or `data/heldout*`.
 
@@ -51,4 +51,4 @@ Rebuild every adapter from the cached downloads, print one table (source, licenc
 - Every source has a licence quoted from its primary page, and a usage class.
 - No `eval-only`, `research-only` or `excluded` source is reachable from any training loader. A test checks this.
 - Adapters produce valid Cases; spot-check 20 per source in REPORT.md.
-- Total data ≤ 2 GB.
+- Raw data stays on the host. At most 500 MB comes to the Mac.

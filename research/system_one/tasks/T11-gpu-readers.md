@@ -36,6 +36,8 @@ For each claim, note or rationale in the causal view (`og_s1.schema.model_view_a
 
 Numbers are compared in code (T03), not by the readers.
 
+**Storage:** weights, activations and feature caches stay on the host workspace. Only scores and small tables come back to the Mac.
+
 ## Lanes
 
 ### S2: frozen, cut-down decoder probes (the main lane)

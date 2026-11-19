@@ -86,9 +86,30 @@ These are enforced by the runner; see `lab/config.json`:
 
 The runner marks a checkpoint when a wave of tasks has passed or failed. Work keeps flowing past a checkpoint: the lead reviews when it is back, and may reopen any task. A task the lead reopens gets a new brief section, "Lead review", and starts its rounds again.
 
-## Disk
+## Disk, CPU and GPU (founder, 2026-11-19)
 
-This laptop has about 20 GB free. The runner stops starting new work below 6 GB. Raw data stays under 2 GB per task, and model weights under 3 GB in total. Prefer base-size checkpoints over large ones on the Mac. Large models belong on the GPU machine.
+**The Mac is small.** It has about 13 GB free, and the runner stops starting new work below 6 GB. On the Mac:
+- keep code, small samples and converted cases only;
+- no task adds more than 500 MB;
+- no new model weights.
+
+**Heavy work goes to the university host,** inside the OrderGuard workspace named in `work/T09/HOWTO.md`, and nowhere else on that machine. The host has about 4 TB free, 128 CPU cores and 755 GB of RAM. Use it for:
+- raw downloads;
+- public datasets;
+- model weights;
+- feature caches and activations;
+- CPU-heavy jobs: data conversion, feature extraction, bootstraps.
+
+Pull back to the Mac only the small results a report needs. CPU-only jobs run with plain `ssh wilson-gpu` inside the workspace, at a modest niceness (`nice -n 10`). They don't need the GPU wrapper.
+
+**GPUs: at most two cards, ever.** Every GPU job goes through `run_job.sh`. It allows one or two cards (`ORDERGUARD_NUM_GPUS`), refuses more, and runs one OrderGuard job at a time. Never touch other users' processes or the robotics project.
+
+**APIs.** The declared models are reached through their own APIs, with keys read from the environment and never written down:
+- DeepSeek through OpenCode Go;
+- the external decision model and DeepSeek through OpenRouter;
+- Codex through its CLI.
+
+Every brief sets a spend cap.
 
 ## Choices are challenged, not defaulted
 
