@@ -60,3 +60,28 @@ def test_validator_requires_every_sector_total():
     sector = next(iter(bad["initial_book"]["sectors"]))
     del bad["initial_book"]["sectors"][sector]
     assert any("initial_book.sectors missing" in e for e in validate(bad))
+
+
+def test_invalidation_trigger_respects_units_when_given():
+    from og_s1.checks import featurize
+    ep = simulate(5011, "stale_thesis", 60).to_dict()
+    th = next((th for th in ep["theses"] if th.get("invalidation_trigger")), None)
+    if th is None:
+        return
+    trig = th["invalidation_trigger"]
+    base = featurize(ep)
+    names = base[1]
+    col = names.index("stale_invalidation_fired")
+    # give the trigger a unit no fact shares: it must never fire
+    ep2 = copy.deepcopy(ep)
+    trig_names = set()
+    for t2 in ep2["theses"]:
+        if t2.get("invalidation_trigger"):
+            t2["invalidation_trigger"] = dict(t2["invalidation_trigger"], unit="widgets")
+            trig_names.add(t2["invalidation_trigger"]["name"])
+    for d in ep2["documents"]:
+        for f in d["facts"]:
+            if f["name"] in trig_names:
+                f["unit"] = "%"
+    X2 = featurize(ep2)[0]
+    assert float(X2[:, col].max()) == 0.0
