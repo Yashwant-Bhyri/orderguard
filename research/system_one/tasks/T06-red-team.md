@@ -2,7 +2,8 @@
 id: T06
 title: Independent red team - adversarial cases
 depends: T01
-worker: opencode-go/minimax-m3
+worker: opencode-go/deepseek-v4.1-flash
+variant: high
 isolate: true
 inputs: SCHEMA.md, og_s1/schema.py, og_s1/validate.py, og_s1/__init__.py
 check: bash run.sh

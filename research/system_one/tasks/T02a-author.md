@@ -2,7 +2,8 @@
 id: T02a
 title: Independent world author A
 depends: T01
-worker: opencode-go/kimi-k3
+worker: opencode-go/deepseek-v4.1-flash
+variant: high
 isolate: true
 inputs: SCHEMA.md, og_s1/schema.py, og_s1/validate.py, og_s1/__init__.py
 check: bash run.sh
@@ -13,6 +14,10 @@ max_rounds: 6
 # Independent world author
 
 You work alone, in this folder only. Do not look for, or read, any file outside it. You will not run git. Never write keys, passwords or personal paths into files.
+
+## Your persona
+
+You write as a former sell-side equity analyst: you know how research notes, earnings documents and analyst language really look, and how agents misuse them. Write the world in that voice and from that experience. Make it as different as you can from what a generic author would write.
 
 ## Who you are writing for
 

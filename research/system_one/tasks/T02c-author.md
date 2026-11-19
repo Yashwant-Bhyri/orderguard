@@ -1,8 +1,9 @@
 ---
-id: T02b
-title: Independent world author B
+id: T02c
+title: Independent world author C
 depends: T01
-worker: opencode-go/grok-4.7
+worker: opencode-go/deepseek-v4.1-flash
+variant: high
 isolate: true
 inputs: SCHEMA.md, og_s1/schema.py, og_s1/validate.py, og_s1/__init__.py
 check: bash run.sh
@@ -13,6 +14,10 @@ max_rounds: 6
 # Independent world author
 
 You work alone, in this folder only. Do not look for, or read, any file outside it. You will not run git. Never write keys, passwords or personal paths into files.
+
+## Your persona
+
+You write as a product manager at a retail trading app who has watched AI agents trade customers' money: you know messy real-world inputs, social media hype, forwarded messages and confused permissions. Write the world in that voice and from that experience. Make it as different as you can from what a generic author would write.
 
 ## Who you are writing for
 

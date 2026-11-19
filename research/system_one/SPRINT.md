@@ -41,8 +41,8 @@ If a claim misses its bar, that is a result. It gets written up as plainly as a 
 | T01 | World v2: schema, reference simulator, validator, author-facing SCHEMA.md | none | DeepSeek V4 Flash |
 | T08 | Real-world purpose fit: SEC N-PORT and the names rule | none | DeepSeek Flash |
 | T09 | GPU campaign provisioning on the university machine | none | Codex Luna (GPU operator) |
-| T02a, T02b, T02c | Independent world authors, each in an isolated folder | T01 | Kimi K3, Grok 4.7 (replaced GLM 5.3, which wrote nothing in 3 rounds), Qwen 3.8 Max |
-| T06 | Independent red team: ≥ 500 adversarial cases | T01 | MiniMax M3 |
+| T02a, T02b, T02c | Independent world authors, each in an isolated folder | T01 | DeepSeek V4.1 Flash, three separate isolated runs with different author personas |
+| T06 | Independent red team: ≥ 500 adversarial cases | T01 | DeepSeek V4.1 Flash, isolated |
 | T03 | Code checks v2: provenance, span verification, drift, staleness | T01 | DeepSeek Flash |
 | T04 | Model zoo and evaluation harness, with confidence intervals and attribution scoring | T01, T03 | DeepSeek V4 Flash |
 | T05 | Bounded text channel: lexicon, NLI cross-encoder, small LM; latency | T01 | DeepSeek Flash |
@@ -56,3 +56,10 @@ The lead reviews at three checkpoints:
 1. after T01, which freezes the world;
 2. after T02, T03 and T06;
 3. after T07.
+
+**Note on independence (2026-11-19).** At the founder's direction, every worker is DeepSeek. The held-out worlds are independent because of **isolation**, not because they come from different labs:
+- each author sees only SCHEMA.md and the validator;
+- each runs in a separate folder outside the repo, with its own persona;
+- none ever sees our features, models or reference simulator.
+
+Same-lab authorship is a known limit. T07 must report it next to C1.

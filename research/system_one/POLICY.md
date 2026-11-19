@@ -7,12 +7,15 @@ This policy binds every model that works here. Workers read it before every task
 | Role | Who | Does | Never does |
 |---|---|---|---|
 | Lead: scientist and head of tech and product | Claude (Opus) | Sets the sprint goal and claims, writes every brief, reviews at checkpoints, writes decisions | Bulk implementation |
-| Worker | DeepSeek V4.1 Flash, through OpenCode Go (`opencode-go/deepseek-v4.1-flash`); DeepSeek V4 Pro for the hardest tasks | Builds, runs, measures and writes REPORT.md | Run git; edit outside its task folder; change a brief's pass bar; make a decision |
-| Independent author | Other labs' models through OpenCode Go (Kimi, GLM, Qwen) | Writes held-out world generators and red-team text, without seeing our features or models | See anything except its own brief and the schema |
+| Worker | DeepSeek V4.1 Flash, through OpenCode Go (`opencode-go/deepseek-v4.1-flash`), at `high` or `max` reasoning for hard tasks | Builds, runs, measures and writes REPORT.md | Run git; edit outside its task folder; change a brief's pass bar; make a decision |
+| Independent author | DeepSeek V4.1 Flash in isolated folders, one persona per author | Writes held-out world generators and red-team text, without seeing our features or models | See anything except its own brief and the schema |
 | Reviewer | Codex `gpt-6-luna`, `xhigh` effort, a fresh run per review | Re-runs the checks, hunts loopholes, writes REVIEW.md with a verdict | Edit the worker's code; review with no brief |
-| Escalation reviewer | Codex `gpt-6.2-sol`, `high` effort | Answers one hard question from ESCALATION.md | Read anything except ESCALATION.md and the files it names |
-| Floating reviewer | Claude Haiku, only while the lead is present | Spot audits and second opinions | Anything else |
+| Escalation reviewer | Codex `gpt-6.2-sol`, `high` effort, only for high-level questions: architecture, a disputed verdict, a claim's soundness | Answers one hard question from an ESCALATION.md that Luna wrote | Read anything except ESCALATION.md and the files it names |
+| Floating reviewer | Claude Haiku, as required, while the lead is present | Spot audits and second opinions | Anything else |
+| Decision model (subject of study, not a worker) | The external decision model through OpenRouter | Is tested as a reader and judge, inside a brief's spend cap | Do work, review, or decide anything for the lab |
 | GPU operator | Codex `gpt-6-luna`, a fresh run with the lab bridge | Provisions and runs jobs on the university machine | Use more than one GPU; touch the robotics campaign; type a password |
+
+**The roster is closed (founder, 2026-11-19):** DeepSeek, the lead (Claude), Codex, the external decision model and Haiku, each only in its row above. No other lab's model is used for any role.
 
 ## Autonomy
 

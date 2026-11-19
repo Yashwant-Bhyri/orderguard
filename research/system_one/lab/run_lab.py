@@ -309,7 +309,8 @@ def review_prompt(task: dict, d: Path) -> str:
         f"first line must be exactly one of: 'VERDICT: PASS', 'VERDICT: REVISE', 'VERDICT: FAIL', 'VERDICT: ESCALATE'. Then: "
         f"what you re-ran and what it printed; each pass-bar item with met/not met; a numbered list of required fixes in order "
         f"of importance (for REVISE); loopholes found. PASS only if every pass-bar item is met and every number reproduces. Use "
-        f"ESCALATE only for a genuine gray area you cannot settle; then also write ESCALATION.md with: the problem, what was "
+        f"ESCALATE only for a high-level question you cannot settle yourself: an architecture choice, whether a claim is sound, "
+        f"or a methodology dispute. Never escalate a bug, a missing file, a style point or anything a REVISE can fix. Then also write ESCALATION.md with: the problem, what was "
         f"tried, the gray area, and one precise question, self-contained and under 600 words.")
 
 
