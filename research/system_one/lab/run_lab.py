@@ -340,7 +340,8 @@ def review_prompt(task: dict, d: Path) -> str:
     policy = "" if task["isolate"] else " and POLICY.md"
     return (
         f"You are the adversarial reviewer for one task in the OrderGuard System One research lab. Read {brief}{policy}, then the "
-        f"worker's REPORT.md and check.log in {where}. Nothing else is context: do not assume anything the files do not show. "
+        f"worker's REPORT.md and check.log in {where}. If SOL_ADVICE.md exists there, it is a binding ruling by the lead or the "
+        f"escalation reviewer: check that the work follows it. Nothing else is context: do not assume anything the files do not show. "
         f"Re-run the task's entry point yourself. Hunt for: test-set peeking or leakage, isolation breaches, metrics computed "
         f"wrongly, hard-coded or hand-typed results, seeds or thresholds chosen after seeing test data, numbers in REPORT.md that "
         f"do not match what the code prints, missing pass-bar items, overclaims, secrets or absolute home paths in files, and "
