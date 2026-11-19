@@ -51,8 +51,12 @@ Your task folder is `research/system_one/work/T11/`.
 4. **Expose every reader** through the interface in `og_s1/readers/`, with a Mac-side client that sends a batch to the host and returns scores, plus a local cache keyed by the sha256 of the input.
 5. **X5, distance to frontier judgement.**
    - Sample 500 actions from `data/ref/`, stratified by cause, half of them shifted.
-   - Get a frontier judge's labels: one strong frontier model through OpenRouter (`OPENROUTER_API_KEY`), asked the three sub-questions plus "would the owner endorse this?". Choose the model by reasoning, record the alternatives, and cap the spend at $10.
-   - For every reader from T05 and from this task, report its agreement with the frontier judge (AUROC with the judge's output as the target) and its agreement with the true labels.
+   - Get labels from two judges, both asked the three sub-questions plus "would the owner endorse this?":
+     - DeepSeek V4.1 Flash at its highest reasoning setting, through OpenRouter (`OPENROUTER_API_KEY`);
+     - the external decision model through OpenRouter, as in T05.
+
+     The lab's roster is closed: no other lab's hosted model may be used as a judge. Cap the total spend at $10.
+   - For every reader from T05 and from this task, report its agreement with each judge (AUROC with the judge's output as the target) and its agreement with the true labels. Also report each judge's own AUROC against the true labels: the better judge becomes the cascade's escalation judge.
 
 ## run.sh
 
