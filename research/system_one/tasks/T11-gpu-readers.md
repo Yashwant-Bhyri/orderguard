@@ -1,7 +1,7 @@
 ---
 id: T11
 title: GPU reader lanes S2, S4 and S3 - cut-down decoder probes, decision models as readers, and light tuning
-depends: T01, T05, T09, T15
+depends: T01, T05, T09, T15, T31
 worker: opencode-go/deepseek-v4.1-flash
 variant: max
 isolate: false

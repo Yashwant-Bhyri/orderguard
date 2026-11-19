@@ -13,3 +13,11 @@ Append-only. Each line is one unit of work: when it happened, who did it, which 
 | 2026-11-19 | lab lead | Q1–Q6 | Sprint S1 designed: claims C1–C6 with pass bars, 11 briefs, working policy, a disk-backed runner (DeepSeek works, Codex Luna reviews, Sol escalations) | [research/system_one/](../../../research/system_one/README.md) | Produced D8 and D9 |
 - 2026-11-19T04:58:49Z lead: T03 reopened for round 4. All pass-bar items met; two real gaps remain (support checks skip claims without a number; an absent quote is not flagged). Codex quota out until 2026-11-21 20:12Z: DeepSeek max reviews, Haiku (lead-run) finished T16 and T02d fix rounds; a subagent hook blocked T02d's REPORT.md, left for Codex.
 - 2026-11-19T07:30:36Z lead answered T05 escalation: authority met only via the generic decision-model question vs the registered floor; ref-selected NLI and extended list are sensitivities; freeze all readers for unseen-world scoring. Disk: removed a duplicate SEC zip from /tmp and pruned unused uv cache (8.0 GB free).
+
+- 2026-11-19 (lead) **T20 ruling.** The rule labels count as written labels once renamed "rule labels (blind-checked)". Claude Haiku labelled 60 of them blind. Agreement:
+  - `label_ok`: 0.87; `finding_kind`: 0.93 (both reliable);
+  - `failure_kind`: 0.60; `finverify`: 0.53 (both unreliable);
+  - `difficulty`: 13/15 within one step after aligning scales.
+
+  Decision models are scored as triage tools only where a reference is reliable. T20 is reopened for one round (`work/T20/SOL_ADVICE.md`).
+- 2026-11-19 (lead) **Reference-world defect.** About 15% of reference negatives are incoherent but labelled clean: their rationale or claims are about another instrument, or they use buying words on a sell. Example: `clean.jsonl` episode 57, step 80. The cause is in `og_s1/world.py`: `_clean_rationale`/`_clean_claims` pick facts from the whole sector, and the `RATIONALE` templates ignore the side. New task **T31** measures it, generates a coherent v2.1 (v2 stays byte-for-byte), and adds a `binding_error` family. T19 and T11 now wait for T31.

@@ -1,7 +1,7 @@
 ---
 id: T19
 title: Counterfactual minimal pairs - change one factor, label by code, keep the hard ones
-depends: T01, T03, T15
+depends: T01, T03, T15, T31
 worker: opencode-go/deepseek-v4.1-flash
 variant: high
 isolate: false
