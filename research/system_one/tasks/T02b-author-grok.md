@@ -54,3 +54,12 @@ You are an **independent author**. Your job is to write a generator of realistic
 5. Judgement calls
 6. Loopholes I checked
 7. Open risks
+
+## Working method (this matters: earlier attempts wrote nothing)
+
+Build in small steps. Never put more than about 250 lines into a single file write.
+
+1. **First,** write a minimal `generator.py` that produces one valid `clean` episode. Write `run.sh`. Run the validator on it. Get 0 errors before doing anything else.
+2. **Then** add one family at a time, each in its own module file (for example `fam_drift.py`), validating after each.
+3. **Write REPORT.md early,** and update it as you go, so partial progress is never lost.
+4. **Keep going** until every item in the pass bar is met.

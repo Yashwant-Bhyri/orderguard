@@ -423,6 +423,14 @@ def one_round(task: dict, st: dict, adopt: str | None = None) -> None:
         log(f"{tid}: BLOCKED — see work/{tid}/BLOCKED.md")
         save_state(st)
         return
+    if task["worker"] != "codex-gpu" and not (d / "REPORT.md").exists():
+        # the worker produced no report: retry without spending a review
+        ts["history"].append({"round": rnd, "worker_rc": rc, "verdict": "NO-OUTPUT", "at": now()})
+        ts["status"] = "revise" if rnd < task["max_rounds"] else "needs-lead"
+        archive(task, d, rundir)
+        log(f"{tid}: round {rnd} produced no REPORT.md; review skipped ({ts['status']})")
+        save_state(st)
+        return
     if task.get("check"):
         run(["bash", "-lc", task["check"]], d, d / "check.log", 45 * 60, child_env(False, False, task["env_keys"]))
     sync_back(task)
