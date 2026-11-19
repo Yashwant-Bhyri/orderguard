@@ -562,15 +562,24 @@ def loop() -> None:
                 save_state(st)
                 for tid in [k for k, f in running.items() if f.done()]:
                     exc = running.pop(tid).exception()
-                    if exc:
+                    if exc and tid.startswith("_"):
+                        log(f"{tid}: error {exc!r}")
+                    elif exc:
                         log(f"{tid}: runner error {exc!r}")
                         tstate(st, tid)["status"] = "needs-lead"
                 checkpoints(tasks, st)
                 write_status(tasks, st)
                 todo = [t for t in tasks.values() if t["id"] not in running and ready(t, st)]
-                if not running and not todo:
-                    log("nothing left to run; runner exits")
-                    break
+                if not [k for k in running if not k.startswith("_")] and not todo:
+                    promoted = promote_backlog(tasks, st)       # never stall: lead-approved backlog first, then the steward
+                    if promoted:
+                        log(f"idle: promoted {promoted} from the backlog")
+                        continue
+                    if "_steward" not in running and steward_due(st):
+                        st["last_steward"] = now()
+                        save_state(st)
+                        log("idle: starting the steward")
+                        running["_steward"] = pool.submit(run_steward)
                 if free_gb() < CONFIG["min_free_gb"]:
                     log(f"disk low ({free_gb():.1f} GB); not starting new work")
                     todo = []
@@ -580,6 +589,45 @@ def loop() -> None:
             time.sleep(20)
     write_status(load_tasks(), st)
     pidfile.unlink(missing_ok=True)
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Never stall (founder, 2026-11-19): when nothing is runnable, promote a lead-approved backlog brief whose dependencies
+# have passed; if there is none, run the steward (Codex Luna) at most once every few hours to diagnose and propose.
+BACKLOG = LAB / "backlog"
+
+
+def promote_backlog(tasks: dict, st: dict) -> str | None:
+    if not BACKLOG.exists():
+        return None
+    for f in sorted(BACKLOG.glob("*.md")):
+        m = re.search(r"^depends:\s*(.*)$", f.read_text(), flags=re.M)
+        deps = [d.strip() for d in (m.group(1) if m else "").split(",") if d.strip()]
+        if all(st["tasks"].get(d, {}).get("status") == "passed" for d in deps):
+            target = ROOT / "tasks" / f.name
+            if not target.exists():
+                f.rename(target)
+                return f.stem
+    return None
+
+
+def steward_due(st: dict) -> bool:
+    last = st.get("last_steward")
+    if not last:
+        return True
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds() \
+            > CONFIG.get("steward_every_h", 3) * 3600
+    except ValueError:
+        return True
+
+
+def run_steward() -> int:
+    rundir = ROOT / "runs" / "_steward" / now().replace(":", "")
+    rundir.mkdir(parents=True, exist_ok=True)
+    prompt = (LAB / "STEWARD_PROMPT.md").read_text()
+    cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], ROOT, rundir / "steward_last.md")
+    return run(cmd + [prompt], ROOT, rundir / "steward.log", CONFIG["review_timeout_min"] * 60, child_env(False))
 
 
 def main() -> None:

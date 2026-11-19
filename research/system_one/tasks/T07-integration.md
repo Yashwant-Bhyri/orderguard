@@ -105,3 +105,5 @@ Report the T02d results next to the mean of T02a, T02b and T02c. A large gap mea
 The S5 judge must be the external decision model, not DeepSeek.
 
 End with one table: the stack the evidence picks, the runner-up, and every keep-or-kill rule in COMBOS.md section 3 marked as met or not met.
+
+If T21 has passed, quote its split of misses into missing information and reasoning failure. It decides whether the next investment goes to the harness or to the model.

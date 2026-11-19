@@ -29,6 +29,13 @@ Every lane (code-only, encoders, decoder probes, decision models, judges) must b
    - its trust and provenance fields.
 
    It is the one input every reader receives.
+
+   Every label carries a `truth_type`:
+   - `formal`: decidable by rules;
+   - `evidential`: needs reading the source;
+   - `preference`: depends on the owner's purpose.
+
+   Report every metric per truth type. Synthetic labels never stand in for real owner preference.
 2. **Four renderings of a Case,** for experiment R:
    - raw text;
    - typed fact slots written as text;

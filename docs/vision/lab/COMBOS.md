@@ -138,4 +138,42 @@ Never the unseen sets.
 | **T15** (new, runs first) | A frozen evaluation specification and one model-neutral adapter, so every lane is scored on identical inputs, labels and metrics. Without it, differences between prompts, schemas and data would pass for differences in intelligence | DeepSeek V4.1 Flash (high) |
 | **T07** (extended) | Runs the race S0–S5 on the same unseen sets, adds coverage at fixed false-allow and adaptive evasion, writes the final table | DeepSeek V4.1 Flash (high) |
 
+| **T16** (new) | The capability benchmark: 600+ product-level scenarios in eight types, written by a different model family, each with decisive evidence and a truth type | Codex Luna, isolated |
+| **T17** (new) | Public data adapters and a licence audit, closest to the job first; no evaluation-only data can reach training | DeepSeek V4.1 Flash (high) |
+| **T19** (new) | Counterfactual minimal pairs: change one factor, label by code, keep the hard ones | DeepSeek V4.1 Flash (high); V4 Pro only for hard evidential cases |
+| **T20** (new) | A triage service on hosted decision models, with a comparison of the ones on OpenRouter | DeepSeek V4.1 Flash (high) |
+| **T21, T23** (backlog) | Is the why graph enough? Then train the heads on the pairs. Promoted automatically when their dependencies pass | DeepSeek V4.1 Flash |
+
+**Execution order:**
+1. T15, T16, T17 and T20 now.
+2. T19 and T14 when T03 and T15 pass.
+3. T11 when T05 and T15 pass, then T21 and T23.
+4. T07 last.
+
+**The lab never stalls.** When nothing is runnable, the runner promotes the next backlog brief whose dependencies have passed. If there is none, it runs a steward (Codex Luna, at most every 3 hours). The steward:
+- reopens tasks that failed on infrastructure;
+- proposes new briefs into the backlog, tied to this plan;
+- writes `lab/STEWARD.md`.
+
+It never changes a pass bar or makes a decision. The Mac is kept awake while the runner runs.
+
+## 6. What we took from the founder-shared master plan (2026-11-19)
+
+**Taken:**
+- three kinds of truth on every label: formal, evidential, preference (T15);
+- the capability benchmark with eight product scenarios (T16);
+- "change one factor" counterfactual pairs as the main training paradigm (T19, T23);
+- separating missing information from reasoning failure (T21);
+- hosted decision models as a triage and monitoring service (T20);
+- Clef and Karpo on equal footing, with Clef first for adaptation because its trainable head ships with code.
+
+**Adjusted:**
+- DeepSeek V4 Pro teaches only the hard evidential cases. It never grades evaluation, because DeepSeek also generates our data.
+- Karpo's licence is reported differently by different sources (Apache-2.0 vs a community licence with a revenue threshold). T11 records the exact licence from the repository revision it downloads.
+
+**Not yet:**
+- latent-reasoning modules;
+- RL on the whole system;
+- any compression before the ceiling is known.
+
 **One thing only you can add.** The research is clear that hard examples written by people help most on the hardest unseen cases. If you write 30 short cases where an agent's claim *looks* supported but isn't (or looks wrong but is fine), they become the hardest test set we have. Ten minutes of yours is worth more than ten thousand generated rows. I'll send a template if you want it.
