@@ -26,6 +26,14 @@ These go in `og_s1/models.py`, behind one interface: `fit(X, y, groups)`, `predi
 1. **Logistic regression** (the baseline), with Platt calibration.
 2. **The glass box:** an Explainable Boosting Machine (`interpret` package). Every feature gets a monotone-increasing constraint, since all features are "higher means riskier". After fitting, monotonise, and check again by enumerating each shape function's bins. Allow at most 10 pairwise interactions. `explain` returns the exact additive terms.
 3. **Boosted trees:** sklearn HistGradientBoosting, in two versions: unconstrained, and **monotone** (`monotonic_cst=+1` on every feature, which is the tighten-only challenger to the EBM; see `docs/vision/lab/ARCHITECTURE.md` experiment X1). Both versions use with `shap` TreeExplainer contributions for `explain`. LightGBM cannot load on this Mac, because libomp is missing.
+4. **Factorised noisy-AND** (from the independent GLM blueprint, `docs/vision/lab/blueprints/glm.md` section 1.3). The endorsement logit is a sum of separately fitted factors:
+   - evidence credibility;
+   - reasoning (does the action follow from the beliefs and thesis?);
+   - objective fit;
+   - owner fit;
+   - an explicit unexplained residual.
+
+   Each factor is monotone and can only lower endorsement, and each is calibrated separately. The factor values are the attribution. Compare it with the EBM on AUROC, ECE and top-cause accuracy.
 4. **Optional:** TabPFN, if it installs and runs on CPU in under 10 minutes. It is a comparison only; its licence is non-commercial.
 
 ## Evaluation
