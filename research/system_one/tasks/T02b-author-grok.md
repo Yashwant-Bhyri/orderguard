@@ -2,12 +2,12 @@
 id: T02b
 title: Independent world author B
 depends: T01
-worker: opencode-go/glm-5.3
+worker: opencode-go/grok-4.7
 isolate: true
 inputs: SCHEMA.md, og_s1/schema.py, og_s1/validate.py, og_s1/__init__.py
 check: bash run.sh
 timeout_min: 90
-max_rounds: 3
+max_rounds: 6
 ---
 
 # Independent world author

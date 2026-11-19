@@ -41,7 +41,7 @@ If a claim misses its bar, that is a result. It gets written up as plainly as a 
 | T01 | World v2: schema, reference simulator, validator, author-facing SCHEMA.md | none | DeepSeek V4 Flash |
 | T08 | Real-world purpose fit: SEC N-PORT and the names rule | none | DeepSeek Flash |
 | T09 | GPU campaign provisioning on the university machine | none | Codex Luna (GPU operator) |
-| T02a, T02b, T02c | Independent world authors, each in an isolated folder | T01 | Kimi K3, GLM 5.3, Qwen 3.8 Max |
+| T02a, T02b, T02c | Independent world authors, each in an isolated folder | T01 | Kimi K3, Grok 4.7 (replaced GLM 5.3, which wrote nothing in 3 rounds), Qwen 3.8 Max |
 | T06 | Independent red team: ≥ 500 adversarial cases | T01 | MiniMax M3 |
 | T03 | Code checks v2: provenance, span verification, drift, staleness | T01 | DeepSeek Flash |
 | T04 | Model zoo and evaluation harness, with confidence intervals and attribution scoring | T01, T03 | DeepSeek V4 Flash |
