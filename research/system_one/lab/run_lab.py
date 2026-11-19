@@ -248,6 +248,19 @@ def child_env(with_worker_key: bool, isolated: bool = False, extra_keys: list[st
 
 def run(cmd: list[str], cwd: Path, logfile: Path, timeout_s: int, env: dict) -> int:
     logfile.parent.mkdir(parents=True, exist_ok=True)
+    oc_data = None
+    if cmd and cmd[0] == "opencode":                     # a private, throwaway OpenCode store per run: the shared
+        oc_data = logfile.parent / f".ocdata-{os.getpid()}-{int(time.time())}"   # opencode.db grew by GBs a day
+        oc_data.mkdir(parents=True, exist_ok=True)
+        env = dict(env, XDG_DATA_HOME=str(oc_data))
+    try:
+        return _run(cmd, cwd, logfile, timeout_s, env)
+    finally:
+        if oc_data is not None:
+            shutil.rmtree(oc_data, ignore_errors=True)
+
+
+def _run(cmd: list[str], cwd: Path, logfile: Path, timeout_s: int, env: dict) -> int:
     with logfile.open("a") as out:
         out.write(f"\n===== {now()} {' '.join(cmd[:4])} ... (cwd={cwd.name})\n")
         out.flush()
