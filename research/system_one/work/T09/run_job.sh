@@ -140,9 +140,9 @@ for idx in "${!a6000_seen[@]}"; do
   fi
 done
 
-best_idx=
-best_free=-1
-best_mean=1000
+num_gpus=${ORDERGUARD_NUM_GPUS:-1}
+[[ "$num_gpus" == 1 || "$num_gpus" == 2 ]] || fail "ORDERGUARD_NUM_GPUS must be 1 or 2 (the OrderGuard cap is two cards)"
+candidates=()
 for idx in "${!a6000_seen[@]}"; do
   free_mib=${last_free[$idx]:-0}
   n=${util_n[$idx]:-0}
@@ -150,21 +150,20 @@ for idx in "${!a6000_seen[@]}"; do
   mean=$(( ${util_sum[$idx]} / n ))
   printf "gpu %s: mean_util=%s%% over %s samples, free=%s MiB\n" "$idx" "$mean" "$n" "$free_mib" | tee -a "$log_file"
   if [[ ${stable[$idx]:-0} == 1 ]] && (( free_mib >= min_free_mib && mean <= max_mean_util )); then
-    if (( mean < best_mean || (mean == best_mean && free_mib > best_free) )); then
-      best_idx=$idx; best_free=$free_mib; best_mean=$mean
-    fi
+    candidates+=("$(printf '%04d %09d %s' "$mean" "$((999999999 - free_mib))" "$idx")")
   fi
 done
-
-[[ -n "$best_idx" ]] || {
-  printf "refusing to run: no A6000 had mean utilization <=%s%% over 30 seconds with >=%s MiB free\n" "$max_mean_util" "$min_free_mib" | tee -a "$log_file" >&2
+mapfile -t chosen < <(printf '%s\n' "${candidates[@]}" | sort | head -n "$num_gpus" | awk '{print $3}')
+(( ${#chosen[@]} == num_gpus )) || {
+  printf "refusing to run: needed %s A6000(s) with mean utilization <=%s%% over 30 seconds and >=%s MiB free; found %s\n" "$num_gpus" "$max_mean_util" "$min_free_mib" "${#chosen[@]}" | tee -a "$log_file" >&2
   exit 2
 }
+best_idx=$(IFS=,; echo "${chosen[*]}")
 
 export CUDA_VISIBLE_DEVICES="$best_idx"
 export ORDERGUARD_GPU_PHYSICAL_INDEX="$best_idx"
-printf 'selected_physical_gpu=%s\nselected_free_mib=%s\nCUDA_VISIBLE_DEVICES=%s\nlog=%s\n' \
-  "$best_idx" "$best_free" "$CUDA_VISIBLE_DEVICES" "$log_file" | tee -a "$log_file"
+printf 'selected_physical_gpus=%s\nnum_gpus=%s\nCUDA_VISIBLE_DEVICES=%s\nlog=%s\n' \
+  "$best_idx" "$num_gpus" "$CUDA_VISIBLE_DEVICES" "$log_file" | tee -a "$log_file"
 
 cd "$W"
 set +e

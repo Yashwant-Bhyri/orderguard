@@ -15,6 +15,8 @@ ssh wilson-gpu "cd $W && ORDERGUARD_MIN_FREE_GIB=24 ORDERGUARD_TIMEOUT_SECONDS=3
 scp -r wilson-gpu:$W/outputs/<task>/ ./results_from_host/
 ```
 
+**Two cards (lead, 2026-11-19):** set `ORDERGUARD_NUM_GPUS=2` to get two idle A6000s in one job (for example a 27B model at full precision with `device_map="auto"`). The cap is two cards; the wrapper refuses more, and only one OrderGuard job runs at a time.
+
 What `run_job.sh` does:
 
 1. It samples every A6000 for 30 seconds.

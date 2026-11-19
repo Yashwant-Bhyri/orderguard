@@ -287,6 +287,11 @@ def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
                           + (f" This is round {rnd}: read REVIEW.md here and address it." if rnd > 1 else ""))
         cmd = codex_cmd(CONFIG["gpu_model"], CONFIG["gpu_effort"], d, rundir / "worker_last.md")
         return run(cmd + [prompt], d, rundir / "worker.log", timeout_s, child_env(False))
+    if task["worker"].startswith("codex:"):
+        cwd = d if task["isolate"] else ROOT
+        cmd = codex_cmd(task["worker"].split(":", 1)[1], task.get("variant") or "xhigh", cwd, rundir / "worker_last.md",
+                        network=not task["isolate"])
+        return run(cmd + [worker_prompt(task, d, rnd)], cwd, rundir / "worker.log", timeout_s, child_env(False))
     cwd = d if task["isolate"] else ROOT
     cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd)]
     if task.get("variant"):
