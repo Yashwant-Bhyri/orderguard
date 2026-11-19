@@ -355,10 +355,11 @@ def review_prompt(task: dict, d: Path) -> str:
 
 
 def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
-    if not budget_ok(st, "reviews"):
-        log(f"{task['id']}: review budget for today used up; waiting")
+    kind = "fallback_reviews" if codex_down() else "reviews"
+    if not budget_ok(st, kind):
+        log(f"{task['id']}: {kind} budget for today used up; the work is kept and waits for review")
         return "WAIT"
-    spend(st, "reviews")
+    spend(st, kind)
     save_state(st)
     (d / "REVIEW.md").unlink(missing_ok=True)
     cwd = d if task["isolate"] else ROOT
@@ -513,8 +514,7 @@ def finish_review(task: dict, st: dict, d: Path, rundir: Path, rnd: int, rc: int
     if verdict == "PASS":
         ts["status"] = "passed"
     elif verdict == "WAIT":
-        ts["round"] -= 1
-        ts["status"] = "pending"
+        ts["status"] = "review-wait"                    # keep the round's work; only the review is retried
     elif verdict == "ESCALATE" and run_escalation(task, d, rundir, st) and rnd < task["max_rounds"]:
         ts["status"] = "revise"
     elif verdict in ("REVISE", "ESCALATE", "ERROR") and rnd < task["max_rounds"]:
@@ -606,6 +606,12 @@ def loop() -> None:
                     tstate(st, tid)["status"] = "revise"
                     req.unlink()
                     log(f"{tid}: reopened for another round by lead")
+                for tid, ts_ in list(st["tasks"].items()):
+                    if ts_.get("status") == "review-wait" and tid in tasks and tid not in running \
+                            and len(running) < CONFIG["parallel"] \
+                            and budget_ok(st, "fallback_reviews" if codex_down() else "reviews"):
+                        log(f"{tid}: round {ts_['round']} retrying the review (work kept)")
+                        running[tid] = pool.submit(one_round, tasks[tid], st, "skipworker")
                 for req in sorted((LAB / "requests").glob("*.review")) if (LAB / "requests").exists() else []:
                     tid = req.stem                         # lead (or a lead-run subagent) did the round's work
                     if tid in running or tid not in tasks:
