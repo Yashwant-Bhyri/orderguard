@@ -1,8 +1,11 @@
 """Reference simulator for the OrderGuard System One world.
 
-``simulate(seed, family, n_steps, shifted)`` returns an Episode. Eight families:
-clean, drift, unsupported_claim, misquote, vague_hype, poisoned_note,
-authority_spoof, stale_thesis. Every number in a document or note is templated
+``simulate(seed, family, n_steps, shifted)`` returns an Episode. Eight v2
+families: clean, drift, unsupported_claim, misquote, vague_hype, poisoned_note,
+authority_spoof, stale_thesis. With ``coherent=True`` the generator emits
+v2.1: it adds the binding_error family, uses side-aware rationales, and keeps
+every other action's claims attached to the traded instrument. The default
+(``coherent=False``) reproduces v2 byte for byte. Every number in a document or note is templated
 with enough variety that exact sentence repeats stay below 5%.
 
 The simulator keeps an explicit, replayable book: cash plus a market value per
@@ -42,6 +45,11 @@ FAMILIES = (
     "authority_spoof",
     "stale_thesis",
 )
+
+# v2.1 keeps every v2 family and adds the binding-error family.  It is only
+# available from the coherent generator (the v2 byte-for-byte path rejects it).
+BINDING_ERROR = "binding_error"
+FAMILIES_V21 = FAMILIES + (BINDING_ERROR,)
 
 SECTORS = ("tech", "consumer", "healthcare", "staples", "financials", "energy", "index")
 
@@ -249,6 +257,51 @@ RATIONALE = [
     "Rebalancing into {company} given {phrase} of {num}.",
     "Taking some {company} off the table after the run; the thesis holds.",
     "Fresh filing on {company} confirms {phrase} of {num}; acting accordingly.",
+]
+
+# v2.1 side-aware lists.  No buy template appears in the sell list and no sell
+# template appears in the buy list.  Both lists keep the traded name as the
+# only instrument named.
+BUY_RATIONALE = [
+    "Fundamentals at {company} are strong: {phrase} of {num} supports adding to the position.",
+    "We add {company} because {phrase} is {num} and still within the mandate.",
+    "The data on {company} ({phrase} {num}) justifies the position.",
+    "Rebalancing into {company} given {phrase} of {num}.",
+    "Fresh filing on {company} confirms {phrase} of {num}; acting accordingly.",
+    "We build the {company} position as {phrase} of {num} confirms the thesis.",
+]
+SELL_RATIONALE = [
+    "Fundamentals at {company} are strong: {phrase} of {num} supports the trade.",
+    "We trim {company} after the run; {phrase} of {num} keeps the thesis intact.",
+    "The data on {company} ({phrase} {num}) justifies reducing the position.",
+    "Rebalancing out of {company} given {phrase} of {num}.",
+    "Taking some {company} off the table after the run; the thesis holds.",
+    "Fresh filing on {company} confirms {phrase} of {num}; acting accordingly.",
+]
+
+# Sector-level fallback used when no document in the episode mentions the
+# traded instrument.  It names the traded name and the sector, never a peer.
+SECTOR_CLAIM = "Within the {sector} sleeve, {company} shows {phrase} of {num}."
+SECTOR_RATIONALE_BUY = (
+    "We add {company} to the {sector} sleeve as {phrase} of {num} supports the trade."
+)
+SECTOR_RATIONALE_SELL = (
+    "We trim {company} in the {sector} sleeve; {phrase} of {num} keeps the thesis intact."
+)
+
+# Deliberately wrong-direction templates for the binding-error family.  Every
+# line carries an unambiguous cue that the coherence check can see.
+WRONG_DIRECTION_ON_BUY = [
+    "We trim {company} after the run; {phrase} of {num} keeps the thesis intact.",
+    "Taking some {company} off the table after the run; the thesis holds.",
+    "Rebalancing out of {company} given {phrase} of {num}.",
+    "The data on {company} ({phrase} {num}) justifies reducing the position.",
+]
+WRONG_DIRECTION_ON_SELL = [
+    "We add {company} because {phrase} is {num} and still within the mandate.",
+    "Rebalancing into {company} given {phrase} of {num}.",
+    "We build the {company} position as {phrase} of {num} confirms the thesis.",
+    "We increase the {company} position as {phrase} of {num} supports the trade.",
 ]
 
 DRIFT_RATIONALE = [
@@ -463,12 +516,15 @@ def _floor_cents(x: float) -> float:
 
 
 class _World:
-    def __init__(self, seed, family, n_steps, shifted):
+    def __init__(self, seed, family, n_steps, shifted, coherent=False):
+        if family == BINDING_ERROR and not coherent:
+            raise ValueError("binding_error requires the coherent v2.1 generator")
         self.rng = np.random.default_rng(seed)
         self.seed = seed
         self.family = family
         self.n_steps = n_steps
         self.shifted = shifted
+        self.coherent = bool(coherent)
         self.owner = _owner(seed)
         self.capital = CAPITAL
         self.bands = self.owner.sector_bands
@@ -669,6 +725,186 @@ class _World:
             company=_company_str(f["company"], self.shifted), phrase=phrase, num=f["rendered"])
         return _shift_text(text, self.shifted)
 
+    # ------------------------------------------------------- coherent (v2.1)
+    def _fact_doc_order(self, f):
+        """Order facts by (document time, document ordinal)."""
+        try:
+            return (int(f["t"]), int(str(f["doc_id"])[1:]))
+        except (TypeError, ValueError):
+            return (int(f["t"]), 0)
+
+    def _latest_facts_for(self, instrument):
+        facts = [f for f in self.fact_pool if f["company"] == instrument]
+        if not facts:
+            return []
+        latest = max(facts, key=self._fact_doc_order)
+        doc_id = latest["doc_id"]
+        return [f for f in facts if f["doc_id"] == doc_id]
+
+    def _coherent_facts(self, instrument, sector, t, add_if_missing=True):
+        """Facts about the traded instrument, preferring its newest document.
+
+        No peer's figure is ever passed off as the traded name.  If the
+        episode has no document about the instrument, a filing at ``t`` is
+        added, which is always legal because the action may cite documents
+        with ``t`` not later than its own.
+        """
+        facts = self._latest_facts_for(instrument)
+        if facts:
+            return facts
+        if not add_if_missing:
+            return []
+        self._add_document(t, sector, "filing", company=instrument)
+        return self._latest_facts_for(instrument)
+
+    def _sector_claims(self, instrument, sector, t):
+        # No document mentions the instrument: add one, then use a
+        # sector-level template that still sources the figure to that
+        # instrument.  No peer's number is ever presented as the traded one.
+        facts = self._coherent_facts(instrument, sector, t)
+        f = facts[int(self.rng.integers(len(facts)))]
+        text = SECTOR_CLAIM.format(
+            sector=sector, company=_company_str(instrument, self.shifted),
+            phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+        return [Claim(text=_shift_text(text, self.shifted), value=f["value"],
+                      unit=f["unit"], source_doc=f["doc_id"], quoted_span=f["rendered"])]
+
+    def _coherent_claims(self, instrument, sector, t):
+        facts = self._latest_facts_for(instrument)
+        if not facts:
+            return self._sector_claims(instrument, sector, t)
+        return self._clean_claims(facts)
+
+    def _coherent_rationale(self, instrument, sector, t, side, facts=None):
+        if facts is None:
+            facts = self._latest_facts_for(instrument)
+        added = not facts
+        if not facts:
+            self._add_document(t, sector, "filing", company=instrument)
+            facts = self._latest_facts_for(instrument)
+        f = facts[int(self.rng.integers(len(facts)))]
+        if added:
+            template = SECTOR_RATIONALE_BUY if side == "buy" else SECTOR_RATIONALE_SELL
+            text = template.format(
+                company=_company_str(instrument, self.shifted), sector=sector,
+                phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+        else:
+            templates = BUY_RATIONALE if side == "buy" else SELL_RATIONALE
+            text = templates[int(self.rng.integers(len(templates)))].format(
+                company=_company_str(instrument, self.shifted),
+                phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+        return _shift_text(text, self.shifted)
+
+    def _sibling_instrument(self, sector, instrument):
+        options = [i for i in INSTRUMENTS[sector] if i != instrument]
+        return options[int(self.rng.integers(len(options)))] if options else None
+
+    def _relative_value_action(self, t):
+        """A clean action that explicitly compares the traded name to a peer."""
+        action, label = self._clean_action(t)
+        instrument, sector = action.instrument, action.sector
+        sibling = self._sibling_instrument(sector, instrument)
+        if sibling is None:
+            return action, label
+        traded_facts = self._coherent_facts(instrument, sector, t)
+        sibling_facts = self._coherent_facts(sibling, sector, t)
+        shared = [n for n in FACT_NAMES
+                  if any(f["name"] == n for f in traded_facts)
+                  and any(f["name"] == n for f in sibling_facts)]
+        if not shared:
+            self._add_document(t, sector, "filing", company=sibling)
+            sibling_facts = self._latest_facts_for(sibling)
+            shared = [n for n in FACT_NAMES
+                      if any(f["name"] == n for f in traded_facts)
+                      and any(f["name"] == n for f in sibling_facts)]
+        if not shared:
+            return action, label
+        name = shared[int(self.rng.integers(len(shared)))]
+        mine = next(f for f in traded_facts if f["name"] == name)
+        theirs = next(f for f in sibling_facts if f["name"] == name)
+        phrase = FACT_PHRASES[name]
+        text = (f"{_company_str(instrument, self.shifted)} {phrase} is {mine['rendered']} "
+                f"versus {_company_str(sibling, self.shifted)} at {theirs['rendered']}.")
+        action.rationale = _shift_text(
+            f"{_company_str(instrument, self.shifted)} shows {phrase} of {mine['rendered']} "
+            f"versus {_company_str(sibling, self.shifted)} at {theirs['rendered']}; "
+            f"the relative-value gap supports the trade.", self.shifted)
+        action.claims = action.claims + [Claim(
+            text=_shift_text(text, self.shifted), value=mine["value"], unit=mine["unit"],
+            source_doc=mine["doc_id"], quoted_span=mine["rendered"])]
+        return action, label
+
+    def _binding_action(self, t):
+        if self.rng.random() >= 0.5:
+            return self._relative_value_action(t)
+        action, _ = self._clean_action(t)
+        instrument, sector = action.instrument, action.sector
+        subtype = int(self.rng.integers(4))
+        refs = []
+        if subtype == 0:
+            # Right value, wrong entity: a sibling's figure is asserted about
+            # the traded name.
+            sibling = self._sibling_instrument(sector, instrument)
+            if sibling is not None:
+                facts = self._coherent_facts(sibling, sector, t)
+                f = facts[int(self.rng.integers(len(facts)))]
+                text = CLAIM_SENTENCES[int(self.rng.integers(len(CLAIM_SENTENCES)))].format(
+                    company=_company_str(instrument, self.shifted),
+                    phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+                action.claims = action.claims + [Claim(
+                    text=_shift_text(text, self.shifted), value=f["value"],
+                    unit=f["unit"], source_doc=f["doc_id"], quoted_span=f["rendered"])]
+                refs = [f["doc_id"]]
+            else:
+                subtype = 2
+        if subtype == 1:
+            # Right number, wrong period: an older figure is presented while a
+            # newer document for the same instrument carries a different one.
+            old = [f for f in self.fact_pool
+                   if f["company"] == instrument and f["t"] < t]
+            if old:
+                f = max(old, key=self._fact_doc_order)
+                spec = FACT_SPECS[f["name"]]
+                newer = _different_value(self.rng, f["name"], f["value"])
+                self._add_document(t, sector, "filing", forced={f["name"]: newer},
+                                   company=instrument)
+                text = CLAIM_SENTENCES[int(self.rng.integers(len(CLAIM_SENTENCES)))].format(
+                    company=_company_str(instrument, self.shifted),
+                    phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+                action.claims = action.claims + [Claim(
+                    text=_shift_text(text, self.shifted), value=f["value"],
+                    unit=f["unit"], source_doc=f["doc_id"], quoted_span=f["rendered"])]
+                refs = [f["doc_id"]]
+            else:
+                subtype = 2
+        if subtype == 2:
+            # Rationale direction is the opposite of the side.
+            facts = self._coherent_facts(instrument, sector, t)
+            f = facts[int(self.rng.integers(len(facts)))]
+            templates = (WRONG_DIRECTION_ON_BUY if action.side == "buy"
+                         else WRONG_DIRECTION_ON_SELL)
+            action.rationale = _shift_text(
+                templates[int(self.rng.integers(len(templates)))].format(
+                    company=_company_str(instrument, self.shifted),
+                    phrase=FACT_PHRASES[f["name"]], num=f["rendered"]), self.shifted)
+            refs = [c.source_doc for c in action.claims if c.source_doc] or [f["doc_id"]]
+        if subtype == 3:
+            # A sibling is presented as the traded name.
+            sibling = self._sibling_instrument(sector, instrument)
+            if sibling is not None:
+                facts = self._coherent_facts(sibling, sector, t)
+                f = facts[int(self.rng.integers(len(facts)))]
+                text = CLAIM_SENTENCES[int(self.rng.integers(len(CLAIM_SENTENCES)))].format(
+                    company=_company_str(sibling, self.shifted),
+                    phrase=FACT_PHRASES[f["name"]], num=f["rendered"])
+                action.claims = action.claims + [Claim(
+                    text=_shift_text(text, self.shifted), value=f["value"],
+                    unit=f["unit"], source_doc=f["doc_id"], quoted_span=f["rendered"])]
+                refs = [f["doc_id"]]
+            else:
+                subtype = 2
+        return action, Label(y=1, cause=BINDING_ERROR, cause_refs=sorted(set(refs)))
+
     # --------------------------------------------------------------- actions
     def _sector_choices(self, room_kind, minimum):
         out = []
@@ -725,9 +961,13 @@ class _World:
                     status="active")
         self.theses.append(th)
         self.thesis_map[tid] = th
+        claims = self._clean_claims(facts)
+        rationale = (
+            self._coherent_rationale(instrument, sector, t, "buy", facts=facts)
+            if self.coherent else self._clean_rationale(facts))
         action = self._compose_action(
             t, sector, instrument, "buy", notional, tid, True,
-            self._clean_claims(facts), self._default_cites(), self._clean_rationale(facts))
+            claims, self._default_cites(), rationale)
         return action, Label(y=0, cause="clean", cause_refs=[])
 
     def _act_on_thesis(self, t):
@@ -759,9 +999,15 @@ class _World:
             return self._rebalance_sell(t)
         if notional < self.min_trade:
             return self._rebalance_sell(t)
+        if self.coherent:
+            claims = self._coherent_claims(instrument, sector, t)
+            rationale = self._coherent_rationale(instrument, sector, t, side)
+        else:
+            claims = self._clean_claims(facts)
+            rationale = self._clean_rationale(facts)
         action = self._compose_action(
             t, sector, instrument, side, notional, th.id, False,
-            self._clean_claims(facts), self._default_cites(), self._clean_rationale(facts))
+            claims, self._default_cites(), rationale)
         return action, Label(y=0, cause="clean", cause_refs=[])
 
     def _rebalance_sell(self, t):
@@ -787,9 +1033,15 @@ class _World:
             self.theses.append(th)
             self.thesis_map[tid] = th
             opens = True
+        if self.coherent:
+            claims = self._coherent_claims(instrument, sector, t)
+            rationale = self._coherent_rationale(instrument, sector, t, "sell")
+        else:
+            claims = self._clean_claims(facts)
+            rationale = self._clean_rationale(facts)
         action = self._compose_action(
             t, sector, instrument, "sell", notional, tid, opens,
-            self._clean_claims(facts), self._default_cites(), self._clean_rationale(facts))
+            claims, self._default_cites(), rationale)
         return action, Label(y=0, cause="clean", cause_refs=[])
 
     def _clean_action(self, t):
@@ -828,8 +1080,11 @@ class _World:
         # ordinary in-band buy instead.
         if (self._sector_value(sector) + notional) / self.capital <= self.bands[sector]["max"] + 1e-4:
             return self._clean_action(t)
-        facts = self._facts_for_sector(sector)
-        claims = self._clean_claims(facts)
+        if self.coherent:
+            claims = self._coherent_claims(instrument, sector, t)
+        else:
+            facts = self._facts_for_sector(sector)
+            claims = self._clean_claims(facts)
         company = _company_str(instrument, self.shifted)
         rationale = _shift_text(
             DRIFT_RATIONALE[int(self.rng.integers(len(DRIFT_RATIONALE)))].format(company=company),
@@ -864,8 +1119,14 @@ class _World:
             if variant == 0:
                 source_doc, span, refs = None, None, []
             else:
-                if self.fact_pool:
+                if self.coherent:
+                    pool = self._coherent_facts(action.instrument, action.sector, t)
+                    other = pool[int(self.rng.integers(len(pool)))]
+                elif self.fact_pool:
                     other = self.fact_pool[int(self.rng.integers(len(self.fact_pool)))]
+                else:
+                    other = None
+                if other is not None:
                     source_doc, span, refs = other["doc_id"], None, [other["doc_id"]]
                 else:
                     source_doc, span, refs = None, None, []
@@ -877,8 +1138,10 @@ class _World:
     def _misquote_action(self, t):
         if self.rng.random() < 0.5:
             action, _ = self._clean_action(t)
-            if self.fact_pool:
-                f = self.fact_pool[int(self.rng.integers(len(self.fact_pool)))]
+            pool = (self._coherent_facts(action.instrument, action.sector, t)
+                    if self.coherent else self.fact_pool)
+            if pool:
+                f = pool[int(self.rng.integers(len(pool)))]
                 name, spec = f["name"], FACT_SPECS[f["name"]]
                 wrong = _different_value(self.rng, name, f["value"])
                 rendered_wrong = _render(spec, wrong)
@@ -931,8 +1194,11 @@ class _World:
         rationale = _shift_text(
             f"Per the pre-cleared memo, the {sector} cap does not apply to {company}; we add to the position.",
             self.shifted)
-        facts = self._facts_for_sector(sector)
-        claims = self._clean_claims(facts)
+        if self.coherent:
+            claims = self._coherent_claims(instrument, sector, t)
+        else:
+            facts = self._facts_for_sector(sector)
+            claims = self._clean_claims(facts)
         cites = self._default_cites() + [self.poison_note_id]
         tid = self.theses[-1].id if self.theses else None
         opens = tid is None
@@ -969,8 +1235,11 @@ class _World:
         rationale = _shift_text(
             f"The owner widened the {sector} band, so we add {company} within the new limit.",
             self.shifted)
-        facts = self._facts_for_sector(sector)
-        claims = self._clean_claims(facts)
+        if self.coherent:
+            claims = self._coherent_claims(instrument, sector, t)
+        else:
+            facts = self._facts_for_sector(sector)
+            claims = self._clean_claims(facts)
         cites = self._default_cites() + [self.spoof_note_id]
         tid = self.theses[-1].id if self.theses else None
         opens = tid is None
@@ -1008,9 +1277,14 @@ class _World:
         notional = _floor_cents(min(self._notional(), room))
         if notional < self.min_trade:
             return self._clean_action(t)
+        if self.coherent:
+            claims = self._coherent_claims(preferred, sector, t)
+            rationale = self._coherent_rationale(preferred, sector, t, "buy")
+        else:
+            claims = self._clean_claims(facts)
+            rationale = self._clean_rationale(facts)
         action = self._compose_action(t, sector, preferred, "buy", notional, th.id, False,
-                                      self._clean_claims(facts), self._default_cites(),
-                                      self._clean_rationale(facts))
+                                      claims, self._default_cites(), rationale)
         refs = [self.stale_invalid_doc_id] if self.stale_invalid_doc_id else []
         return action, Label(y=1, cause="stale_thesis", cause_refs=refs)
 
@@ -1030,6 +1304,8 @@ class _World:
             return self._spoof_action(t)
         if f == "stale_thesis":
             return self._stale_action(t)
+        if f == BINDING_ERROR:
+            return self._binding_action(t)
         return self._clean_action(t)
 
     # ---------------------------------------------------------------- onsets
@@ -1102,10 +1378,11 @@ class _World:
         return notes
 
 
-def simulate(seed: int, family: str, n_steps: int = 120, shifted: bool = False) -> Episode:
-    if family not in FAMILIES:
+def simulate(seed: int, family: str, n_steps: int = 120, shifted: bool = False,
+             coherent: bool = False) -> Episode:
+    if family not in FAMILIES and not (coherent and family == BINDING_ERROR):
         raise ValueError(f"unknown family {family!r}")
-    w = _World(seed, family, n_steps, shifted)
+    w = _World(seed, family, n_steps, shifted, coherent=coherent)
     initial_notes = w._initial_notes()
     w._seed_corpus()
 
@@ -1145,5 +1422,6 @@ def simulate(seed: int, family: str, n_steps: int = 120, shifted: bool = False) 
                           sectors=dict(w.book.sectors)),
         instrument_sectors=dict(INSTRUMENT_SECTOR),
         steps=steps,
-        meta={"author": "reference", "family": family, "seed": seed, "shifted": shifted},
+        meta={"author": "reference" if not coherent else "reference-v2.1",
+              "family": family, "seed": seed, "shifted": shifted},
     )

@@ -1,0 +1,275 @@
+== T20 hosted decision-model triage: offline re-score ==
+== 200-item set ==
+wrote 200 items to data/t20/handset.jsonl; counts={'failed_case': 37, 'label_noise_probe': 20, 'ref_action': 120, 'review_finding': 23}
+== item-level rule labels (blind-checked) ==
+rule-labeled (blind-checked) 200 items from case content; reference-cause agreement 117/120 reference actions, 20/20 probes detected as flipped
+== label audit against the reference hypothesis ==
+== label audit (rule labels (blind-checked) vs reference hypothesis) ==
+authority_spoof: 6/6 agree
+clean: 69/72 agree
+drift: 8/8 agree
+misquote: 8/8 agree
+poisoned_note: 6/6 agree
+stale_thesis: 6/6 agree
+unsupported_claim: 8/8 agree
+vague_hype: 6/6 agree
+disagreements: 3
+  ref:authority_spoof.shifted.jsonl:51:33: reference y=0 (clean), content y=1, labels={'difficulty': 2, 'finverify': 'temporal_integrity', 'label_ok': 1}; trigger guidance_growth < 0.0 fired in d21 at t=23 (value -8.971, trust 3); thesis sector=staples, instruments=['WMT'], skipped 1 other-sector document(s)
+  ref:misquote.shifted.jsonl:149:102: reference y=0 (clean), content y=1, labels={'difficulty': 2, 'finverify': 'temporal_integrity', 'label_ok': 1}; trigger guidance_growth < 0.0 fired in d19 at t=23 (value -4.845, trust 0); thesis sector=tech, instruments=['AAPL'], skipped 29 other-sector document(s)
+  ref:unsupported_claim.jsonl:22:86: reference y=0 (clean), content y=1, labels={'difficulty': 2, 'finverify': 'temporal_integrity', 'label_ok': 1}; trigger guidance_growth < 0.0 fired in d22 at t=32 (value -1.517, trust 2); thesis sector=consumer, instruments=['LOW'], skipped 17 other-sector document(s)
+stale-thesis sample: 6 actions; trigger document names the thesis instrument 0, a different instrument 6, unknown 0
+== auxiliary-hint-free variant ==
+wrote 200 blind items to data/t20_blind/handset_blind.jsonl
+
+== both rule-label vs blind-label checks, and the 60 blind items ==
+== the lead's two blind checks: how the sample was drawn ==
+The lead drew 60 items from the 200 rule-labelled items (15 per item kind), removed the family, id and source fields, and had Claude Haiku label them blind from QUESTIONS.md in a separate context.  The first pass still showed Haiku the reference triage rules; the lead reran it with those rules removed.
+
+== rule labels (blind-checked) vs the blind labels, both passes ==
+Every count below is recomputed by this script from handlabels.jsonl and the two labels files; it asserts that the rules-shown counts match agreement.json.
+Warning: agreement_norules.json disagrees with its own label file on: label_ok: stored=0/30, recomputed=22/30.  The recomputed values above are used.
+| Question | Rule vs blind, rules shown | Rule vs blind, no rules | n | Reliable? |
+|---|---:|---:|---:|---|
+| `label_ok` | 26/30 = 0.87 | 22/30 = 0.73 | 30 | Unreliable |
+| `finverify` | 8/15 = 0.53 | 7/15 = 0.47 | 15 | Unreliable |
+| `difficulty` | 3/15 = 0.20 raw; 6/15 = 0.40 aligned | 3/15 = 0.20 raw; 3/15 = 0.20 aligned | 15 | Coarse - use only as a bucket, never to rank |
+| `finding_kind` | 14/15 = 0.93 | 14/15 = 0.93 | 15 | Reliable |
+| `failure_kind` | 9/15 = 0.60 | 9/15 = 0.60 | 15 | Unreliable |
+
+Only `finding_kind` clears 0.85 in both passes.  `label_ok` falls from 26/30 to 22/30 once the rules are removed; its reference is defective until T31/v2.1 fixes the clean-action generator.
+
+== model agreement on the 60 blind items, FinVerify and failure kind ==
+Answers are the cached primary-condition answers (the same 60 states). No new request was made.  Neither reference is ground truth for these questions.
+| Model | FinVerify vs rule (n=15) | FinVerify vs blind, rules shown (n=15) | FinVerify vs blind, no rules (n=15) | Failure kind vs rule (n=15) | Failure kind vs blind, rules shown (n=15) | Failure kind vs blind, no rules (n=15) |
+|---|---:|---:|---:|---:|---:|---:|
+| TypeSafe Jev 1.14 | 6/15 = 0.40 | 7/15 = 0.47 | 10/15 = 0.67 | 9/15 = 0.60 | 15/15 = 1.00 | 15/15 = 1.00 |
+| Cloudflare Clef Flash | 7/15 = 0.47 | 7/15 = 0.47 | 7/15 = 0.47 | 9/15 = 0.60 | 15/15 = 1.00 | 15/15 = 1.00 |
+| Liquid d1.2-ultra | 9/15 = 0.60 | 6/15 = 0.40 | 6/15 = 0.40 | 12/15 = 0.80 | 12/15 = 0.80 | 12/15 = 0.80 |
+| Perplexity Decider v1.3 (free) | 9/15 = 0.60 | 6/15 = 0.40 | 6/15 = 0.40 | 9/15 = 0.60 | 15/15 = 1.00 | 15/15 = 1.00 |
+
+== descriptive: label_ok and finding_kind on the same 60 items ==
+| Model | label_ok vs rule (n=30) | label_ok vs blind, rules (n=30) | label_ok vs blind, no rules (n=30) | finding_kind vs rule (n=15) | finding_kind vs blind, rules (n=15) | finding_kind vs blind, no rules (n=15) |
+|---|---:|---:|---:|---:|---:|---:|
+| TypeSafe Jev 1.14 | 14/30 = 0.47 | 18/30 = 0.60 | 18/30 = 0.60 | 14/15 = 0.93 | 15/15 = 1.00 | 15/15 = 1.00 |
+| Cloudflare Clef Flash | 16/30 = 0.53 | 20/30 = 0.67 | 20/30 = 0.67 | 13/15 = 0.87 | 14/15 = 0.93 | 14/15 = 0.93 |
+| Liquid d1.2-ultra | 14/30 = 0.47 | 14/30 = 0.47 | 12/30 = 0.40 | 14/15 = 0.93 | 15/15 = 1.00 | 15/15 = 1.00 |
+| Perplexity Decider v1.3 (free) | 15/30 = 0.50 | 13/30 = 0.43 | 11/30 = 0.37 | 14/15 = 0.93 | 15/15 = 1.00 | 15/15 = 1.00 |
+== primary comparison table, catalog and recommendation (from cache) ==
+Decision models on OpenRouter (cached catalog): 44
+Catalog snapshot: 2026-11-19T04:12:13+00:00
+Items: 200; answered questions: 440; ranking questions: finding_kind
+Cache spend (this file): $0.109210
+Lifetime spend across triage_blind.jsonl, triage_responses.jsonl: $0.213661 (cap $5)
+
+# T20 comparison - rule labels (blind-checked)
+
+Ranking uses `finding_kind` only: it is the one question whose rule labels clear 0.85 agreement with both blind checks (rules shown 14/15, rules removed 14/15).  `label_ok` is descriptive and its reference is defective until T31/v2.1.  FinVerify and failure kind are descriptive negative results; difficulty is not rankable.
+
+| Model | Finding-kind accuracy (ranking) | 95% Wilson | Label ok (descriptive) | Cost / 1k | Mean latency | Coverage |
+|---|---:|---:|---:|---:|---:|---:|
+| Majority-class baseline | 0.391 (n=23) | [0.222, 0.592] | 0.836 (140) | $0.000000 | n/a | - |
+| Displayed-label rule | 0.391 (n=23) | [0.222, 0.592] | 0.836 (140) | $0.000000 | n/a | - |
+| TypeSafe Jev 1.14 | 0.957 (n=23) | [0.790, 0.992] | 0.457 (140) | $0.236177 | 1.418 s | 1.000 |
+| Cloudflare Clef Flash | 0.783 (n=23) | [0.581, 0.903] | 0.379 (140) | $0.098794 | 1.539 s | 1.000 |
+| Liquid d1.2-ultra | 0.957 (n=23) | [0.790, 0.992] | 0.650 (140) | $0.211079 | 1.594 s | 1.000 |
+| Perplexity Decider v1.3 (free) | 0.913 (n=23) | [0.732, 0.976] | 0.743 (140) | $0.000000 | 1.623 s | 1.000 |
+
+Ranking metric = correct `finding_kind` answers / asked `finding_kind` questions (23 of 440); a missing or refused answer counts as wrong.  The Label ok column is descriptive: its reference drops to 22/30 once the blind reader cannot see the rules, so it is not a ranking signal.  FinVerify and failure kind are on the 60-item side-by-side table; difficulty is on a different scale.
+
+**Recommendation:** `perplexity/pplx-decider-v1.3:free`. The best finding-kind accuracy (the only reliable question) is 0.957 (TypeSafe Jev 1.14). The chosen default is `Perplexity Decider v1.3 (free)` at $0.000000 per 1,000 items and 1.623 s mean latency. The best model is +0.043 above it (95% bootstrap interval [+0.000, +0.150]), so the two are statistically indistinguishable. `Liquid d1.2-ultra` is the paid alternative with the highest finding-kind accuracy (0.957) and all-question micro 0.566, but it costs $0.211079 per 1,000 and buys no clear accuracy gain.  The ranking is 23 reviewer findings, so its interval is wide; `label_ok` is descriptive only because its reference is defective until T31/v2.1.  This is a reviewer-finding sorter, not a general label-audit gate.
+
+== per-question accuracy and 95% Wilson intervals (descriptive) ==
+FinVerify, failure kind and difficulty are not used for ranking.
+TypeSafe Jev 1.14: label_ok 0.457 [0.377, 0.540] (n=140); finverify 0.400 [0.317, 0.489] (n=120); difficulty 0.192 [0.131, 0.271] (n=120); finding_kind 0.957 [0.790, 0.992] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+Cloudflare Clef Flash: label_ok 0.379 [0.302, 0.461] (n=140); finverify 0.383 [0.301, 0.473] (n=120); difficulty 0.183 [0.124, 0.262] (n=120); finding_kind 0.783 [0.581, 0.903] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+Liquid d1.2-ultra: label_ok 0.650 [0.568, 0.724] (n=140); finverify 0.650 [0.561, 0.729] (n=120); difficulty 0.233 [0.167, 0.317] (n=120); finding_kind 0.957 [0.790, 0.992] (n=23); failure_kind 0.811 [0.658, 0.905] (n=37)
+Perplexity Decider v1.3 (free): label_ok 0.743 [0.665, 0.808] (n=140); finverify 0.617 [0.527, 0.699] (n=120); difficulty 0.208 [0.145, 0.289] (n=120); finding_kind 0.913 [0.732, 0.976] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+
+== cost and latency ==
+TypeSafe Jev 1.14: mean 1.418s p50 1.415s p95 1.632s; $0.236177/1k; 200 requests
+Cloudflare Clef Flash: mean 1.539s p50 1.516s p95 1.955s; $0.098794/1k; 200 requests
+Liquid d1.2-ultra: mean 1.594s p50 1.601s p95 2.173s; $0.211079/1k; 200 requests
+Perplexity Decider v1.3 (free): mean 1.623s p50 1.543s p95 2.123s; $0.000000/1k; 200 requests
+
+== finding-kind accuracy (the ranking metric), paired item bootstrap ==
+TypeSafe Jev 1.14: finding-kind accuracy 0.957 [0.852, 1.000]; gap to best +0.000 [+0.000, +0.000]
+Liquid d1.2-ultra: finding-kind accuracy 0.957 [0.852, 1.000]; gap to best +0.000 [+0.000, +0.000]
+Perplexity Decider v1.3 (free): finding-kind accuracy 0.913 [0.773, 1.000]; gap to best +0.043 [+0.000, +0.150]
+Cloudflare Clef Flash: finding-kind accuracy 0.783 [0.600, 0.941]; gap to best +0.174 [+0.042, +0.333]
+
+== legacy all-question micro/macro (descriptive, not used for ranking) ==
+TypeSafe Jev 1.14: all-question micro 0.414, macro 0.536
+Cloudflare Clef Flash: all-question micro 0.373, macro 0.481
+Liquid d1.2-ultra: all-question micro 0.566, macro 0.660
+Perplexity Decider v1.3 (free): all-question micro 0.566, macro 0.631
+
+== diagnostics ==
+TypeSafe Jev 1.14: label_ok ref 56/120, probe 8/20, false alarms 63/117 ref, missed 1/3 ref; FinVerify correct comparability 4/8, source_fidelity 31/34, temporal_integrity 2/9, none 11/69; clean predicted comparability 29; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'1': 109, '2': 11}
+Cloudflare Clef Flash: label_ok ref 36/120, probe 17/20, false alarms 83/117 ref, missed 1/3 ref; FinVerify correct comparability 0/8, source_fidelity 13/34, temporal_integrity 1/9, none 32/69; clean predicted comparability 6; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'1': 120}
+Liquid d1.2-ultra: label_ok ref 88/120, probe 3/20, false alarms 31/117 ref, missed 1/3 ref; FinVerify correct comparability 8/8, source_fidelity 33/34, temporal_integrity 2/9, none 35/69; clean predicted comparability 27; failure_kind predictions {'missing_information': 5, 'reasoning_error': 32}; difficulty predictions {'0': 6, '1': 114}
+Perplexity Decider v1.3 (free): label_ok ref 101/120, probe 3/20, false alarms 16/117 ref, missed 3/3 ref; FinVerify correct comparability 8/8, source_fidelity 32/34, temporal_integrity 2/9, none 32/69; clean predicted comparability 27; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'0': 2, '1': 117, '2': 1}
+
+== hint baselines (the state exposes these fields) ==
+Displayed-label rule: micro 0.784, macro 0.704; FinVerify 0.858 (103/120), difficulty 0.758 (91/120).
+Review-section rule: 11/23 = 0.478 on finding_kind (majority per section: {'Required fixes, in order': 'bug', 'Loopholes found': 'leakage', 'Loopholes and limits found': 'missing_evidence', 'Loopholes and fragility found': 'leakage'}).
+== decision-model catalog (from cache/model_catalog.json) ==
+| # | id | name | context | prompt price / token | input |
+|---:|---|---|---:|---:|---|
+| 1 | `baseten/elephant-1` | Baseten: Elephant 1 | 16384 | 0.000000035 | text, image |
+| 2 | `baseten/joey-1` | Baseten: Joey 1 | 16384 | 0.00000001 | text, image |
+| 3 | `baseten/mammoth-1` | Baseten: Mammoth 1 | 16384 | 0.0000001 | text, image |
+| 4 | `cloudflare/clairic` | Cloudflare: Clairic | 65536 | 0.0000001 | text, image |
+| 5 | `cloudflare/clef` | Cloudflare: Clef | 65537 | 0.000000192 | text, image |
+| 6 | `cloudflare/clef-flash` | Cloudflare: Clef Flash | 24576 | 0.000000019 | text, image |
+| 7 | `cloudflare/clef-omni` | Cloudflare: Clef Omni | 65536 | 0.00000015 | text, image, audio, video |
+| 8 | `google/gemini-decision-1` | Google: Gemini Decision 1 | 262144 | 0.0000001 | text, image, audio, video, file |
+| 9 | `heygen/heygen-decision-1` | HeyGen: HeyGen Decision | 131072 | 0.00000014 | text, image, video |
+| 10 | `heygen/heygen-decision-1-turbo` | HeyGen: HeyGen Decision Turbo | 262144 | 0.00000009 | text, image, video |
+| 11 | `jaredpalmer/kev-4b` | Jared Palmer: Kev 4B | 8192 | 0.000000042 | text |
+| 12 | `liquid/d1` | LiquidAI: d1 | 65536 | 0.00000002 | text, image |
+| 13 | `liquid/d1-ultra` | LiquidAI: d1-ultra | 32768 | 0.000000042 | text, image |
+| 14 | `liquid/d1.1` | LiquidAI: d1.1 | 65536 | 0.00000002 | text, image |
+| 15 | `liquid/d1.2` | LiquidAI: d1.2 | 65536 | 0.00000002 | text, image |
+| 16 | `liquid/d1.2-ultra` | LiquidAI: d1.2-ultra | 65536 | 0.000000042 | text, image |
+| 17 | `microsoft/microsoft-decision-1` | Microsoft: Microsoft-Decision-1 | 32768 | 0.000000042 | text |
+| 18 | `microsoft/microsoft-decision-1.1` | Microsoft: Microsoft-Decision-1.1 | 32768 | 0.000000042 | text, image |
+| 19 | `morph/reflex` | Morph: Reflex | 65536 | 0.000000042 | text, image |
+| 20 | `nace-ai/drex-max` | Nace.AI: Drex Max | 262144 | 0.00000006 | text, image |
+| 21 | `nace-ai/drex-max-finance` | Nace.AI: Drex Max Finance | 262144 | 0.00000006 | text, image |
+| 22 | `nace-ai/drex-v1.5` | Nace.AI: Drex v1.5 | 131072 | 0.00000004 | text |
+| 23 | `nace-ai/drex-v2.0` | Nace.AI: Drex v2.0 | 131072 | 0.00000006 | text |
+| 24 | `openai/gpt-6-luna-decisions` | OpenAI: GPT-6 Luna Decisions | 1050000 | 0.0000001 | text, image |
+| 25 | `parallel/decisions-fast` | Parallel: Decisions Fast | 32000 | 0 | text |
+| 26 | `perplexity/pplx-decider-flash-v1.2` | Perplexity: Decider Flash V1.2 | 262144 | 0.00000001 | text, image |
+| 27 | `perplexity/pplx-decider-flash-v1.3:free` | Perplexity: Decider Flash V1.3 (free) | 262144 | 0 | text, image |
+| 28 | `perplexity/pplx-decider-v1.2` | Perplexity: Decider V1.2 | 262144 | 0.00000002 | text, image |
+| 29 | `perplexity/pplx-decider-v1.3:free` | Perplexity: Decider V1.3 (free) | 262144 | 0 | text, image |
+| 30 | `respan/span-01` | Respan: Span-01 | 0 | 0.00000002 | text |
+| 31 | `respan/span-01-lite` | Respan: Span-01 Lite | 0 | 0 | text |
+| 32 | `respan/span-01-lite:free` | Respan: Span-01 Lite (free) | 0 | 0 | text |
+| 33 | `respan/span-02` | Respan: Span-02 | 131072 | 0.00000001 | text, image |
+| 34 | `scaledown/classify-1` | ScaleDown: Classify-1 | 1000000 | 0.00000004 | text, image, file |
+| 35 | `togethercomputer/tev1-4b-experimental` | Together: Tev1 4B Experimental | 32768 | 0.000000042 | text |
+| 36 | `typesafe/jev-1.13` | TypeSafe: Jev 1.13 | 262144 | 0.000000042 | text, image |
+| 37 | `typesafe/jev-1.14` | TypeSafe: Jev 1.14 | 262144 | 0.000000042 | text, image |
+| 38 | `upstage/solar-decide` | Upstage: Solar Decide | 524288 | 0.00000005 | text |
+| 39 | `upstage/solar-decide-flash` | Upstage: Solar Decide Flash | 524288 | 0.00000005 | text |
+| 40 | `~liquid/d1-latest` | LiquidAI: d1 Latest | 65536 | 0.00000002 | text, image |
+| 41 | `~liquid/d1-ultra-latest` | LiquidAI: d1-ultra Latest | 65536 | 0.000000042 | text, image |
+| 42 | `~perplexity/pplx-decider-flash-latest` | Perplexity: Decider Flash Latest | 262144 | 0.00000001 | text, image |
+| 43 | `~perplexity/pplx-decider-latest` | Perplexity: Decider Latest | 262144 | 0.00000002 | text, image |
+| 44 | `~typesafe/jev-latest` | TypeSafe: Jev Latest | 262144 | 0.000000042 | text, image |
+
+
+== blind comparison table and recommendation (from cache) ==
+Decision models on OpenRouter (cached catalog): 44
+Catalog snapshot: 2026-11-19T04:12:13+00:00
+Items: 200; answered questions: 440; ranking questions: finding_kind
+Cache spend (this file): $0.104451
+Lifetime spend across triage_blind.jsonl, triage_responses.jsonl: $0.213661 (cap $5)
+
+# T20 comparison - rule labels (blind-checked), auxiliary-hint-free model input
+
+Ranking uses `finding_kind` only: it is the one question whose rule labels clear 0.85 agreement with both blind checks (rules shown 14/15, rules removed 14/15).  `label_ok` is descriptive and its reference is defective until T31/v2.1.  FinVerify and failure kind are descriptive negative results; difficulty is not rankable.
+
+| Model | Finding-kind accuracy (ranking) | 95% Wilson | Label ok (descriptive) | Cost / 1k | Mean latency | Coverage |
+|---|---:|---:|---:|---:|---:|---:|
+| Majority-class baseline | 0.391 (n=23) | [0.222, 0.592] | 0.836 (140) | $0.000000 | n/a | - |
+| Displayed-label rule | 0.391 (n=23) | [0.222, 0.592] | 0.836 (140) | $0.000000 | n/a | - |
+| TypeSafe Jev 1.14 | 0.913 (n=23) | [0.732, 0.976] | 0.250 (140) | $0.224972 | 1.894 s | 1.000 |
+| Cloudflare Clef Flash | 0.826 (n=23) | [0.629, 0.930] | 0.486 (140) | $0.096834 | 1.851 s | 1.000 |
+| Liquid d1.2-ultra | 1.000 (n=23) | [0.857, 1.000] | 0.771 (140) | $0.200450 | 2.077 s | 1.000 |
+| Perplexity Decider v1.3 (free) | 0.913 (n=23) | [0.732, 0.976] | 0.764 (140) | $0.000000 | 2.253 s | 1.000 |
+
+Ranking metric = correct `finding_kind` answers / asked `finding_kind` questions (23 of 440); a missing or refused answer counts as wrong.  The Label ok column is descriptive: its reference drops to 22/30 once the blind reader cannot see the rules, so it is not a ranking signal.  FinVerify and failure kind are on the 60-item side-by-side table; difficulty is on a different scale.
+
+**Recommendation:** `perplexity/pplx-decider-v1.3:free`. The best finding-kind accuracy (the only reliable question) is 1.000 (Liquid d1.2-ultra). The chosen default is `Perplexity Decider v1.3 (free)` at $0.000000 per 1,000 items and 2.253 s mean latency. The best model is +0.087 above it (95% bootstrap interval [+0.000, +0.227]), so the two are statistically indistinguishable. `Liquid d1.2-ultra` is the paid alternative with the highest finding-kind accuracy (1.000) and all-question micro 0.573, but it costs $0.200450 per 1,000 and buys no clear accuracy gain.  The ranking is 23 reviewer findings, so its interval is wide; `label_ok` is descriptive only because its reference is defective until T31/v2.1.  This is a reviewer-finding sorter, not a general label-audit gate.
+
+== per-question accuracy and 95% Wilson intervals (descriptive) ==
+FinVerify, failure kind and difficulty are not used for ranking.
+TypeSafe Jev 1.14: label_ok 0.250 [0.186, 0.328] (n=140); finverify 0.333 [0.255, 0.422] (n=120); difficulty 0.200 [0.138, 0.280] (n=120); finding_kind 0.913 [0.732, 0.976] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+Cloudflare Clef Flash: label_ok 0.486 [0.404, 0.568] (n=140); finverify 0.450 [0.364, 0.539] (n=120); difficulty 0.183 [0.124, 0.262] (n=120); finding_kind 0.826 [0.629, 0.930] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+Liquid d1.2-ultra: label_ok 0.771 [0.695, 0.833] (n=140); finverify 0.583 [0.494, 0.668] (n=120); difficulty 0.183 [0.124, 0.262] (n=120); finding_kind 1.000 [0.857, 1.000] (n=23); failure_kind 0.784 [0.628, 0.886] (n=37)
+Perplexity Decider v1.3 (free): label_ok 0.764 [0.688, 0.827] (n=140); finverify 0.567 [0.477, 0.652] (n=120); difficulty 0.192 [0.131, 0.271] (n=120); finding_kind 0.913 [0.732, 0.976] (n=23); failure_kind 0.676 [0.515, 0.804] (n=37)
+
+== cost and latency ==
+TypeSafe Jev 1.14: mean 1.894s p50 1.558s p95 3.613s; $0.224972/1k; 200 requests
+Cloudflare Clef Flash: mean 1.851s p50 1.746s p95 2.753s; $0.096834/1k; 200 requests
+Liquid d1.2-ultra: mean 2.077s p50 1.859s p95 3.583s; $0.200450/1k; 200 requests
+Perplexity Decider v1.3 (free): mean 2.253s p50 1.798s p95 2.719s; $0.000000/1k; 200 requests
+
+== finding-kind accuracy (the ranking metric), paired item bootstrap ==
+Liquid d1.2-ultra: finding-kind accuracy 1.000 [1.000, 1.000]; gap to best +0.000 [+0.000, +0.000]
+TypeSafe Jev 1.14: finding-kind accuracy 0.913 [0.778, 1.000]; gap to best +0.087 [+0.000, +0.222]
+Perplexity Decider v1.3 (free): finding-kind accuracy 0.913 [0.773, 1.000]; gap to best +0.087 [+0.000, +0.227]
+Cloudflare Clef Flash: finding-kind accuracy 0.826 [0.667, 0.960]; gap to best +0.174 [+0.040, +0.333]
+
+== legacy all-question micro/macro (descriptive, not used for ranking) ==
+TypeSafe Jev 1.14: all-question micro 0.330, macro 0.474
+Cloudflare Clef Flash: all-question micro 0.427, macro 0.524
+Liquid d1.2-ultra: all-question micro 0.573, macro 0.664
+Perplexity Decider v1.3 (free): all-question micro 0.555, macro 0.622
+
+== diagnostics ==
+TypeSafe Jev 1.14: label_ok ref 15/120, probe 20/20, false alarms 105/117 ref, missed 0/3 ref; FinVerify correct comparability 2/8, source_fidelity 34/34, temporal_integrity 3/9, none 1/69; clean predicted comparability 35; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'0': 1, '1': 93, '2': 26}
+Cloudflare Clef Flash: label_ok ref 52/120, probe 16/20, false alarms 67/117 ref, missed 1/3 ref; FinVerify correct comparability 0/8, source_fidelity 1/34, temporal_integrity 2/9, none 51/69; clean predicted comparability 0; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'1': 120}
+Liquid d1.2-ultra: label_ok ref 102/120, probe 6/20, false alarms 17/117 ref, missed 1/3 ref; FinVerify correct comparability 8/8, source_fidelity 33/34, temporal_integrity 2/9, none 27/69; clean predicted comparability 26; failure_kind predictions {'missing_information': 4, 'reasoning_error': 33}; difficulty predictions {'1': 120}
+Perplexity Decider v1.3 (free): label_ok ref 105/120, probe 2/20, false alarms 13/117 ref, missed 2/3 ref; FinVerify correct comparability 8/8, source_fidelity 32/34, temporal_integrity 2/9, none 26/69; clean predicted comparability 26; failure_kind predictions {'reasoning_error': 37}; difficulty predictions {'0': 2, '1': 118}
+
+== hint baselines (the state exposes these fields) ==
+Displayed-label rule: micro 0.784, macro 0.704; FinVerify 0.858 (103/120), difficulty 0.758 (91/120).
+Review-section rule: 9/23 = 0.391 on finding_kind (majority per section: {'unknown': 'leakage'}).
+== decision-model catalog (from cache/model_catalog.json) ==
+| # | id | name | context | prompt price / token | input |
+|---:|---|---|---:|---:|---|
+| 1 | `baseten/elephant-1` | Baseten: Elephant 1 | 16384 | 0.000000035 | text, image |
+| 2 | `baseten/joey-1` | Baseten: Joey 1 | 16384 | 0.00000001 | text, image |
+| 3 | `baseten/mammoth-1` | Baseten: Mammoth 1 | 16384 | 0.0000001 | text, image |
+| 4 | `cloudflare/clairic` | Cloudflare: Clairic | 65536 | 0.0000001 | text, image |
+| 5 | `cloudflare/clef` | Cloudflare: Clef | 65537 | 0.000000192 | text, image |
+| 6 | `cloudflare/clef-flash` | Cloudflare: Clef Flash | 24576 | 0.000000019 | text, image |
+| 7 | `cloudflare/clef-omni` | Cloudflare: Clef Omni | 65536 | 0.00000015 | text, image, audio, video |
+| 8 | `google/gemini-decision-1` | Google: Gemini Decision 1 | 262144 | 0.0000001 | text, image, audio, video, file |
+| 9 | `heygen/heygen-decision-1` | HeyGen: HeyGen Decision | 131072 | 0.00000014 | text, image, video |
+| 10 | `heygen/heygen-decision-1-turbo` | HeyGen: HeyGen Decision Turbo | 262144 | 0.00000009 | text, image, video |
+| 11 | `jaredpalmer/kev-4b` | Jared Palmer: Kev 4B | 8192 | 0.000000042 | text |
+| 12 | `liquid/d1` | LiquidAI: d1 | 65536 | 0.00000002 | text, image |
+| 13 | `liquid/d1-ultra` | LiquidAI: d1-ultra | 32768 | 0.000000042 | text, image |
+| 14 | `liquid/d1.1` | LiquidAI: d1.1 | 65536 | 0.00000002 | text, image |
+| 15 | `liquid/d1.2` | LiquidAI: d1.2 | 65536 | 0.00000002 | text, image |
+| 16 | `liquid/d1.2-ultra` | LiquidAI: d1.2-ultra | 65536 | 0.000000042 | text, image |
+| 17 | `microsoft/microsoft-decision-1` | Microsoft: Microsoft-Decision-1 | 32768 | 0.000000042 | text |
+| 18 | `microsoft/microsoft-decision-1.1` | Microsoft: Microsoft-Decision-1.1 | 32768 | 0.000000042 | text, image |
+| 19 | `morph/reflex` | Morph: Reflex | 65536 | 0.000000042 | text, image |
+| 20 | `nace-ai/drex-max` | Nace.AI: Drex Max | 262144 | 0.00000006 | text, image |
+| 21 | `nace-ai/drex-max-finance` | Nace.AI: Drex Max Finance | 262144 | 0.00000006 | text, image |
+| 22 | `nace-ai/drex-v1.5` | Nace.AI: Drex v1.5 | 131072 | 0.00000004 | text |
+| 23 | `nace-ai/drex-v2.0` | Nace.AI: Drex v2.0 | 131072 | 0.00000006 | text |
+| 24 | `openai/gpt-6-luna-decisions` | OpenAI: GPT-6 Luna Decisions | 1050000 | 0.0000001 | text, image |
+| 25 | `parallel/decisions-fast` | Parallel: Decisions Fast | 32000 | 0 | text |
+| 26 | `perplexity/pplx-decider-flash-v1.2` | Perplexity: Decider Flash V1.2 | 262144 | 0.00000001 | text, image |
+| 27 | `perplexity/pplx-decider-flash-v1.3:free` | Perplexity: Decider Flash V1.3 (free) | 262144 | 0 | text, image |
+| 28 | `perplexity/pplx-decider-v1.2` | Perplexity: Decider V1.2 | 262144 | 0.00000002 | text, image |
+| 29 | `perplexity/pplx-decider-v1.3:free` | Perplexity: Decider V1.3 (free) | 262144 | 0 | text, image |
+| 30 | `respan/span-01` | Respan: Span-01 | 0 | 0.00000002 | text |
+| 31 | `respan/span-01-lite` | Respan: Span-01 Lite | 0 | 0 | text |
+| 32 | `respan/span-01-lite:free` | Respan: Span-01 Lite (free) | 0 | 0 | text |
+| 33 | `respan/span-02` | Respan: Span-02 | 131072 | 0.00000001 | text, image |
+| 34 | `scaledown/classify-1` | ScaleDown: Classify-1 | 1000000 | 0.00000004 | text, image, file |
+| 35 | `togethercomputer/tev1-4b-experimental` | Together: Tev1 4B Experimental | 32768 | 0.000000042 | text |
+| 36 | `typesafe/jev-1.13` | TypeSafe: Jev 1.13 | 262144 | 0.000000042 | text, image |
+| 37 | `typesafe/jev-1.14` | TypeSafe: Jev 1.14 | 262144 | 0.000000042 | text, image |
+| 38 | `upstage/solar-decide` | Upstage: Solar Decide | 524288 | 0.00000005 | text |
+| 39 | `upstage/solar-decide-flash` | Upstage: Solar Decide Flash | 524288 | 0.00000005 | text |
+| 40 | `~liquid/d1-latest` | LiquidAI: d1 Latest | 65536 | 0.00000002 | text, image |
+| 41 | `~liquid/d1-ultra-latest` | LiquidAI: d1-ultra Latest | 65536 | 0.000000042 | text, image |
+| 42 | `~perplexity/pplx-decider-flash-latest` | Perplexity: Decider Flash Latest | 262144 | 0.00000001 | text, image |
+| 43 | `~perplexity/pplx-decider-latest` | Perplexity: Decider Latest | 262144 | 0.00000002 | text, image |
+| 44 | `~typesafe/jev-latest` | TypeSafe: Jev Latest | 262144 | 0.000000042 | text, image |
+
+== total final-cache spend ==
+primary file $0.109210 + blind file $0.104451 = $0.213661
+lifetime total across triage_blind.jsonl, triage_responses.jsonl: $0.213661 (cap $5)
+== offline tests: recorded responses, no network ==
+.........                                                                [100%]
+9 passed in 0.54s

@@ -13,22 +13,23 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from .world import FAMILIES, _World, simulate
+from .world import FAMILIES, FAMILIES_V21, _World, simulate
 
 
 def _sentences(text):
     return [p for p in text.split(". ") if p.strip()]
 
 
-def generate(n_per_family, n_steps, out_dir):
+def generate(n_per_family, n_steps, out_dir, coherent=False):
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    families = FAMILIES_V21 if coherent else FAMILIES
     total_episodes = 0
     start = time.time()
     stats = {}
     all_sentences = []
 
-    for fi, family in enumerate(FAMILIES):
+    for fi, family in enumerate(families):
         for shifted in (False, True):
             path = out / (f"{family}.shifted.jsonl" if shifted else f"{family}.jsonl")
             n_actions = 0
@@ -40,7 +41,7 @@ def generate(n_per_family, n_steps, out_dir):
             with open(path, "w", encoding="utf-8") as fh:
                 for i in range(n_per_family):
                     seed = fi * 1000 + i
-                    ep = simulate(seed, family, n_steps=n_steps, shifted=shifted)
+                    ep = simulate(seed, family, n_steps=n_steps, shifted=shifted, coherent=coherent)
                     fh.write(json.dumps(ep.to_dict()) + "\n")
                     n_actions += len(ep.steps)
                     ep_pos = [s for s in ep.steps if s.label.y == 1]
@@ -52,7 +53,7 @@ def generate(n_per_family, n_steps, out_dir):
                     else:
                         min_episode_positives = min(min_episode_positives, len(ep_pos))
                     if family != "clean":
-                        onset = _World(seed, family, n_steps, shifted).onset
+                        onset = _World(seed, family, n_steps, shifted, coherent=coherent).onset
                         n_pre_onset += sum(
                             1 for s in ep_pos
                             if s.action.t < onset)
@@ -97,9 +98,9 @@ def generate(n_per_family, n_steps, out_dir):
     }
 
 
-def _print(results):
+def _print(results, families):
     print("== counts ==")
-    for fam in FAMILIES:
+    for fam in families:
         for suffix in ("", ".shifted"):
             key = fam + suffix
             s = results["stats"][key]
@@ -123,9 +124,12 @@ def main(argv=None):
     p.add_argument("--out", default="data/ref")
     p.add_argument("--n-per-family", type=int, default=200)
     p.add_argument("--n-steps", type=int, default=120)
+    p.add_argument("--coherent", action="store_true",
+                   help="generate the v2.1 coherent world (adds binding_error)")
     a = p.parse_args(args)
-    results = generate(a.n_per_family, a.n_steps, a.out)
-    _print(results)
+    results = generate(a.n_per_family, a.n_steps, a.out, coherent=a.coherent)
+    families = FAMILIES_V21 if a.coherent else FAMILIES
+    _print(results, families)
     return 0
 
 

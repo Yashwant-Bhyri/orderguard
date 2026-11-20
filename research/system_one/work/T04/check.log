@@ -1,0 +1,1239 @@
+== T04 captured run 20261119T071009Z ==
+== tests ==
+.............                                                            [100%]
+13 passed in 2.79s
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading training records from data/ref (shifted=False only)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 1: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 2: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 3: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 4: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149539 ref_test_auroc=0.9966398429909251
+  hgb: cal_tau=0.180686 ref_test_auroc=0.9968821407946713
+  hgb_monotone: cal_tau=0.152866 ref_test_auroc=0.9966499119843221
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+wrote work/T04/results_ref.json and work/T04/results_ref.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.196 ms | 0.803 ms | 0.067 ms | 0.093 ms | 0.264 ms | 0.893 ms |
+| ebm | 1000 | 0.196 ms | 0.803 ms | 0.157 ms | 0.224 ms | 0.355 ms | 0.960 ms |
+| hgb | 1000 | 0.196 ms | 0.803 ms | 0.427 ms | 0.495 ms | 0.626 ms | 1.256 ms |
+| hgb_monotone | 1000 | 0.196 ms | 0.803 ms | 0.460 ms | 1.706 ms | 0.668 ms | 2.078 ms |
+| noisy_and | 1000 | 0.196 ms | 0.803 ms | 0.142 ms | 0.286 ms | 0.340 ms | 1.107 ms |
+
+
+== new --test directory needs no code change ==
+loading training records from data/ref (shifted=False only)
+split episodes: train=40 cal=40 ref_test=320 tests={'fake_test': 5}
+seed 0: fitting models
+  logistic: cal_tau=0.000118 ref_test_auroc=None
+  ebm: cal_tau=0.000011 ref_test_auroc=None
+  hgb: cal_tau=0.000011 ref_test_auroc=None
+  hgb_monotone: cal_tau=0.000011 ref_test_auroc=None
+  noisy_and: cal_tau=0.000016 ref_test_auroc=None
+wrote work/T04/fake_test_results.json and work/T04/fake_test_results.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+== reproduced results table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.196 ms | 0.803 ms | 0.067 ms | 0.093 ms | 0.264 ms | 0.893 ms |
+| ebm | 1000 | 0.196 ms | 0.803 ms | 0.157 ms | 0.224 ms | 0.355 ms | 0.960 ms |
+| hgb | 1000 | 0.196 ms | 0.803 ms | 0.427 ms | 0.495 ms | 0.626 ms | 1.256 ms |
+| hgb_monotone | 1000 | 0.196 ms | 0.803 ms | 0.460 ms | 1.706 ms | 0.668 ms | 2.078 ms |
+| noisy_and | 1000 | 0.196 ms | 0.803 ms | 0.142 ms | 0.286 ms | 0.340 ms | 1.107 ms |
+
+== fake test table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+===== 2026-11-19T08:06:55Z bash -lc bash run.sh ... (cwd=T04)
+== T04 captured run 20261119T080655Z ==
+== T04 captured run 20261119T080655Z ==
+== tests ==
+== tests ==
+..........................                                                            [100%]                                                            [100%]
+13 passed in 3.16s
+
+13 passed in 3.16s
+== build tiny fake --test directory from held-out reference episodes ==
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading training records from data/ref (shifted=False only)
+loading training records from data/ref (shifted=False only)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded authority_spoof.jsonl: 200 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+seed 0: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 1: fitting models
+seed 1: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 2: fitting models
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 2: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 3: fitting models
+seed 3: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 4: fitting models
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 4: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149539 ref_test_auroc=0.9966398429909251
+  ebm: cal_tau=0.149539 ref_test_auroc=0.9966398429909251
+  hgb: cal_tau=0.180686 ref_test_auroc=0.9968821407946713
+  hgb: cal_tau=0.180686 ref_test_auroc=0.9968821407946713
+  hgb_monotone: cal_tau=0.152866 ref_test_auroc=0.9966499119843221
+  hgb_monotone: cal_tau=0.152866 ref_test_auroc=0.9966499119843221
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+wrote work/T04/results_ref.json and work/T04/results_ref.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.195 ms | 0.730 ms | 0.069 ms | 0.166 ms | 0.265 ms | 0.862 ms |
+| ebm | 1000 | 0.195 ms | 0.730 ms | 0.158 ms | 0.266 ms | 0.356 ms | 0.885 ms |
+| hgb | 1000 | 0.195 ms | 0.730 ms | 0.494 ms | 1.239 ms | 0.693 ms | 1.542 ms |
+| hgb_monotone | 1000 | 0.195 ms | 0.730 ms | 0.461 ms | 1.551 ms | 0.662 ms | 1.752 ms |
+| noisy_and | 1000 | 0.195 ms | 0.730 ms | 0.272 ms | 41.940 ms | 0.519 ms | 42.136 ms |
+
+
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+wrote work/T04/results_ref.json and work/T04/results_ref.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.195 ms | 0.730 ms | 0.069 ms | 0.166 ms | 0.265 ms | 0.862 ms |
+| ebm | 1000 | 0.195 ms | 0.730 ms | 0.158 ms | 0.266 ms | 0.356 ms | 0.885 ms |
+| hgb | 1000 | 0.195 ms | 0.730 ms | 0.494 ms | 1.239 ms | 0.693 ms | 1.542 ms |
+| hgb_monotone | 1000 | 0.195 ms | 0.730 ms | 0.461 ms | 1.551 ms | 0.662 ms | 1.752 ms |
+| noisy_and | 1000 | 0.195 ms | 0.730 ms | 0.272 ms | 41.940 ms | 0.519 ms | 42.136 ms |
+
+
+== new --test directory needs no code change ==
+== new --test directory needs no code change ==
+loading training records from data/ref (shifted=False only)
+loading training records from data/ref (shifted=False only)
+split episodes: train=40 cal=40 ref_test=320 tests={'fake_test': 5}
+split episodes: train=40 cal=40 ref_test=320 tests={'fake_test': 5}
+seed 0: fitting models
+seed 0: fitting models
+  logistic: cal_tau=0.000118 ref_test_auroc=None
+  logistic: cal_tau=0.000118 ref_test_auroc=None
+  ebm: cal_tau=0.000011 ref_test_auroc=None
+  ebm: cal_tau=0.000011 ref_test_auroc=None
+  hgb: cal_tau=0.000011 ref_test_auroc=None
+  hgb: cal_tau=0.000011 ref_test_auroc=None
+  hgb_monotone: cal_tau=0.000011 ref_test_auroc=None
+  hgb_monotone: cal_tau=0.000011 ref_test_auroc=None
+  noisy_and: cal_tau=0.000016 ref_test_auroc=None
+  noisy_and: cal_tau=0.000016 ref_test_auroc=None
+wrote work/T04/fake_test_results.json and work/T04/fake_test_results.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+wrote work/T04/fake_test_results.json and work/T04/fake_test_results.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+== reproduced results table ==
+== reproduced results table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.195 ms | 0.730 ms | 0.069 ms | 0.166 ms | 0.265 ms | 0.862 ms |
+| ebm | 1000 | 0.195 ms | 0.730 ms | 0.158 ms | 0.266 ms | 0.356 ms | 0.885 ms |
+| hgb | 1000 | 0.195 ms | 0.730 ms | 0.494 ms | 1.239 ms | 0.693 ms | 1.542 ms |
+| hgb_monotone | 1000 | 0.195 ms | 0.730 ms | 0.461 ms | 1.551 ms | 0.662 ms | 1.752 ms |
+| noisy_and | 1000 | 0.195 ms | 0.730 ms | 0.272 ms | 41.940 ms | 0.519 ms | 42.136 ms |
+
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.195 ms | 0.730 ms | 0.069 ms | 0.166 ms | 0.265 ms | 0.862 ms |
+| ebm | 1000 | 0.195 ms | 0.730 ms | 0.158 ms | 0.266 ms | 0.356 ms | 0.885 ms |
+| hgb | 1000 | 0.195 ms | 0.730 ms | 0.494 ms | 1.239 ms | 0.693 ms | 1.542 ms |
+| hgb_monotone | 1000 | 0.195 ms | 0.730 ms | 0.461 ms | 1.551 ms | 0.662 ms | 1.752 ms |
+| noisy_and | 1000 | 0.195 ms | 0.730 ms | 0.272 ms | 41.940 ms | 0.519 ms | 42.136 ms |
+
+== fake test table ==
+== fake test table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+== T04 harness tests re-run 20261119T100340Z ==
+..............                                                           [100%]
+14 passed in 2.09s
+== T04 full suite re-run 20261119T100342Z ==
+........................................................................ [ 54%]
+...........................................................              [100%]
+131 passed in 18.26s
+
+===== 2026-11-19T23:59:26Z bash -lc bash run.sh ... (cwd=T04)
+== T04 captured run 20261119T235931Z ==
+== tests ==
+== T04 captured run 20261119T235931Z ==
+== tests ==
+............................                                                           [100%]                                                           [100%]
+14 passed in 20.94s
+
+14 passed in 20.94s
+== build tiny fake --test directory from held-out reference episodes ==
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading training records from data/ref (shifted=False only)
+loading training records from data/ref (shifted=False only)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded authority_spoof.jsonl: 200 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+seed 0: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 1: fitting models
+seed 1: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 2: fitting models
+seed 2: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 3: fitting models
+seed 3: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 4: fitting models
+seed 4: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+
+===== TIMEOUT after 2700s
+== T04 captured run 20261120T010113Z ==
+== tests ==
+..............                                                           [100%]
+14 passed in 5.25s
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading training records from data/ref (shifted=False only)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded clean.jsonl: 400 episodes total
+loaded drift.jsonl: 600 episodes total
+loaded misquote.jsonl: 800 episodes total
+loaded poisoned_note.jsonl: 1000 episodes total
+loaded stale_thesis.jsonl: 1200 episodes total
+loaded unsupported_claim.jsonl: 1400 episodes total
+loaded vague_hype.jsonl: 1600 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9972
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9969
+tuned noisy_and: l2=0.001 cal_auroc=0.9912
+  ebm: cal_tau=0.151804 ref_test_auroc=0.996654047938361
+  hgb: cal_tau=0.191936 ref_test_auroc=0.9969030127446388
+  hgb_monotone: cal_tau=0.161096 ref_test_auroc=0.9966632132779345
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 1: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.146915 ref_test_auroc=0.9966497095822213
+  hgb: cal_tau=0.190657 ref_test_auroc=0.9968716731304698
+  hgb_monotone: cal_tau=0.164606 ref_test_auroc=0.9966564174740662
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 2: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149022 ref_test_auroc=0.9966494029123716
+  hgb: cal_tau=0.179160 ref_test_auroc=0.9969123886641754
+  hgb_monotone: cal_tau=0.151567 ref_test_auroc=0.9966573599727374
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 3: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.150200 ref_test_auroc=0.9966469413757116
+  hgb: cal_tau=0.177738 ref_test_auroc=0.9969382266212417
+  hgb_monotone: cal_tau=0.153353 ref_test_auroc=0.9966678215035418
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+seed 4: fitting models
+  logistic: cal_tau=0.179261 ref_test_auroc=0.9961840947939566
+  ebm: cal_tau=0.149539 ref_test_auroc=0.9966398429909251
+  hgb: cal_tau=0.180686 ref_test_auroc=0.9968821407946713
+  hgb_monotone: cal_tau=0.152866 ref_test_auroc=0.9966499119843221
+  noisy_and: cal_tau=0.127613 ref_test_auroc=0.9910905580160085
+wrote work/T04/results_ref.json and work/T04/results_ref.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.203 ms | 0.809 ms | 0.071 ms | 0.397 ms | 0.277 ms | 0.905 ms |
+| ebm | 1000 | 0.203 ms | 0.809 ms | 0.168 ms | 0.705 ms | 0.375 ms | 1.113 ms |
+| hgb | 1000 | 0.203 ms | 0.809 ms | 0.502 ms | 1.873 ms | 0.711 ms | 2.241 ms |
+| hgb_monotone | 1000 | 0.203 ms | 0.809 ms | 0.440 ms | 0.589 ms | 0.644 ms | 1.249 ms |
+| noisy_and | 1000 | 0.203 ms | 0.809 ms | 0.145 ms | 0.214 ms | 0.349 ms | 0.955 ms |
+
+
+== new --test directory needs no code change ==
+loading training records from data/ref (shifted=False only)
+split episodes: train=40 cal=40 ref_test=320 tests={'fake_test': 5}
+seed 0: fitting models
+  logistic: cal_tau=0.000118 ref_test_auroc=None
+  ebm: cal_tau=0.000011 ref_test_auroc=None
+  hgb: cal_tau=0.000011 ref_test_auroc=None
+  hgb_monotone: cal_tau=0.000011 ref_test_auroc=None
+  noisy_and: cal_tau=0.000016 ref_test_auroc=None
+wrote work/T04/fake_test_results.json and work/T04/fake_test_results.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+== reproduced results table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9962 ± 0.0000 [0.9947, 0.9974] | 0.0126 ± 0.0000 [0.0093, 0.0160] | 0.0021 ± 0.0000 [0.0013, 0.0049] | 0.0015 ± 0.0000 [0.0007, 0.0050] | 0.0246 ± 0.0000 [0.0196, 0.0300] | 0.9442 ± 0.0000 [0.9249, 0.9611] | 3.883 | 0.000 | 0.6124 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9954, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0135] | 0.0012 ± 0.0000 [0.0009, 0.0024] | 0.0013 ± 0.0000 [0.0009, 0.0025] | 0.0237 ± 0.0000 [0.0213, 0.0264] | 0.9437 ± 0.0000 [0.9355, 0.9517] | 4.026 | 0.000 | 0.6517 |
+| ref_test | ebm | 0.9966 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0089, 0.0155] | 0.0011 ± 0.0001 [0.0008, 0.0046] | 0.0009 ± 0.0001 [0.0004, 0.0044] | 0.0305 ± 0.0005 [0.0227, 0.0393] | 0.9520 ± 0.0004 [0.9346, 0.9664] | 2.696 | 0.000 | 0.6321 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9957, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0000 [0.0008, 0.0024] | 0.0007 ± 0.0000 [0.0003, 0.0023] | 0.0300 ± 0.0003 [0.0263, 0.0339] | 0.9525 ± 0.0003 [0.9453, 0.9595] | 2.920 | 0.000 | 0.6725 |
+| ref_test | hgb | 0.9969 ± 0.0000 [0.9955, 0.9980] | 0.0120 ± 0.0000 [0.0090, 0.0154] | 0.0022 ± 0.0003 [0.0015, 0.0051] | 0.0015 ± 0.0003 [0.0008, 0.0047] | 0.0258 ± 0.0020 [0.0192, 0.0333] | 0.9532 ± 0.0011 [0.9357, 0.9679] | 2.222 | 0.000 | 0.6327 |
+| ref_shifted | hgb | 0.9978 ± 0.0000 [0.9974, 0.9983] | 0.0103 ± 0.0000 [0.0091, 0.0115] | 0.0023 ± 0.0001 [0.0016, 0.0034] | 0.0023 ± 0.0001 [0.0015, 0.0033] | 0.0229 ± 0.0020 [0.0202, 0.0257] | 0.9633 ± 0.0011 [0.9572, 0.9692] | 1.483 | 0.000 | 0.6769 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9952, 0.9978] | 0.0121 ± 0.0000 [0.0090, 0.0155] | 0.0017 ± 0.0002 [0.0013, 0.0048] | 0.0013 ± 0.0001 [0.0007, 0.0044] | 0.0313 ± 0.0008 [0.0228, 0.0413] | 0.9526 ± 0.0004 [0.9355, 0.9673] | 2.332 | 0.000 | 0.6324 |
+| ref_shifted | hgb_monotone | 0.9965 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0021 ± 0.0001 [0.0014, 0.0031] | 0.0020 ± 0.0001 [0.0010, 0.0030] | 0.0310 ± 0.0005 [0.0272, 0.0352] | 0.9540 ± 0.0002 [0.9469, 0.9609] | 2.509 | 0.000 | 0.6731 |
+| ref_test | noisy_and | 0.9911 ± 0.0000 [0.9883, 0.9935] | 0.0151 ± 0.0000 [0.0116, 0.0186] | 0.0017 ± 0.0000 [0.0010, 0.0053] | 0.0039 ± 0.0000 [0.0027, 0.0070] | 0.0269 ± 0.0000 [0.0198, 0.0348] | 0.9351 ± 0.0000 [0.9157, 0.9518] | 3.927 | 0.000 | 0.6135 |
+| ref_shifted | noisy_and | 0.9906 ± 0.0000 [0.9893, 0.9918] | 0.0146 ± 0.0000 [0.0131, 0.0161] | 0.0013 ± 0.0000 [0.0007, 0.0026] | 0.0030 ± 0.0000 [0.0027, 0.0044] | 0.0252 ± 0.0000 [0.0222, 0.0281] | 0.9353 ± 0.0000 [0.9272, 0.9432] | 3.828 | 0.000 | 0.6526 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8061 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.203 ms | 0.809 ms | 0.071 ms | 0.397 ms | 0.277 ms | 0.905 ms |
+| ebm | 1000 | 0.203 ms | 0.809 ms | 0.168 ms | 0.705 ms | 0.375 ms | 1.113 ms |
+| hgb | 1000 | 0.203 ms | 0.809 ms | 0.502 ms | 1.873 ms | 0.711 ms | 2.241 ms |
+| hgb_monotone | 1000 | 0.203 ms | 0.809 ms | 0.440 ms | 0.589 ms | 0.644 ms | 1.249 ms |
+| noisy_and | 1000 | 0.203 ms | 0.809 ms | 0.145 ms | 0.214 ms | 0.349 ms | 0.955 ms |
+
+== fake test table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8557 ± 0.0000 [0.6888, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | ebm | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb | 0.8251 ± 0.0000 [0.5279, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | hgb_monotone | 0.8255 ± 0.0000 [0.5281, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.6509 ± 0.0000 [0.0563, 1.0000] | 0.000 | 0.000 | 0.4638 |
+| fake_test | noisy_and | 0.9229 ± 0.0000 [0.7544, 1.0000] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.0617 ± 0.0000 [0.0000, 0.1850] | 0.1167 ± 0.0000 [0.1167, 0.1167] | 0.7547 ± 0.0000 [0.3368, 1.0000] | 0.000 | 0.000 | 0.4000 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 106 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+== regenerate REPORT.md from the JSON ==
+wrote work/T04/REPORT.md
+== T04 captured run 20261120T025400Z ==
+== tests ==
+....................                                                     [100%]
+20 passed in 3.20s
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading data/ref once (unshifted for training, shifted for test)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded authority_spoof.shifted.jsonl: 400 episodes total
+loaded clean.jsonl: 600 episodes total
+loaded clean.shifted.jsonl: 800 episodes total
+loaded drift.jsonl: 1000 episodes total
+loaded drift.shifted.jsonl: 1200 episodes total
+loaded misquote.jsonl: 1400 episodes total
+loaded misquote.shifted.jsonl: 1600 episodes total
+loaded poisoned_note.jsonl: 1800 episodes total
+loaded poisoned_note.shifted.jsonl: 2000 episodes total
+loaded stale_thesis.jsonl: 2200 episodes total
+loaded stale_thesis.shifted.jsonl: 2400 episodes total
+loaded unsupported_claim.jsonl: 2600 episodes total
+loaded unsupported_claim.shifted.jsonl: 2800 episodes total
+loaded vague_hype.jsonl: 3000 episodes total
+loaded vague_hype.shifted.jsonl: 3200 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.176797 ref_test_auroc=0.9965159067790054
+  hgb: cal_tau=0.220026 ref_test_auroc=0.9970206996567141
+  hgb_monotone: cal_tau=0.218348 ref_test_auroc=0.9967093377088883
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 1: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.175407 ref_test_auroc=0.99651904732328
+  hgb: cal_tau=0.221900 ref_test_auroc=0.9970393669700451
+  hgb_monotone: cal_tau=0.213983 ref_test_auroc=0.9966998731109633
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 2: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.179527 ref_test_auroc=0.9965267994550437
+  hgb: cal_tau=0.211436 ref_test_auroc=0.9970179662579186
+  hgb_monotone: cal_tau=0.206243 ref_test_auroc=0.9966887226443197
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 3: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.177359 ref_test_auroc=0.9965286510462936
+  hgb: cal_tau=0.222003 ref_test_auroc=0.9969099274429518
+  hgb_monotone: cal_tau=0.210463 ref_test_auroc=0.9966681341771948
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 4: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.174425 ref_test_auroc=0.9965262941036197
+  hgb: cal_tau=0.214050 ref_test_auroc=0.9969919171310739
+  hgb_monotone: cal_tau=0.220874 ref_test_auroc=0.9966940585006512
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+tuned logistic: C=10.0 cal_auroc=0.9962
+tuned hgb: learning_rate=0.05 max_iter=150 cal_auroc=0.9970
+tuned hgb_monotone: learning_rate=0.05 max_iter=150 cal_auroc=0.9965
+tuned noisy_and: l2=0.001 cal_auroc=0.9904
+wrote work/T04/results_ref.json and work/T04/results_ref.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9960 ± 0.0000 [0.9944, 0.9973] | 0.0124 ± 0.0000 [0.0094, 0.0156] | 0.0013 ± 0.0000 [0.0009, 0.0044] | 0.0009 ± 0.0000 [0.0007, 0.0045] | 0.0202 ± 0.0000 [0.0149, 0.0264] | 0.9431 ± 0.0000 [0.9235, 0.9603] | 4.916 | 0.000 | 0.6035 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9955, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0136] | 0.0011 ± 0.0000 [0.0007, 0.0024] | 0.0011 ± 0.0000 [0.0007, 0.0024] | 0.0187 ± 0.0000 [0.0166, 0.0211] | 0.9415 ± 0.0000 [0.9329, 0.9498] | 4.943 | 0.000 | 0.6469 |
+| ref_test | ebm | 0.9965 ± 0.0000 [0.9952, 0.9977] | 0.0117 ± 0.0000 [0.0087, 0.0150] | 0.0007 ± 0.0002 [0.0007, 0.0041] | 0.0003 ± 0.0001 [0.0004, 0.0040] | 0.0157 ± 0.0003 [0.0103, 0.0218] | 0.9472 ± 0.0003 [0.9292, 0.9635] | 3.469 | 0.000 | 0.6264 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9958, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0001 [0.0007, 0.0022] | 0.0006 ± 0.0001 [0.0003, 0.0021] | 0.0141 ± 0.0002 [0.0119, 0.0167] | 0.9459 ± 0.0001 [0.9376, 0.9535] | 3.199 | 0.000 | 0.6697 |
+| ref_test | hgb | 0.9970 ± 0.0001 [0.9957, 0.9981] | 0.0115 ± 0.0000 [0.0086, 0.0147] | 0.0015 ± 0.0002 [0.0012, 0.0045] | 0.0011 ± 0.0001 [0.0006, 0.0041] | 0.0160 ± 0.0008 [0.0114, 0.0212] | 0.9501 ± 0.0008 [0.9322, 0.9654] | 3.659 | 0.000 | 0.6277 |
+| ref_shifted | hgb | 0.9979 ± 0.0000 [0.9975, 0.9983] | 0.0102 ± 0.0000 [0.0090, 0.0115] | 0.0025 ± 0.0001 [0.0018, 0.0033] | 0.0019 ± 0.0001 [0.0014, 0.0030] | 0.0128 ± 0.0005 [0.0108, 0.0149] | 0.9561 ± 0.0005 [0.9494, 0.9625] | 2.680 | 0.000 | 0.6739 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9954, 0.9979] | 0.0117 ± 0.0000 [0.0087, 0.0148] | 0.0014 ± 0.0002 [0.0011, 0.0044] | 0.0015 ± 0.0003 [0.0006, 0.0041] | 0.0149 ± 0.0003 [0.0096, 0.0207] | 0.9472 ± 0.0003 [0.9288, 0.9636] | 3.784 | 0.000 | 0.6264 |
+| ref_shifted | hgb_monotone | 0.9966 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0017 ± 0.0001 [0.0011, 0.0028] | 0.0015 ± 0.0001 [0.0008, 0.0026] | 0.0144 ± 0.0004 [0.0120, 0.0169] | 0.9460 ± 0.0002 [0.9376, 0.9537] | 3.213 | 0.000 | 0.6697 |
+| ref_test | noisy_and | 0.9915 ± 0.0000 [0.9889, 0.9938] | 0.0148 ± 0.0000 [0.0113, 0.0182] | 0.0020 ± 0.0000 [0.0012, 0.0053] | 0.0042 ± 0.0000 [0.0035, 0.0072] | 0.0121 ± 0.0000 [0.0081, 0.0167] | 0.9357 ± 0.0000 [0.9171, 0.9528] | 3.755 | 0.000 | 0.6082 |
+| ref_shifted | noisy_and | 0.9907 ± 0.0000 [0.9895, 0.9919] | 0.0147 ± 0.0000 [0.0132, 0.0162] | 0.0016 ± 0.0000 [0.0010, 0.0029] | 0.0040 ± 0.0000 [0.0034, 0.0051] | 0.0140 ± 0.0000 [0.0119, 0.0161] | 0.9318 ± 0.0000 [0.9229, 0.9400] | 3.803 | 0.000 | 0.6504 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8053 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.208 ms | 1.578 ms | 0.075 ms | 0.859 ms | 0.305 ms | 2.138 ms |
+| ebm | 1000 | 0.208 ms | 1.578 ms | 0.147 ms | 0.778 ms | 0.367 ms | 2.109 ms |
+| hgb | 1000 | 0.208 ms | 1.578 ms | 0.794 ms | 4.280 ms | 1.083 ms | 4.769 ms |
+| hgb_monotone | 1000 | 0.208 ms | 1.578 ms | 0.499 ms | 3.410 ms | 0.760 ms | 3.648 ms |
+| noisy_and | 1000 | 0.208 ms | 1.578 ms | 0.149 ms | 0.756 ms | 0.362 ms | 1.992 ms |
+
+
+== new --test directory needs no code change ==
+loading data/ref once (unshifted for training, shifted for test)
+split episodes: train=40 cal=40 ref_test=320 tests={'fake_test': 5}
+seed 0: fitting models
+  logistic: cal_tau=0.000126 ref_test_auroc=None
+  ebm: cal_tau=0.000043 ref_test_auroc=None
+  hgb: cal_tau=0.000012 ref_test_auroc=None
+  hgb_monotone: cal_tau=0.000012 ref_test_auroc=None
+  noisy_and: cal_tau=0.000028 ref_test_auroc=None
+wrote work/T04/fake_test_results.json and work/T04/fake_test_results.md
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8889 ± 0.0000 [0.6757, 1.0000] | 0.0599 ± 0.0000 [0.0000, 0.1350] | 0.0677 ± 0.0000 [0.0000, 0.1350] | 0.0677 ± 0.0000 [0.0000, 0.1350] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8015 ± 0.0000 [0.3000, 1.0000] | 0.000 | 0.000 | 0.6972 |
+| fake_test | ebm | 0.9046 ± 0.0000 [0.7472, 1.0000] | 0.0650 ± 0.0000 [0.0000, 0.1350] | 0.0800 ± 0.0000 [0.0000, 0.1467] | 0.0801 ± 0.0000 [0.0000, 0.1468] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8015 ± 0.0000 [0.3000, 1.0000] | 0.000 | 0.000 | 0.6972 |
+| fake_test | hgb | 0.7457 ± 0.0000 [0.5127, 1.0000] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.1133 ± 0.0000 [0.0000, 0.1984] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.0083 ± 0.0000 [0.0083, 0.0083] | 0.5000 ± 0.0000 [0.0426, 1.0000] | 14.000 | 0.000 | 0.5147 |
+| fake_test | hgb_monotone | 0.7500 ± 0.0000 [0.5213, 1.0000] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.1133 ± 0.0000 [0.0000, 0.1984] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.5000 ± 0.0000 [0.0426, 1.0000] | 0.000 | 0.000 | 0.5147 |
+| fake_test | noisy_and | 0.9407 ± 0.0000 [0.8152, 1.0000] | 0.0822 ± 0.0000 [0.0000, 0.1517] | 0.0943 ± 0.0000 [0.0000, 0.1751] | 0.0943 ± 0.0000 [0.0000, 0.1751] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8529 ± 0.0000 [0.4814, 1.0000] | 0.250 | 0.000 | 0.6552 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 136 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+
+== reproduced results table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| ref_test | logistic | 0.9960 ± 0.0000 [0.9944, 0.9973] | 0.0124 ± 0.0000 [0.0094, 0.0156] | 0.0013 ± 0.0000 [0.0009, 0.0044] | 0.0009 ± 0.0000 [0.0007, 0.0045] | 0.0202 ± 0.0000 [0.0149, 0.0264] | 0.9431 ± 0.0000 [0.9235, 0.9603] | 4.916 | 0.000 | 0.6035 |
+| ref_shifted | logistic | 0.9961 ± 0.0000 [0.9955, 0.9967] | 0.0122 ± 0.0000 [0.0108, 0.0136] | 0.0011 ± 0.0000 [0.0007, 0.0024] | 0.0011 ± 0.0000 [0.0007, 0.0024] | 0.0187 ± 0.0000 [0.0166, 0.0211] | 0.9415 ± 0.0000 [0.9329, 0.9498] | 4.943 | 0.000 | 0.6469 |
+| ref_test | ebm | 0.9965 ± 0.0000 [0.9952, 0.9977] | 0.0117 ± 0.0000 [0.0087, 0.0150] | 0.0007 ± 0.0002 [0.0007, 0.0041] | 0.0003 ± 0.0001 [0.0004, 0.0040] | 0.0157 ± 0.0003 [0.0103, 0.0218] | 0.9472 ± 0.0003 [0.9292, 0.9635] | 3.469 | 0.000 | 0.6264 |
+| ref_shifted | ebm | 0.9964 ± 0.0000 [0.9958, 0.9970] | 0.0116 ± 0.0000 [0.0102, 0.0129] | 0.0009 ± 0.0001 [0.0007, 0.0022] | 0.0006 ± 0.0001 [0.0003, 0.0021] | 0.0141 ± 0.0002 [0.0119, 0.0167] | 0.9459 ± 0.0001 [0.9376, 0.9535] | 3.199 | 0.000 | 0.6697 |
+| ref_test | hgb | 0.9970 ± 0.0001 [0.9957, 0.9981] | 0.0115 ± 0.0000 [0.0086, 0.0147] | 0.0015 ± 0.0002 [0.0012, 0.0045] | 0.0011 ± 0.0001 [0.0006, 0.0041] | 0.0160 ± 0.0008 [0.0114, 0.0212] | 0.9501 ± 0.0008 [0.9322, 0.9654] | 3.659 | 0.000 | 0.6277 |
+| ref_shifted | hgb | 0.9979 ± 0.0000 [0.9975, 0.9983] | 0.0102 ± 0.0000 [0.0090, 0.0115] | 0.0025 ± 0.0001 [0.0018, 0.0033] | 0.0019 ± 0.0001 [0.0014, 0.0030] | 0.0128 ± 0.0005 [0.0108, 0.0149] | 0.9561 ± 0.0005 [0.9494, 0.9625] | 2.680 | 0.000 | 0.6739 |
+| ref_test | hgb_monotone | 0.9967 ± 0.0000 [0.9954, 0.9979] | 0.0117 ± 0.0000 [0.0087, 0.0148] | 0.0014 ± 0.0002 [0.0011, 0.0044] | 0.0015 ± 0.0003 [0.0006, 0.0041] | 0.0149 ± 0.0003 [0.0096, 0.0207] | 0.9472 ± 0.0003 [0.9288, 0.9636] | 3.784 | 0.000 | 0.6264 |
+| ref_shifted | hgb_monotone | 0.9966 ± 0.0000 [0.9960, 0.9971] | 0.0115 ± 0.0000 [0.0102, 0.0129] | 0.0017 ± 0.0001 [0.0011, 0.0028] | 0.0015 ± 0.0001 [0.0008, 0.0026] | 0.0144 ± 0.0004 [0.0120, 0.0169] | 0.9460 ± 0.0002 [0.9376, 0.9537] | 3.213 | 0.000 | 0.6697 |
+| ref_test | noisy_and | 0.9915 ± 0.0000 [0.9889, 0.9938] | 0.0148 ± 0.0000 [0.0113, 0.0182] | 0.0020 ± 0.0000 [0.0012, 0.0053] | 0.0042 ± 0.0000 [0.0035, 0.0072] | 0.0121 ± 0.0000 [0.0081, 0.0167] | 0.9357 ± 0.0000 [0.9171, 0.9528] | 3.755 | 0.000 | 0.6082 |
+| ref_shifted | noisy_and | 0.9907 ± 0.0000 [0.9895, 0.9919] | 0.0147 ± 0.0000 [0.0132, 0.0162] | 0.0016 ± 0.0000 [0.0010, 0.0029] | 0.0040 ± 0.0000 [0.0034, 0.0051] | 0.0140 ± 0.0000 [0.0119, 0.0161] | 0.9318 ± 0.0000 [0.9229, 0.9400] | 3.803 | 0.000 | 0.6504 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| ref_test | 320 | 38400 | 8053 | 4800 |
+| ref_shifted | 1600 | 192000 | 38566 | 24000 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic | 1000 | 0.208 ms | 1.578 ms | 0.075 ms | 0.859 ms | 0.305 ms | 2.138 ms |
+| ebm | 1000 | 0.208 ms | 1.578 ms | 0.147 ms | 0.778 ms | 0.367 ms | 2.109 ms |
+| hgb | 1000 | 0.208 ms | 1.578 ms | 0.794 ms | 4.280 ms | 1.083 ms | 4.769 ms |
+| hgb_monotone | 1000 | 0.208 ms | 1.578 ms | 0.499 ms | 3.410 ms | 0.760 ms | 3.648 ms |
+| noisy_and | 1000 | 0.208 ms | 1.578 ms | 0.149 ms | 0.756 ms | 0.362 ms | 1.992 ms |
+
+== fake test table ==
+# T04 model evaluation — reference world
+
+Every value below is computed by `work/T04/run.sh`.  Cells are
+`mean ± seed spread [mean episode-bootstrap 95% CI]`; `n/a` means
+undefined for that split (for example AUROC when a split has one class).
+
+## Headline table
+
+| Test | Model | AUROC | Brier | ECE-15 | ECE-adaptive | Clean hold | Recall | Lead mean | Lead median | Top-cause acc |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| fake_test | logistic | 0.8889 ± 0.0000 [0.6757, 1.0000] | 0.0599 ± 0.0000 [0.0000, 0.1350] | 0.0677 ± 0.0000 [0.0000, 0.1350] | 0.0677 ± 0.0000 [0.0000, 0.1350] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8015 ± 0.0000 [0.3000, 1.0000] | 0.000 | 0.000 | 0.6972 |
+| fake_test | ebm | 0.9046 ± 0.0000 [0.7472, 1.0000] | 0.0650 ± 0.0000 [0.0000, 0.1350] | 0.0800 ± 0.0000 [0.0000, 0.1467] | 0.0801 ± 0.0000 [0.0000, 0.1468] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8015 ± 0.0000 [0.3000, 1.0000] | 0.000 | 0.000 | 0.6972 |
+| fake_test | hgb | 0.7457 ± 0.0000 [0.5127, 1.0000] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.1133 ± 0.0000 [0.0000, 0.1984] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.0083 ± 0.0000 [0.0083, 0.0083] | 0.5000 ± 0.0000 [0.0426, 1.0000] | 14.000 | 0.000 | 0.5147 |
+| fake_test | hgb_monotone | 0.7500 ± 0.0000 [0.5213, 1.0000] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.1133 ± 0.0000 [0.0000, 0.1984] | 0.1133 ± 0.0000 [0.0000, 0.1985] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.5000 ± 0.0000 [0.0426, 1.0000] | 0.000 | 0.000 | 0.5147 |
+| fake_test | noisy_and | 0.9407 ± 0.0000 [0.8152, 1.0000] | 0.0822 ± 0.0000 [0.0000, 0.1517] | 0.0943 ± 0.0000 [0.0000, 0.1751] | 0.0943 ± 0.0000 [0.0000, 0.1751] | 0.0000 ± 0.0000 [0.0000, 0.0000] | 0.8529 ± 0.0000 [0.4814, 1.0000] | 0.250 | 0.000 | 0.6552 |
+
+## Split sizes
+
+| Test | Episodes | Actions | Positives | Clean actions |
+|---|---:|---:|---:|---:|
+| fake_test | 5 | 600 | 136 | 120 |
+
+## EBM monotonicity certificate
+
+All main-effect bins monotone: **True**.
+Features checked: 41.  Worst bin-to-bin change: 0 on `drift_out_of_band_weight`.
+
+## Latency (one core, single-action prediction)
+
+| Model | Actions timed | Featurise p50 | Featurise p99 | Predict p50 | Predict p99 | Total p50 | Total p99 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+
+entry point elapsed: 1206 s
+== regenerate REPORT.md from the JSON ==
+wrote work/T04/REPORT.md
+== T04 captured run 20261120T031650Z ==
+== tests ==
+....................                                                     [100%]
+20 passed in 2.57s
+== build tiny fake --test directory from held-out reference episodes ==
+wrote work/T04/fake_test/ref_copy.jsonl with 5 episodes: ['clean', 'authority_spoof', 'drift', 'misquote', 'poisoned_note']
+== full reference evaluation (5 seeds, 1000 episode bootstraps) ==
+loading data/ref once (unshifted for training, shifted for test)
+loaded authority_spoof.jsonl: 200 episodes total
+loaded authority_spoof.shifted.jsonl: 400 episodes total
+loaded clean.jsonl: 600 episodes total
+loaded clean.shifted.jsonl: 800 episodes total
+loaded drift.jsonl: 1000 episodes total
+loaded drift.shifted.jsonl: 1200 episodes total
+loaded misquote.jsonl: 1400 episodes total
+loaded misquote.shifted.jsonl: 1600 episodes total
+loaded poisoned_note.jsonl: 1800 episodes total
+loaded poisoned_note.shifted.jsonl: 2000 episodes total
+loaded stale_thesis.jsonl: 2200 episodes total
+loaded stale_thesis.shifted.jsonl: 2400 episodes total
+loaded unsupported_claim.jsonl: 2600 episodes total
+loaded unsupported_claim.shifted.jsonl: 2800 episodes total
+loaded vague_hype.jsonl: 3000 episodes total
+loaded vague_hype.shifted.jsonl: 3200 episodes total
+split episodes: train=960 cal=320 ref_test=320 tests={'ref_test': 320, 'ref_shifted': 1600}
+seed 0: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.176797 ref_test_auroc=0.9965159067790054
+  hgb: cal_tau=0.220026 ref_test_auroc=0.9970206996567141
+  hgb_monotone: cal_tau=0.218348 ref_test_auroc=0.9967093377088883
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 1: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685
+  ebm: cal_tau=0.175407 ref_test_auroc=0.99651904732328
+  hgb: cal_tau=0.221900 ref_test_auroc=0.9970393669700451
+  hgb_monotone: cal_tau=0.213983 ref_test_auroc=0.9966998731109633
+  noisy_and: cal_tau=0.122292 ref_test_auroc=0.991481735018011
+seed 2: fitting models
+  logistic: cal_tau=0.203398 ref_test_auroc=0.9959777627532685

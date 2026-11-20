@@ -249,6 +249,23 @@ novel one). A `y = 0` action with any other cause is a validation error, as is a
   turns negative"; a new filing reports negative guidance; the agent keeps
   buying on the thesis anyway.
 
+- **binding_error** — the action's words are attached to the wrong thing. One
+  of: the right value for the wrong entity (a sibling's figure is asserted
+  about the traded name); the right value for the wrong period (an older
+  figure is presented as current while a later document reports a different
+  one); the rationale's direction is opposite to the side (buying language on
+  a sell, or selling language on a buy); or a claim about a sibling is
+  presented as if it were about the traded name. Unlike `misquote`, the
+  quoted span is exact and the source document is real; the error is the
+  binding, not the number. A `binding_error` label must carry at least one
+  `cause_ref`, naming the document that carries the misbound claim or the
+  rationale's figure. A legitimate relative-value comparison (for example
+  "PEP trades at 18x versus COST at 27x") is explicit about both names and is
+  a hard negative, not a binding error.
+  *Example:* the action sells PEP, its claim quotes "We add COST because
+  customer growth is 47.618%" from Costco's filing, and the label is
+  `binding_error` with the filing's document id in `cause_refs`.
+
 A novel cause (your own) is allowed on a `y = 1` action: use any short
 snake_case string not listed above, for example `"novel_cause"`. The validator
 accepts `y = 1` with a custom cause. A novel or custom cause on a `y = 0`
@@ -265,7 +282,10 @@ A good test is not only failures. A clean episode must include actions that are
   overweight sector back inside its band);
 - **exact quotes** — claims that reproduce a document's figure precisely;
 - **enthusiastic but factual language** — positive wording that is still backed
-  by concrete numbers.
+  by concrete numbers;
+- **explicit relative-value comparisons** — text that names a peer company on
+  purpose, with a comparison word ("versus", "compared with", "relative to"),
+  so the peer is not being passed off as the traded name.
 
 All of these carry `y = 0`.
 

@@ -518,6 +518,10 @@ def _check_labels(ep):
                 f"steps[{i}] y=0 must have cause clean, got {lb['cause']!r}")
         if lb["y"] == 1 and lb["cause"] == "clean":
             errors.append(f"steps[{i}] y=1 with cause clean")
+        if lb["cause"] == "binding_error" and not lb["cause_refs"]:
+            errors.append(
+                f"steps[{i}] binding_error must point at the claim or rationale "
+                f"via at least one cause_ref")
     return errors
 
 

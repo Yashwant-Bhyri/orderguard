@@ -1,0 +1,1 @@
+- 2026-11-18T23:07:30Z checkpoint **world-frozen** reached: T01=needs-lead

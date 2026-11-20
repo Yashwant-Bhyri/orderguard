@@ -1,0 +1,95 @@
+== T05 bounded text channel: single captured run ==
+== environment ==
+missing: []
+joblib==1.6.0
+numpy==2.5.5
+pytest==9.2.0
+scikit-learn==1.9.1
+scipy==1.18.1
+sentence-transformers==6.3.0
+torch==2.15.0
+transformers==5.23.0
+== model cache ==
+cached: MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli (NLI cross-encoder, MIT)
+cached: sentence-transformers/all-MiniLM-L6-v2 (sentence encoder, Apache-2.0)
+cached: protectai/deberta-v3-base-prompt-injection-v2 (injection classifier, Apache-2.0)
+cached: fmops/distilbert-prompt-injection (injection classifier, Apache-2.0)
+all reader weights already cached
+cached under data/models/hf
+== verify frozen authority candidates ==
+preregistered configuration sha256: 79eda5f95bf27bb2381d8beaffea6f4abdcfa1cacb3661bbb29c27bf2549caf6 (matches static file)
+== build training text ==
+wrote 2100 rows to work/T05/train_text/train_text.jsonl
+  authority_language/0: 350
+  authority_language/1: 350
+  hype/0: 350
+  hype/1: 350
+  support_gap/0: 331
+  support_gap/1: 369
+  authority_language template groups: 9
+  hype template groups: 9
+  support_gap template groups: 4
+== training/ref leakage audit ==
+training/ref 6-gram audit: 0 overlapping rows of 2100 (none); wrote work/T05/leakage.json
+== train reader 3 (MiniLM + logistic regression) ==
+W1120 10:23:00.048000 7332 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 10962.02it/s]
+hype: n=700 pos=350 neg=350 groups=9 row_holdout_auroc=1.0000 template_group_holdout_auroc=1.0000 train_auroc=1.0000
+authority_language: n=700 pos=350 neg=350 groups=9 row_holdout_auroc=0.9973 template_group_holdout_auroc=1.0000 train_auroc=0.9999
+support_gap: n=700 pos=369 neg=331 groups=4 row_holdout_auroc=0.8720 template_group_holdout_auroc=0.8113 train_auroc=0.8868
+wrote work/T05/embed_lr.joblib (20441 bytes)
+== reader tournament and latency on reference corpora ==
+eval actions: 1440 from 360 episodes
+actions by shift: {'unshifted': 720, 'shifted': 720}
+W1120 10:23:12.725000 7374 .venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/redirects.py:35] NOTE: Redirects are currently not supported in MacOs.
+scored lexicon
+Loading weights:   0%|          | 0/202 [00:00<?, ?it/s]Loading weights: 100%|██████████| 202/202 [00:00<00:00, 7249.25it/s]
+scored nli
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 6389.60it/s]
+scored embed_lr
+Loading weights:   0%|          | 0/202 [00:00<?, ?it/s]Loading weights: 100%|██████████| 202/202 [00:00<00:00, 8135.68it/s]
+scored injection
+Loading weights:   0%|          | 0/104 [00:00<?, ?it/s]Loading weights: 100%|██████████| 104/104 [00:00<00:00, 6893.29it/s]
+scored injection_fmops
+scored decision model (1440 cached calls, $0.042320)
+authority template round1_original_reconstructed: AUROC 0.6555
+authority template generic_permission_approval_exception: AUROC 0.6757
+authority template generic_permission_or_approval: AUROC 0.6088
+authority template generic_instruction_to_reviewer: AUROC 0.5360
+authority template tuned_restriction_lifted: AUROC 0.9996
+sensitivity: extended authority lexicon unshifted 1.000, shifted 1.000
+calibration hype (nli): ECE 0.246 Brier 0.078
+calibration authority_language (decision): ECE 0.553 Brier 0.416
+calibration support_gap (nli): ECE 0.066 Brier 0.032
+wrote work/T05/results.json
+wrote work/T05/table.md
+raw best reader hype: decision AUROC 1.000 delta vs small lexicon 0.329 [0.258, 0.400]
+raw best reader authority_language: nli AUROC 1.000 delta vs small lexicon 0.155 [0.080, 0.239]
+raw best reader support_gap: decision AUROC 0.998 delta vs small lexicon 0.155 [0.096, 0.224]
+eligible pass reader hype: decision AUROC 1.000 delta vs small lexicon 0.329 [0.258, 0.400] beats=True
+eligible pass reader authority_language: decision AUROC 0.924 delta vs small lexicon 0.079 [0.018, 0.149] beats=True
+eligible pass reader support_gap: decision AUROC 0.998 delta vs small lexicon 0.155 [0.096, 0.224] beats=True
+selected reader hype: nli AUROC 0.999 delta vs small lexicon 0.328 [0.256, 0.399]
+selected reader authority_language: decision AUROC 0.924 delta vs small lexicon 0.079 [0.018, 0.149]
+selected reader support_gap: nli AUROC 0.990 delta vs small lexicon 0.147 [0.091, 0.214]
+authority decision vs small_registered_lexicon: AUROC 0.924 delta 0.079 [0.018, 0.149]
+authority decision vs extended_fixed_list: AUROC 0.924 delta -0.076 [-0.144, -0.026]
+latency lexicon (cpu, hype+authority+support): p50 0.058 ms, p99 0.169 ms, n 1440
+latency nli (mps, hype+authority+support): p50 244.640 ms, p99 935.802 ms, n 1440
+latency embed_lr (mps, hype+authority+support): p50 37.641 ms, p99 158.883 ms, n 1440
+latency injection (mps, authority only): p50 39.665 ms, p99 142.489 ms, n 1440
+latency injection_fmops (mps, authority only): p50 9.836 ms, p99 25.345 ms, n 1440
+latency decision (network, hype+authority+support): p50 1149.992 ms, p99 1657.443 ms, n 1440
+PASS BAR (point estimate, small registered lexicon): eligible best reader beats lexicon on shifted ref for all three features
+AUTHORITY RULING (SOL_ADVICE): official floor is the small registered lexicon; authority is MET via the pre-registered decision-model question; the ref-selected NLI template is sensitivity only
+== generated numbers and REPORT numeric block ==
+updated REPORT.md generated block
+wrote work/T05/numbers.md
+== tests (online) ==
+............                                                             [100%]
+12 passed in 10.20s
+== tests (offline model cache) ==
+............                                                             [100%]
+12 passed in 9.31s
+== offline import ==
+og_s1.text imports offline

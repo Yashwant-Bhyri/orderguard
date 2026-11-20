@@ -1,0 +1,163 @@
+[
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Remove the family signal from model-visible identifiers.** `generate.py` assigns seed ranges by family (`fi * 1000 + i`), `_owner` embeds the seed in `signing_key_id`, and `model_view` retains the owner. A model can infer the family from the key even though `meta` is stripped. Use an identifier independent of family/seed (or remove it from the model view), regenerate the reference data, and add a regression test that the model view does not reveal family through identifiers.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Make per-action model input causal.** `model_view` returns all documents, all steps, and final thesis statuses. In the stale-thesis generator, the onset changes a thesis's status to `invalidated`; that final status remains visible to every action, including actions before onset. Later documents and actions are also present in the view. Provide an as-of-action view, or otherwise enforce that a scorer receives only information available at that action; time-index or omit final thesis status. Add tests that an earlier action cannot see later evidence or state.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Remove detector/checker rules from the author-facing schema.** Keep the field meanings and episode format, but remove the operational replay/label checks from `SCHEMA.md` (especially its `y`-gated band and position checks and the rule identifying drift buys above `max`). The brief explicitly bars detection logic in that file.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Reconcile the throughput claims.** Update all repeated throughput/time values in `REPORT.md` to the captured run, or report the measurement as a non-reproducible sample without presenting it as the current `check.log` result. Ensure the log and report-time summary describe the same single run.",
+    "label": "missing_evidence",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Close schema-validation bounds gaps.** The validator checks that band values and mandate limits are numeric, but not that sector bands are within the documented 0-1 range; it also treats a missing zero-valued sector total in `initial_book.sectors` as if it were present. Enforce the documented ranges and required sector totals, with malformed-episode regression tests.",
+    "label": "bug",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Loopholes found",
+    "text": "**Family leakage:** the seed range is a deterministic family code carried into `owner.signing_key_id`, which survives `model_view`. This is a direct label proxy in the reference corpus. I found no evidence in the reviewed files of held-out test-set peeking or threshold selection against held-out data; that does not remove this input leakage.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Loopholes found",
+    "text": "**Future-information leakage:** the model view strips `meta` and `label`, but not future episode contents or the final `invalidated` thesis status. This allows a per-action scorer to use future state.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Loopholes found",
+    "text": "**Detection-logic disclosure:** `SCHEMA.md` explains the reference validator's replay and label-consistency checks, contrary to the author-facing restriction.",
+    "label": "leakage",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Loopholes found",
+    "text": "**Report accuracy:** deterministic results reproduce, but the throughput values do not match the independent run. The original checked-in log also had duplicate result blocks before this re-run.",
+    "label": "missing_evidence",
+    "task": "T01"
+  },
+  {
+    "source": "work/T01/REVIEW.md",
+    "section": "Loopholes found",
+    "text": "**Validator edge cases:** out-of-range mandate weights and missing zero-valued sector totals can pass schema validation. The generated corpus itself passed validation.",
+    "label": "bug",
+    "task": "T01"
+  },
+  {
+    "source": "runs/T03/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "Reconcile every sampled latency/throughput figure in `REPORT.md` (including the repeated figures in the results, pass-bar text and judgement call) with one identified captured run. The report and `check.log` must agree for the capture it cites.",
+    "label": "missing_evidence",
+    "task": "T03"
+  },
+  {
+    "source": "runs/T03/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "Treat an empty `quoted_span` as missing/invalid. In Python, `\"\" in source_text` is true, so the current check accepts an empty quote and can leave a numeric claim with a matching fact unflagged. Add a regression case and make the support feature signal it.",
+    "label": "bug",
+    "task": "T03"
+  },
+  {
+    "source": "runs/T03/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "Resolve mixed-trust note citations against the brief. The external/tool feature uses `all(tier == 0)`, so a note citing both a tier-0 and a higher-tier document is not marked by that feature. The generic low-trust feature does fire, but loses the external/tool writer condition. The brief's wording reads as including a citation to a tier-0 document; the exact any-versus-all interpretation is recorded in `ESCALATION.md`.",
+    "label": "bug",
+    "task": "T03"
+  },
+  {
+    "source": "runs/T03/round2/REVIEW.md",
+    "section": "Loopholes and limits found",
+    "text": "The closed unit table, numeric-only claim handling, and status-free staleness logic leave the limitations stated in the report. They are not hidden in the reported metric, but they make coverage dependent on structured facts and known unit spellings.",
+    "label": "missing_evidence",
+    "task": "T03"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Remove the 2026q2 outcome-driven classifier change from the evaluation claim.** `REPORT.md` says the worker inspected a flagged sample, saw an \"Equity Plus Bond\" name classified as equity, then changed the classifier and its unit cases; it also says this changed the scored and flag counts. That is a rule change prompted by an output from the same evaluated quarter. Disclosing it is good, but it does not make the resulting quarter an untouched evaluation. Freeze the rule before scoring an untouched quarter or independently authored, precommitted set, rerun the evaluation, and label the current-quarter counts exploratory. Do not tune or add cases from that holdout.",
+    "label": "leakage",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Make cache reuse honor the later-User-Agent requirement.** `download.py` returns early for an existing cache at line 332 before checking `SEC_USER_AGENT`. Thus a later run with the approved variable set will not fetch SEC directly or compare hashes, despite the report promising that behavior. When the variable is set, bypass or validate the cache, attempt the SEC fetch, and record the direct-versus-archive SHA-256 comparison. Keep the current cache reuse path when no variable is set.",
+    "label": "bug",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Substantiate the privacy pass-bar claim.** The current privacy scan checks email-like strings, home paths, and a narrow key pattern; it does not establish the broader \"no personal data\" claim. Either add a suitable scan/review for personal data across task artifacts and cached data, or narrow the report's claim to the exact checks performed and provide evidence that the remaining data fields cannot contain personal data.",
+    "label": "missing_evidence",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Required fixes, in order",
+    "text": "**Resolve blank series IDs in the samples.** Four of 30 flagged rows have an empty `series_id`, despite the requested sample schema requiring one. Resample from flagged rows with an available series ID and state the resulting sampling frame, or explicitly label the source ID as missing and explain why that row is retained. Apply the same rule to the clean sample if it contains missing IDs.",
+    "label": "bug",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Loopholes and fragility found",
+    "text": "**Same-data rule revision:** the report acknowledges the sample-driven \"Equity Plus Bond\" change. There is no independent real-name evaluation after that change.",
+    "label": "leakage",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Loopholes and fragility found",
+    "text": "**Value-mode selection is in-sample:** `score.py` selects `CURRENCY_VALUE` versus `CURRENCY_VALUE * EXCHANGE_RATE` and the percentage scale by minimizing error against `PERCENTAGE` on the first 30,000 rows of this dataset. The later share-versus-percentage discrepancy is therefore not an independent validation. Treat it as a data-format calibration, or verify the units from a pre-existing schema/source and validate on separate filings.",
+    "label": "leakage",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Loopholes and fragility found",
+    "text": "**The rerun did not verify the download claim:** the task entry point reused cache, so the reported pacing measurement was not reproduced this turn. The scoring/test outputs did reproduce.",
+    "label": "missing_evidence",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Loopholes and fragility found",
+    "text": "**Sample identifiers:** all 30 flagged accessions are distinct and linked, but four series IDs are blank. The current 30/30 link check does not catch that deliverable gap.",
+    "label": "bug",
+    "task": "T08"
+  },
+  {
+    "source": "runs/T08/round2/REVIEW.md",
+    "section": "Loopholes and fragility found",
+    "text": "**Privacy scope:** the scan's zero counts cover its implemented patterns, not generic personally identifying content. I found no email or absolute home path in the rerun output, but that is narrower than the stated pass-bar claim.",
+    "label": "missing_evidence",
+    "task": "T08"
+  }
+]
