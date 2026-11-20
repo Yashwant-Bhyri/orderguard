@@ -395,6 +395,17 @@ def review_prompt(task: dict, d: Path) -> str:
         f"tried, the gray area, and one precise question, self-contained and under 600 words.")
 
 
+def parse_verdict(task: dict, review: Path) -> str:
+    """The verdict from REVIEW.md. Reviewers sometimes put a heading above it; an unfinished review is not a verdict."""
+    head = review.read_text().strip().splitlines()[:6]
+    line = next((x for x in head if re.match(r"\s*\**VERDICT:", x)), "")
+    m = re.match(r"\s*\**VERDICT:\**\s*(PASS|REVISE|FAIL|ESCALATE)", line)
+    if m and re.search(r"provisional|in progress", " ".join(head[:3]), re.I):
+        log(f"{task['id']}: the review stopped while still provisional; the work is kept and the review is redone")
+        return "WAIT"
+    return m.group(1) if m else "ERROR"
+
+
 def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     kind = "fallback_reviews" if codex_down() else "reviews"
     if not budget_ok(st, kind):
@@ -428,13 +439,7 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     if not review.exists():
         log(f"{task['id']}: reviewer exited {rc} without REVIEW.md")
         return "ERROR"
-    head = review.read_text().strip().splitlines()[:6]          # reviewers sometimes put a heading above the verdict
-    line = next((x for x in head if re.match(r"\s*\**VERDICT:", x)), "")
-    m = re.match(r"\s*\**VERDICT:\**\s*(PASS|REVISE|FAIL|ESCALATE)", line)
-    if m and re.search(r"provisional|in progress", " ".join(head[:3]), re.I):
-        log(f"{task['id']}: the review stopped while still provisional; the work is kept and the review is redone")
-        return "WAIT"                                           # an unfinished review is not a verdict
-    return m.group(1) if m else "ERROR"
+    return parse_verdict(task, review)
 
 
 def run_escalation(task: dict, d: Path, rundir: Path, st: dict) -> bool:
@@ -580,9 +585,7 @@ def finish_review(task: dict, st: dict, d: Path, rundir: Path, rnd: int, rc: int
     tid = task["id"]
     ts = tstate(st, tid)
     if verdict is None:
-        first = (d / "REVIEW.md").read_text().strip().splitlines()[0] if (d / "REVIEW.md").read_text().strip() else ""
-        m = re.match(r"VERDICT:\s*(PASS|REVISE|FAIL|ESCALATE)", first)
-        verdict = m.group(1) if m else "ERROR"
+        verdict = parse_verdict(task, d / "REVIEW.md")
     archive(task, d, rundir)
     sync_back(task)
     ts["history"].append({"round": rnd, "worker_rc": rc, "verdict": verdict, "at": now()})
