@@ -428,8 +428,12 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     if not review.exists():
         log(f"{task['id']}: reviewer exited {rc} without REVIEW.md")
         return "ERROR"
-    first = review.read_text().strip().splitlines()[0] if review.read_text().strip() else ""
-    m = re.match(r"VERDICT:\s*(PASS|REVISE|FAIL|ESCALATE)", first)
+    head = review.read_text().strip().splitlines()[:6]          # reviewers sometimes put a heading above the verdict
+    line = next((x for x in head if re.match(r"\s*\**VERDICT:", x)), "")
+    m = re.match(r"\s*\**VERDICT:\**\s*(PASS|REVISE|FAIL|ESCALATE)", line)
+    if m and re.search(r"provisional|in progress", " ".join(head[:3]), re.I):
+        log(f"{task['id']}: the review stopped while still provisional; the work is kept and the review is redone")
+        return "WAIT"                                           # an unfinished review is not a verdict
     return m.group(1) if m else "ERROR"
 
 

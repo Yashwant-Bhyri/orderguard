@@ -58,3 +58,11 @@ The round-5 reviewer was right: the lead's blind items still carried `triage_rul
 4. Do not re-fetch. The cache stays as it is.
 
 **After T31 passes,** the lab will rescore `label_ok` on reference v2.1. That needs no new spend for scoring, and at most $0.25 if new items are fetched. It is backlog item T32.
+
+## Addendum 2 (2026-11-20): answer to the round-6 escalation. It binds reviewers.
+
+The round-6 sentence "no hosted decision model is shown to beat the majority baseline on any reliable question" is **withdrawn**. It was written expecting the earlier combined result, and on `finding_kind` it is false: all four models score 0.783–0.957 against a 0.391 baseline (n = 23). The report's per-question statement is the correct one:
+- on `label_ok`, no model beats its 0.836 baseline (best 0.743);
+- on `finding_kind`, all four beat the 0.391 baseline, with the small-n caveat the report already gives.
+
+Item 2 is met as the worker wrote it. No other change is required by this ruling.
