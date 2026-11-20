@@ -1,5 +1,15 @@
 # CS-1000: the case-study paradigm
 
+> **Version 2 is [CS_BLUEPRINT.md](CS_BLUEPRINT.md) (2026-11-20).** It keeps this document and adds:
+> - the capability map;
+> - per-decision ideal reasoning chains;
+> - runnable probes;
+> - anti-shortcut gates;
+> - a worked example;
+> - grading against the ideal, and scaling.
+>
+> Where the two differ, version 2 wins. Every case must pass `tools/validate_case.py` and `tools/audit_case.py`.
+
 **For:** the agent that writes the 1,000 System One case studies, one at a time, under the founder's oversight.
 **Read all of it before writing case 1. Reread sections 6, 8 and 12 before every case.**
 
