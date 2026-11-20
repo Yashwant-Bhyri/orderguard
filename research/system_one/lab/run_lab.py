@@ -332,13 +332,14 @@ def worker_prompt(task: dict, d: Path, rnd: int) -> str:
     return p
 
 
-def hermes_cmd(cwd: Path, prompt: str, rundir: Path, name: str, timeout_s: int) -> list[str]:
+def hermes_cmd(cwd: Path, prompt: str, rundir: Path, name: str, timeout_s: int, reasoning: str = "max") -> list[str]:
     """Qwen-4 Max through the Hermes agent (Nous free tier; founder, 2026-11-20). The prompt goes through a file."""
     qf = rundir / f"{name}_prompt.md"
     qf.parent.mkdir(parents=True, exist_ok=True)
     qf.write_text(prompt)
     return ["hermes", "chat", "--query-file", str(qf), "--oneshot", "-Q", "--in", str(cwd), "--yolo",
-            "--max-turns", str(CONFIG.get("hermes_max_turns", 250)), "--run-budget", str(timeout_s)]
+            "--max-turns", str(CONFIG.get("hermes_max_turns", 250)), "--run-budget", str(timeout_s),
+            "--reasoning", reasoning]
 
 
 def hermes_env(isolated: bool, extra_keys: list[str] | None = None) -> dict:
@@ -362,7 +363,8 @@ def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
         return run(cmd + [worker_prompt(task, d, rnd)], cwd, rundir / "worker.log", timeout_s, child_env(False))
     if task["worker"].startswith("hermes:"):
         cwd = d if task["isolate"] else ROOT
-        return run(hermes_cmd(cwd, worker_prompt(task, d, rnd), rundir, "worker", timeout_s), cwd, rundir / "worker.log",
+        return run(hermes_cmd(cwd, worker_prompt(task, d, rnd), rundir, "worker", timeout_s, task.get("variant") or "xhigh"),
+                   cwd, rundir / "worker.log",
                    timeout_s, hermes_env(task["isolate"], task["env_keys"]))
     cwd = d if task["isolate"] else ROOT
     cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd)]
