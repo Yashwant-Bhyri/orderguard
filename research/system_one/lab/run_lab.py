@@ -332,6 +332,21 @@ def worker_prompt(task: dict, d: Path, rnd: int) -> str:
     return p
 
 
+def hermes_cmd(cwd: Path, prompt: str, rundir: Path, name: str, timeout_s: int) -> list[str]:
+    """Qwen-4 Max through the Hermes agent (Nous free tier; founder, 2026-11-20). The prompt goes through a file."""
+    qf = rundir / f"{name}_prompt.md"
+    qf.parent.mkdir(parents=True, exist_ok=True)
+    qf.write_text(prompt)
+    return ["hermes", "chat", "--query-file", str(qf), "--oneshot", "-Q", "--in", str(cwd), "--yolo",
+            "--max-turns", str(CONFIG.get("hermes_max_turns", 250)), "--run-budget", str(timeout_s)]
+
+
+def hermes_env(isolated: bool, extra_keys: list[str] | None = None) -> dict:
+    env = child_env(False, isolated, extra_keys)
+    env["PATH"] = f"{LAB / 'shims'}:{env.get('PATH', '/usr/bin:/bin')}"   # a git shim that refuses: workers never run git
+    return env
+
+
 def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
     timeout_s = task["timeout_min"] * 60
     if task["worker"] == "codex-gpu":
@@ -345,6 +360,10 @@ def run_worker(task: dict, d: Path, rnd: int, rundir: Path) -> int:
         cmd = codex_cmd(task["worker"].split(":", 1)[1], task.get("variant") or "xhigh", cwd, rundir / "worker_last.md",
                         network=not task["isolate"])
         return run(cmd + [worker_prompt(task, d, rnd)], cwd, rundir / "worker.log", timeout_s, child_env(False))
+    if task["worker"].startswith("hermes:"):
+        cwd = d if task["isolate"] else ROOT
+        return run(hermes_cmd(cwd, worker_prompt(task, d, rnd), rundir, "worker", timeout_s), cwd, rundir / "worker.log",
+                   timeout_s, hermes_env(task["isolate"], task["env_keys"]))
     cwd = d if task["isolate"] else ROOT
     cmd = ["opencode", "run", "-m", task["worker"], "--dir", str(cwd)]
     if task.get("variant"):
@@ -384,9 +403,17 @@ def run_review(task: dict, d: Path, rundir: Path, st: dict) -> str:
     (d / "REVIEW.md").unlink(missing_ok=True)
     cwd = d if task["isolate"] else ROOT
     if codex_down():
-        log(f"{task['id']}: Codex is out of quota; reviewing with DeepSeek at max reasoning")
-        rc = run(deepseek_cmd(cwd) + [review_prompt(task, d)], cwd, rundir / "review.log",
-                 CONFIG["review_timeout_min"] * 60, child_env(True, task["isolate"], task["env_keys"]))
+        # never review with the family that wrote the work: Qwen reviews DeepSeek's work, DeepSeek reviews Qwen's
+        use_qwen = CONFIG.get("fallback_reviewer", "deepseek") == "hermes" and not task["worker"].startswith("hermes:")
+        if use_qwen:
+            log(f"{task['id']}: Codex is out of quota; reviewing with Qwen-4 Max (Hermes), a different family")
+            t = CONFIG["review_timeout_min"] * 60
+            rc = run(hermes_cmd(cwd, review_prompt(task, d), rundir, "review", t), cwd, rundir / "review.log", t,
+                     hermes_env(task["isolate"], task["env_keys"]))
+        else:
+            log(f"{task['id']}: Codex is out of quota; reviewing with DeepSeek at max reasoning")
+            rc = run(deepseek_cmd(cwd) + [review_prompt(task, d)], cwd, rundir / "review.log",
+                     CONFIG["review_timeout_min"] * 60, child_env(True, task["isolate"], task["env_keys"]))
     else:
         cmd = codex_cmd(CONFIG["review_model"], CONFIG["review_effort"], cwd, rundir / "review_last.md")
         rc = run(cmd + [review_prompt(task, d)], cwd, rundir / "review.log", CONFIG["review_timeout_min"] * 60,
@@ -430,6 +457,21 @@ def archive(task: dict, d: Path, rundir: Path) -> None:
         scrub(p)
 
 
+def pids_for(task: dict, rnd: int, kind: str) -> list[int]:
+    """Live worker or reviewer processes of one task round: OpenCode, Codex or Hermes, in the repo or an isolated folder."""
+    tid, td, rd = task["id"], str(task_dir(task)), f"/runs/{task['id']}/round{rnd}/"
+    if kind == "worker":
+        pats = [task["brief"].name, td + " --yolo", rd + "worker_prompt.md"]
+        if task["isolate"]:
+            pats.append(f"--dir {td} --variant {task.get('variant') or ''}".rstrip())
+    else:
+        pats = [f"work/{tid}/", f"--dir {td} --variant max You are the adversarial", rd + "review_prompt.md"]
+    out: list[int] = []
+    for p in pats:
+        out += [x for x in live_pids(p) if x not in out]
+    return out
+
+
 def live_pids(pattern: str) -> list[int]:
     """Processes left over from a previous runner (it was restarted while a worker or reviewer was busy)."""
     out = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
@@ -448,6 +490,14 @@ def wait_for(pids: list[int], timeout_s: int) -> None:
     end = time.time() + timeout_s
     while time.time() < end and any(_alive(p) for p in pids):
         time.sleep(15)
+    for p in pids:                                 # past the limit: stop it, so a hung worker never edits under a review
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if _alive(p):
+                try:
+                    os.kill(p, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                time.sleep(3)
 
 
 def _alive(pid: int) -> bool:
@@ -464,21 +514,21 @@ def one_round(task: dict, st: dict, adopt: str | None = None) -> None:
     if adopt is None:
         ts["round"] += 1
     rnd = ts["round"]
-    ts["status"] = "working"
+    ts["status"] = "reviewing" if adopt == "review" else "working"   # an adopted review must stay a review on restart
     ts["started"] = now()
     save_state(st)
     d = prepare(task)
     rundir = RUNS / tid / f"round{rnd}"
     rundir.mkdir(parents=True, exist_ok=True)
     if adopt == "worker":
-        pids = live_pids(task["brief"].name) or live_pids(str(task_dir(task)))
+        pids = pids_for(task, rnd, "worker")
         log(f"{tid}: round {rnd} adopting running worker {pids}")
         wait_for(pids, task["timeout_min"] * 60)
         rc = 0
     elif adopt == "skipworker":
         rc = 0
     elif adopt == "review":
-        pids = live_pids(f"work/{tid}/")
+        pids = pids_for(task, rnd, "review")
         log(f"{tid}: round {rnd} adopting running review {pids}")
         wait_for(pids, CONFIG["review_timeout_min"] * 60)
         rc = 0
@@ -603,9 +653,9 @@ def loop() -> None:
     for tid, ts in st["tasks"].items():                 # a restart mid-round: adopt a live process, else redo the round
         if ts["status"] in ("working", "reviewing") and tid in tasks0:
             t = tasks0[tid]
-            if ts["status"] == "working" and (live_pids(t["brief"].name) or live_pids(str(task_dir(t)) + " ")):
+            if ts["status"] == "working" and pids_for(t, ts["round"], "worker"):
                 adopt[tid] = "worker"
-            elif ts["status"] == "reviewing" and live_pids(f"work/{tid}/"):
+            elif ts["status"] == "reviewing" and pids_for(t, ts["round"], "review"):
                 adopt[tid] = "review"
             else:
                 ts["status"] = "revise" if ts["round"] > 1 else "pending"

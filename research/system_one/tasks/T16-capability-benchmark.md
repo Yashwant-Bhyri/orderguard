@@ -2,7 +2,7 @@
 id: T16
 title: Capability benchmark v0.1 - product-level scenarios written by a different model family
 depends: T01
-worker: codex:gpt-6-luna
+worker: hermes:qwen
 variant: xhigh
 isolate: true
 inputs: SCHEMA.md, og_s1/schema.py, og_s1/validate.py, og_s1/__init__.py
