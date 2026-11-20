@@ -99,3 +99,59 @@ Every entry states **what would reverse it**. That is the exit condition, and it
 - **Why:** That machine is shared with other students, jobs there are network-isolated, and the controller requires a protected approval file.
 - **Would reverse it:** dedicated compute.
 - **Update, 2026-11-19:** the founder approved testing or deploying any model on that machine, strictly one GPU at a time. T09 provisions it. No GPU operator may type a password: any step that needs one goes back to the founder.
+
+---
+
+## 2026-11-20: the architecture, established (D11–D19)
+
+The visual map is [ARCHITECTURE_MAP.html](ARCHITECTURE_MAP.html). Rules R1–R8 for the why graph are defined there. R2, R3, R5, R6 and R8 are new and go to the lab as T14b.
+
+### D11. Hybrid cascade (supersedes D10)
+- **Status:** active
+- **Decision:** code and the why-graph engine decide formal truths; one self-hosted decision model reads evidence; a monotone combiner and conformal risk control give allow, hold or ask; a tighten-only judge takes at most 15% of actions; a per-owner adjustment sits on top.
+- **Why:** G1 shows a self-hosted reader matches the hosted one; code already carries the formal truths; open-ended judging does not beat the majority answer.
+- **Would reverse it:** no learned reader beats code only by ≥ 0.03 coverage on CS-1000's evidential cells (ship code plus calibration), or the judge adds < 0.10 recall on novel families (drop the judge).
+
+### D12. Clef-flash 9B is the hot-path reader
+- **Status:** active
+- **Decision:** frozen, calibrated, then head-trained. The hosted reader stays only as a shadow comparator. The larger G1 winner (Clef 27B or Karpo 31B) is the escalation judge and the teacher.
+- **Why:** G1, shifted split: hype 0.993, false authority 0.919, support gap 0.990, against the hosted 1.000, 0.924, 0.998. Within 0.02 on every question, with no outside dependency.
+- **Would reverse it:** a larger sibling beats it by > 0.02 after calibration on G2 or CS-1000 evidential cells (quality first: the big model moves to the hot path), or binding errors stay < 0.80 after head training (build the X6 verifier).
+
+### D13. Monotone boosted trees combine the signals
+- **Status:** active
+- **Decision:** monotone gradient-boosted trees with TreeSHAP; temperature per reader question; Mondrian conformal risk control per action class at α = 0.05. The EBM stays as an audit comparator.
+- **Why:** the trees are monotone by construction and kept calibration under shift (ECE 0.003 against the EBM's 0.08 in T10).
+- **Would reverse it:** the EBM beats the trees by > 0.02 AUROC or 0.03 ECE on the unseen worlds (X1).
+
+### D14. The agent's words are hypotheses, never evidence
+- **Status:** active; not built
+- **Decision:** the recorder turns every factual sentence in the agent's rationale into a claim node. An agent note or claim with no document anchor starts at trust 1, not 2. Citing its own earlier note cannot raise a claim's trust; a claim whose every root is agent-authored is "self-grounded".
+- **Why:** the agent's reasoning otherwise becomes its own evidence: a thought written into memory at t = 5 reads as confirmation at t = 9.
+- **Would reverse it:** the rule holds more than 1 in 100 clean actions on CS-1000 and the unseen worlds, and anchoring at the harness cannot fix it.
+
+### D15. Two-channel why graph, proof status and the decisive-claim gate
+- **Status:** active; T14b builds it
+- **Decision:** trust and fidelity both propagate by minimum. Each claim gets a proof status: proven, supported, unproven, reinterpreted, contradicted or tainted. The decisive claim must be proven or supported, for every action type (T14 checked authority only on buys). Hotspots are ranked by exposure × (1 − min(trust/4, fidelity)).
+- **Why:** taint alone misses a trusted quote whose meaning was changed, and misses agent reasoning turned into evidence.
+- **Would reverse it:** the gate adds no recall over T14's taint gate on CS-1000 and the red team at equal false holds.
+
+### D16. Readers see evidence cards, not prose
+- **Status:** active
+- **Decision:** a reader gets the claim, the quote, nearby text, matched facts and trust metadata. Agent and third-party text reaches a model only as quoted data.
+- **Would reverse it:** experiment R shows raw text beats the structured package by > 0.03 on the same model.
+
+### D17. The judge reasons through checks
+- **Status:** active
+- **Decision:** escalations go to the big decision model with evidence cards. A reasoner from another family than the data authors proposes checks; code runs them; only check results and the model's typed score count. The verdict is parsed to a fixed value and can only tighten.
+- **Would reverse it:** a plain chat-model judge (B6) beats it by > 0.05 on the escalated slice; then distil that judge into the reader.
+
+### D18. Owner adaptation by partial pooling
+- **Status:** active
+- **Decision:** a per-owner offset pooled toward the population, plus per-owner conformal. It loosens only within the signed mandate, from the owner's own signed decisions. In-context tabular learners stay research (licence, untested under shift).
+- **Would reverse it:** a commercially licensed in-context learner beats the offset by ≥ 0.03 AUROC at k = 10 (X4).
+
+### D19. Training order
+- **Status:** active
+- **Decision:** calibration, then head training (contrastive minimal pairs, multi-task), then LoRA only if it adds ≥ 0.03, then distillation only for latency. No RL on the verdict, no full fine-tuning, nothing from scratch.
+- **Would reverse it:** CS-1000 shows a gap none of these closes. RL from verifiable rewards is then allowed for the check proposer only.

@@ -1,0 +1,555 @@
+<title>System One Architecture Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single engineering sheet. Bands for the pipeline, a drawn why-graph, a filterable component atlas, then the decision register. */
+:root{
+  --paper:#F3F5F7; --panel:#FFFFFF; --ink:#14202B; --muted:#566676; --rule:#D3DAE1; --soft:#E8EDF2;
+  --accent:#1E58B8; --accent-soft:#E2EAF8;
+  --ok:#1B7F53; --ok-soft:#DDF1E7; --mid:#A8690F; --mid-soft:#F7EAD3; --bad:#B9382C; --bad-soft:#F8E0DC;
+  --code:#1E58B8; --learned:#6A47B8; --stats:#0E7C86; --llm:#8A5A14; --ops:#5B6773;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#0E141A; --panel:#151E27; --ink:#E4EBF2; --muted:#93A3B4; --rule:#2B3743; --soft:#1C2731;
+  --accent:#7AA7FF; --accent-soft:#1D2D48;
+  --ok:#47C78E; --ok-soft:#163327; --mid:#E3A84A; --mid-soft:#36290F; --bad:#F07463; --bad-soft:#3D1D19;
+  --code:#7AA7FF; --learned:#B39BFF; --stats:#4FC7CF; --llm:#E0AE62; --ops:#A3AFBB; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#0E141A; --panel:#151E27; --ink:#E4EBF2; --muted:#93A3B4; --rule:#2B3743; --soft:#1C2731;
+  --accent:#7AA7FF; --accent-soft:#1D2D48;
+  --ok:#47C78E; --ok-soft:#163327; --mid:#E3A84A; --mid-soft:#36290F; --bad:#F07463; --bad-soft:#3D1D19;
+  --code:#7AA7FF; --learned:#B39BFF; --stats:#4FC7CF; --llm:#E0AE62; --ops:#A3AFBB; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1120px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(30px,5vw,46px);line-height:1.05;font-weight:700}
+h2{font-size:clamp(22px,3vw,28px);font-weight:600}
+h3{font-size:18px;font-weight:600}
+p{margin:0;max-width:70ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono);font-size:.92em}
+.muted{color:var(--muted)}
+section{display:flex;flex-direction:column;gap:18px}
+.sec-head{display:flex;flex-direction:column;gap:6px;border-top:2px solid var(--ink);padding-top:12px}
+.sec-head .eyebrow{color:var(--accent)}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.head{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:32px;align-items:start}
+.head .lede{font-size:17px}
+.sheet-meta{border:1px solid var(--rule);background:var(--panel);font-family:var(--f-mono);font-size:12px}
+.sheet-meta div{display:flex;justify-content:space-between;gap:12px;padding:7px 12px;border-bottom:1px solid var(--rule)}
+.sheet-meta div:last-child{border-bottom:0}
+.sheet-meta span:first-child{color:var(--muted)}
+@media (max-width:760px){.head{grid-template-columns:1fr}}
+
+/* verdict */
+.verdict{background:var(--panel);border:1px solid var(--rule);border-left:4px solid var(--ink);padding:20px 22px;display:flex;flex-direction:column;gap:14px}
+.verdict ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;max-width:88ch}
+.verdict li::marker{font-family:var(--f-mono);color:var(--muted)}
+
+/* pipeline bands */
+.bands{display:flex;flex-direction:column;gap:0;border:1px solid var(--rule);background:var(--panel)}
+.band{display:grid;grid-template-columns:170px minmax(0,1fr);border-bottom:1px solid var(--rule)}
+.band:last-child{border-bottom:0}
+.band-label{padding:14px 14px;background:var(--soft);display:flex;flex-direction:column;gap:4px;border-right:1px solid var(--rule)}
+.band-label b{font-family:var(--f-display);font-size:16px}
+.band-label span{font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.band-body{padding:12px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.node{display:inline-flex;flex-direction:column;gap:1px;padding:7px 10px;border:1px solid var(--rule);border-left:3px solid var(--k,var(--ops));background:var(--panel);text-decoration:none;color:var(--ink);min-width:0;max-width:100%}
+.node:hover{background:var(--soft)}
+.node b{font-size:13.5px;font-weight:600}
+.node i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.arrow{font-family:var(--f-mono);color:var(--muted);font-size:14px}
+.k-code{--k:var(--code)} .k-learned{--k:var(--learned)} .k-stats{--k:var(--stats)} .k-llm{--k:var(--llm)} .k-ops{--k:var(--ops)}
+.node.out{border-left-color:var(--ink);background:var(--soft)}
+@media (max-width:640px){.band{grid-template-columns:1fr}.band-label{border-right:0;border-bottom:1px solid var(--rule)}}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;display:inline-block;background:var(--k)}
+
+/* why graph */
+.figure{background:var(--panel);border:1px solid var(--rule);padding:14px;display:flex;flex-direction:column;gap:10px}
+.scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.scroll-x svg{display:block;min-width:900px;width:100%;height:auto}
+svg text{font-family:var(--f-body);fill:var(--ink)}
+svg .t-mono{font-family:var(--f-mono)}
+svg .box{fill:var(--panel);stroke:var(--rule);stroke-width:1.2}
+svg .box-bad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.2}
+svg .box-mid{fill:var(--mid-soft);stroke:var(--mid);stroke-width:1.2}
+svg .box-ok{fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2}
+svg .box-ink{fill:var(--soft);stroke:var(--ink);stroke-width:1.6}
+svg .edge{fill:none;stroke:var(--muted);stroke-width:1.4}
+svg .edge-bad{fill:none;stroke:var(--bad);stroke-width:1.8;stroke-dasharray:6 4}
+svg .edge-mid{fill:none;stroke:var(--mid);stroke-width:1.6}
+svg .group{fill:none;stroke:var(--muted);stroke-dasharray:3 4;stroke-width:1}
+svg .lbl{font-size:11.5px;fill:var(--muted)}
+svg .lbl-bad{font-size:11.5px;fill:var(--bad);font-weight:600}
+svg .lbl-mid{font-size:11.5px;fill:var(--mid);font-weight:600}
+svg .ttl{font-size:13px;font-weight:600}
+svg .sub{font-size:11.5px;fill:var(--muted)}
+svg .badge{fill:var(--ink)}
+svg .badge-t{fill:var(--panel);font-family:var(--f-mono);font-size:11px;font-weight:600}
+svg .st-bad{fill:var(--bad);font-family:var(--f-mono);font-size:10.5px;font-weight:600;letter-spacing:.04em}
+svg .st-mid{fill:var(--mid);font-family:var(--f-mono);font-size:10.5px;font-weight:600;letter-spacing:.04em}
+svg .ah{fill:var(--muted)} svg .ah-bad{fill:var(--bad)} svg .ah-mid{fill:var(--mid)}
+svg .grid{stroke:var(--rule);stroke-width:1}
+svg .axis{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+svg .bar-floor{fill:var(--ops);opacity:.55} svg .bar-clef{fill:var(--learned)} svg .bar-host{fill:var(--accent);opacity:.75}
+svg .val{font-family:var(--f-mono);font-size:10.5px;fill:var(--ink)}
+.caption{font-size:13px;color:var(--muted);max-width:90ch}
+
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--rule);background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule)}
+th{font-family:var(--f-mono);font-size:11.5px;font-weight:500;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--soft)}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.pill{display:inline-block;font-family:var(--f-mono);font-size:10.5px;font-weight:600;letter-spacing:.05em;padding:2px 7px;border:1px solid currentColor;white-space:nowrap}
+.p-ok{color:var(--ok);background:var(--ok-soft)} .p-mid{color:var(--mid);background:var(--mid-soft)} .p-bad{color:var(--bad);background:var(--bad-soft)} .p-ink{color:var(--ink);background:var(--soft)} .p-acc{color:var(--accent);background:var(--accent-soft)}
+
+/* rules list */
+.rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid var(--rule);background:var(--panel)}
+.rule{padding:14px 16px;border-bottom:1px solid var(--rule);display:grid;grid-template-columns:44px minmax(0,1fr);gap:10px}
+.rule:nth-child(odd){border-right:1px solid var(--rule)}
+.rule .rid{font-family:var(--f-mono);font-weight:500;color:var(--accent)}
+.rule b{display:block;margin-bottom:2px}
+.rule p{font-size:13.5px;color:var(--muted)}
+.rule.new .rid::after{content:"new";display:block;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--bad);margin-top:2px}
+@media (max-width:760px){.rules{grid-template-columns:1fr}.rule:nth-child(odd){border-right:0}}
+
+/* atlas */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.atlas{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:860px){.atlas{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--rule);border-top:3px solid var(--k);display:flex;flex-direction:column;min-width:0;scroll-margin-top:16px}
+.card-h{padding:12px 16px 10px;display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--rule)}
+.card-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.card-id{font-family:var(--f-mono);font-size:12px;color:var(--k);font-weight:500}
+.card-h h3{font-size:19px}
+.card-h .what{font-size:13.5px;color:var(--muted)}
+.card dl{margin:0;display:grid;grid-template-columns:104px minmax(0,1fr)}
+.card dt{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 0 9px 16px;border-bottom:1px solid var(--soft)}
+.card dd{margin:0;padding:8px 16px 8px 8px;font-size:13.5px;border-bottom:1px solid var(--soft)}
+.card dd.choice{font-weight:500}
+.card dl > :nth-last-child(-n+2){border-bottom:0}
+@media (max-width:480px){.card dl{grid-template-columns:1fr}.card dt{padding-bottom:0;border-bottom:0}.card dd{padding-left:16px}}
+
+/* decisions */
+.dec{display:flex;flex-direction:column;border:1px solid var(--rule);background:var(--panel)}
+.dec-row{display:grid;grid-template-columns:64px minmax(0,1.25fr) minmax(0,1fr);gap:16px;padding:14px 16px;border-bottom:1px solid var(--rule)}
+.dec-row:last-child{border-bottom:0}
+.dec-row .did{font-family:var(--f-mono);font-weight:500;font-size:15px}
+.dec-row b{display:block;margin-bottom:3px}
+.dec-row p{font-size:13.5px}
+.dec-row .rev{font-size:13px;color:var(--muted);border-left:2px solid var(--rule);padding-left:12px}
+.dec-row .rev::before{content:"Would reverse it";display:block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px}
+@media (max-width:760px){.dec-row{grid-template-columns:1fr;gap:6px}}
+
+.ladder{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));border:1px solid var(--rule);background:var(--panel)}
+.step{padding:12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:6px}
+.step:last-child{border-right:0}
+.step .n{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.step b{font-family:var(--f-display);font-size:16px}
+.step p{font-size:12.5px;color:var(--muted)}
+.step.now{background:var(--accent-soft)}
+@media (max-width:860px){.ladder{grid-template-columns:repeat(2,minmax(0,1fr))}.step{border-bottom:1px solid var(--rule)}.step:nth-child(2n){border-right:0}}
+
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--rule);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){.card{transition:opacity .15s}}
+</style>
+
+<div class="wrap">
+
+<header class="head">
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div class="eyebrow">OrderGuard · System One · source of truth</div>
+    <h1>System One architecture map</h1>
+    <p class="lede">System One answers one question for every thing an AI trading agent does: <b>would this owner endorse it, given what the agent legitimately knew at the time?</b> It answers with a calibrated probability, a named cause that points at evidence, and allow, hold or ask under a stated error bound. It can only make things stricter. Code is the only thing that says yes.</p>
+    <p class="muted">It is not one model. It is a chain of exact code, a recorded reasoning graph, one self-hosted reader, classical statistics and a rare tighten-only judge. Each part below says what it is, why it exists, what we chose, what we rejected, what it learns from and what evidence we have.</p>
+  </div>
+  <div class="sheet-meta" aria-label="Document facts">
+    <div><span>Revision</span><span>2026-11-20 · lead</span></div>
+    <div><span>Supersedes</span><span>D10 (provisional)</span></div>
+    <div><span>Decisions</span><span>D11–D19, in DECISIONS.md</span></div>
+    <div><span>Functions</span><span>16 + recorder + why-graph engine</span></div>
+    <div><span>Hot-path reader</span><span>Clef-flash 9B, self-hosted</span></div>
+    <div><span>Error bound</span><span>α = 0.05 false-allow</span></div>
+    <div><span>Headline metric</span><span>coverage at 5% false-allow</span></div>
+    <div><span>Overrule</span><span>founder, any entry</span></div>
+  </div>
+</header>
+
+<section aria-labelledby="v-h">
+  <div class="sec-head"><div class="eyebrow">The decision</div><h2 id="v-h">What System One is, decided</h2></div>
+  <div class="verdict">
+    <ol>
+      <li><b>Shape: a hybrid cascade.</b> Exact code and the why-graph engine decide every formal truth. One self-hosted decision model reads evidence. A monotone combiner and conformal risk control turn signals into allow, hold or ask. A larger model judges the rare unclear case and can only tighten. <span class="muted">(D11, supersedes D10)</span></li>
+      <li><b>The agent's own words are hypotheses, never evidence.</b> Every factual sentence in the agent's reasoning becomes a claim node. With no anchor in a document it is <i>unproven</i>, and an agent cannot cite its own earlier note to make it proven. <span class="muted">(D14)</span></li>
+      <li><b>The why graph carries two channels:</b> trust (who it came from) and fidelity (whether the meaning survived). Every claim gets a proof status. The claim an action leans on most must be proven or supported, for every action type, not only buys. <span class="muted">(D15)</span></li>
+      <li><b>Hot-path reader: Clef-flash 9B</b>, frozen, calibrated, then head-trained. It is within 0.02 AUROC of the hosted reader on every question in G1. The larger sibling that wins G1 becomes the escalation judge and the teacher. <span class="muted">(D12)</span></li>
+      <li><b>Combiner: monotone gradient-boosted trees with TreeSHAP.</b> Calibration: temperature per question, then conformal risk control per action class at α = 0.05. <span class="muted">(D13)</span></li>
+      <li><b>Readers see evidence cards, not prose.</b> Agent and third-party text reaches a model only as quoted, typed data. No generative model sits in the decision path except the parsed, tighten-only judge. <span class="muted">(D16, D17)</span></li>
+      <li><b>Training order:</b> calibration, then head training with contrastive minimal pairs, then LoRA only if it adds 0.03 or more. No RL on the verdict, no full fine-tuning, nothing from scratch. <span class="muted">(D19)</span></li>
+    </ol>
+  </div>
+</section>
+
+<section aria-labelledby="p-h">
+  <div class="sec-head"><div class="eyebrow">01 · The chain, by tempo</div><h2 id="p-h">Where each part runs</h2>
+  <p class="muted">Judgement happens when a thesis forms. An order only proves in code that it belongs to a thesis already judged, so the order path stays in microseconds (D4). Click any part to jump to its card.</p></div>
+  <div class="legend" aria-label="Kinds of component">
+    <span class="k-code"><i class="sw"></i>Exact code</span>
+    <span class="k-learned"><i class="sw"></i>Learned reader</span>
+    <span class="k-stats"><i class="sw"></i>Classical statistics</span>
+    <span class="k-llm"><i class="sw"></i>LLM, output checked by code</span>
+    <span class="k-ops"><i class="sw"></i>Operations</span>
+  </div>
+  <div class="bands">
+    <div class="band"><div class="band-label"><b>Inputs</b><span>from owner, market, agent</span></div>
+      <div class="band-body">
+        <span class="node out"><b>Owner mandate</b><i>purpose, bands, limits, signing key</i></span>
+        <span class="node out"><b>Documents</b><i>filings, news, data, tier 0–3</i></span>
+        <span class="node out"><b>Agent step</b><i>action, rationale, notes, claims</i></span>
+        <span class="node out"><b>Book</b><i>positions, cash, turnover</i></span>
+      </div></div>
+    <div class="band"><div class="band-label"><b>Onboarding</b><span>once per owner · minutes</span></div>
+      <div class="band-body"><a class="node k-llm" href="#F1"><b>F1 Mandate compiler</b><i>rules DSL, owner signs</i></a></div></div>
+    <div class="band"><div class="band-label"><b>Ingest</b><span>per document · seconds, off path</span></div>
+      <div class="band-body"><a class="node k-llm" href="#F2"><b>F2 Facts and evidence cards</b><i>XBRL first, quote-anchored</i></a></div></div>
+    <div class="band"><div class="band-label"><b>Record</b><span>every agent step · µs</span></div>
+      <div class="band-body"><a class="node k-code" href="#H"><b>H Harness recorder</b><i>why graph + reasoning → claims</i></a><span class="arrow">→</span><a class="node k-code" href="#W"><b>W Why-graph engine</b><i>trust, fidelity, proof, hotspots</i></a></div></div>
+    <div class="band"><div class="band-label"><b>Thesis time</b><span>p99 ≤ 300 ms (compression phase)</span></div>
+      <div class="band-body">
+        <a class="node k-code" href="#F3"><b>F3 Structural checks</b><i>41 signals</i></a>
+        <a class="node k-learned" href="#F4"><b>F4 Grounding verifier</b><i>support, binding</i></a>
+        <a class="node k-learned" href="#F5"><b>F5 Manipulation reader</b><i>hype, authority, injection</i></a>
+        <a class="node k-stats" href="#F11"><b>F11 Owner offset</b><i>partial pooling</i></a>
+        <a class="node k-stats" href="#F12"><b>F12 Novelty</b><i>kNN + conformal</i></a>
+        <span class="arrow">→</span>
+        <a class="node k-stats" href="#F8"><b>F8 Monotone combiner</b><i>p_reject + attribution</i></a>
+        <span class="arrow">→</span>
+        <a class="node k-stats" href="#F9"><b>F9 Risk control</b><i>allow · hold · ask</i></a>
+      </div></div>
+    <div class="band"><div class="band-label"><b>Order time</b><span>every order · µs–ms</span></div>
+      <div class="band-body"><a class="node k-code" href="#F3"><b>Thesis membership proof</b><i>order ∈ judged, valid thesis</i></a><a class="node k-code" href="#F3"><b>Per-order checks</b><i>limits, turnover, fee drag</i></a><span class="arrow">→</span><span class="node out"><b>Risk and authorisation code</b><i>the only yes → broker</i></span></div></div>
+    <div class="band"><div class="band-label"><b>Escalation</b><span>≤ 15% of actions · seconds</span></div>
+      <div class="band-body"><a class="node k-llm" href="#F10"><b>F10 Judge</b><i>big decision model + code-run checks; tighten only</i></a></div></div>
+    <div class="band"><div class="band-label"><b>Continuous</b><span>background</span></div>
+      <div class="band-body"><a class="node k-code" href="#F6"><b>F6 Trajectory</b><i>CUSUM, e-detectors</i></a><a class="node k-code" href="#F7"><b>F7 Swarm and root cap</b><i>one source, many agents</i></a><a class="node k-ops" href="#F15"><b>F15 Monitoring</b><i>alarms tighten</i></a></div></div>
+    <div class="band"><div class="band-label"><b>After</b><span>per decision</span></div>
+      <div class="band-body"><a class="node k-code" href="#F13"><b>F13 Explanation</b><i>from attribution only</i></a><a class="node k-ops" href="#F14"><b>F14 Learning loop</b><i>owner labels, audit slice</i></a><a class="node k-ops" href="#F16"><b>F16 Audit and replay</b><i>counterfactual re-score</i></a></div></div>
+  </div>
+</section>
+
+<section aria-labelledby="w-h">
+  <div class="sec-head"><div class="eyebrow">02 · The why graph</div><h2 id="w-h">How claims propagate, and where they go wrong</h2>
+  <p class="muted">The harness records, at the moment of action, every document, note, claim, thesis and action, and which cites which. System One reads only the causal view <span class="mono">model_view_at(episode, i)</span>. The engine walks this graph before any model reads a word.</p></div>
+
+  <div class="figure">
+    <div class="eyebrow">Worked example · one action, four claims, one hold</div>
+    <div class="scroll-x" role="img" aria-label="Why-graph example. A 10-Q filing says FY guidance of 12 percent; the agent's reasoning claims revenue grew 12 percent, a reinterpretation. A tier-0 blog taints the thesis. An earlier agent note with no source is cited as confirmation, which is self-grounded. An unsigned external note asserts permission. The buy of 4 percent of the book is held, and the agent's own note is the top hotspot.">
+    <svg viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah"/></marker>
+        <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-bad"/></marker>
+        <marker id="ahm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-mid"/></marker>
+      </defs>
+      <!-- column headings -->
+      <text x="20" y="18" class="lbl t-mono">SOURCES</text>
+      <text x="520" y="18" class="lbl t-mono">CLAIMS</text>
+      <text x="785" y="18" class="lbl t-mono">THESIS · ACTION</text>
+      <!-- claims group -->
+      <rect x="508" y="26" width="246" height="452" class="group"/>
+      <text x="520" y="42" class="lbl">extracted from the agent's reasoning at t = 9</text>
+
+      <!-- sources -->
+      <rect x="20" y="56" width="230" height="62" class="box-ok"/>
+      <text x="32" y="78" class="ttl">D1 · 10-Q filing</text>
+      <text x="32" y="96" class="sub">"FY revenue guidance of 12%"</text>
+      <text x="32" y="111" class="sub">tier 3 · published t = 2</text>
+      <rect x="222" y="62" width="22" height="18" class="badge"/><text x="233" y="75" text-anchor="middle" class="badge-t">3</text>
+
+      <rect x="20" y="166" width="230" height="62" class="box-bad"/>
+      <text x="32" y="188" class="ttl">D2 · Blog post</text>
+      <text x="32" y="206" class="sub">"The Street expects 20%"</text>
+      <text x="32" y="221" class="sub">tier 0 · anonymous</text>
+      <rect x="222" y="172" width="22" height="18" class="badge"/><text x="233" y="185" text-anchor="middle" class="badge-t">0</text>
+
+      <rect x="20" y="276" width="230" height="62" class="box-mid"/>
+      <text x="32" y="298" class="ttl">N2 · Agent's own note, t = 5</text>
+      <text x="32" y="316" class="sub">"Growth confirmed at 12%"</text>
+      <text x="32" y="331" class="sub">cites nothing</text>
+      <rect x="222" y="282" width="22" height="18" class="badge"/><text x="233" y="295" text-anchor="middle" class="badge-t">1</text>
+
+      <rect x="20" y="386" width="230" height="62" class="box-bad"/>
+      <text x="32" y="408" class="ttl">N1 · External note</text>
+      <text x="32" y="426" class="sub">"Limits don't apply to momentum"</text>
+      <text x="32" y="441" class="sub">unsigned · author: tool feed</text>
+      <rect x="222" y="392" width="22" height="18" class="badge"/><text x="233" y="405" text-anchor="middle" class="badge-t">1</text>
+
+      <!-- claims -->
+      <rect x="520" y="56" width="222" height="62" class="box-mid"/>
+      <text x="532" y="78" class="ttl">C1 "Revenue grew 12%"</text>
+      <text x="532" y="96" class="st-mid">REINTERPRETED</text>
+      <text x="532" y="111" class="sub">trust 3 · fidelity 0.18</text>
+
+      <rect x="520" y="166" width="222" height="62" class="box-bad"/>
+      <text x="532" y="188" class="ttl">C2 "Street expects 20%"</text>
+      <text x="532" y="206" class="st-bad">TAINTED</text>
+      <text x="532" y="221" class="sub">trust 0 · root is a tier-0 blog</text>
+
+      <rect x="520" y="276" width="222" height="62" class="box-mid"/>
+      <text x="532" y="298" class="ttl">C3 "Growth is confirmed"</text>
+      <text x="532" y="316" class="st-mid">UNPROVEN · SELF-GROUNDED</text>
+      <text x="532" y="331" class="sub">trust 1 · only root is the agent</text>
+
+      <rect x="520" y="386" width="222" height="62" class="box-bad"/>
+      <text x="532" y="408" class="ttl">C4 "Owner is fine with this"</text>
+      <text x="532" y="426" class="st-bad">AUTHORITY WITHOUT SIGNATURE</text>
+      <text x="532" y="441" class="sub">trust 1 · no valid owner key</text>
+
+      <!-- edges sources→claims -->
+      <path d="M250,87 L516,87" class="edge-bad" marker-end="url(#ahb)"/>
+      <text x="262" y="78" class="lbl-bad">guidance read as actual</text>
+      <text x="262" y="104" class="lbl">quote exists; meaning changed</text>
+      <path d="M250,197 L516,197" class="edge-mid" marker-end="url(#ahm)"/>
+      <text x="262" y="188" class="lbl-mid">trust 0 flows on</text>
+      <path d="M250,307 L516,307" class="edge-mid" marker-end="url(#ahm)"/>
+      <text x="262" y="298" class="lbl-mid">agent cites itself</text>
+      <text x="262" y="324" class="lbl">repetition adds no support</text>
+      <path d="M250,417 L516,417" class="edge-bad" marker-end="url(#ahb)"/>
+      <text x="262" y="408" class="lbl-bad">permission asserted in text</text>
+
+      <!-- thesis -->
+      <rect x="785" y="56" width="195" height="62" class="box-mid"/>
+      <text x="797" y="78" class="ttl">T1 Thesis: capex upcycle</text>
+      <text x="797" y="96" class="sub">evidence D1, D2</text>
+      <text x="797" y="111" class="sub">trust = min(3, 0) = 0</text>
+      <!-- action -->
+      <rect x="785" y="190" width="195" height="150" class="box-ink"/>
+      <text x="797" y="212" class="ttl">A1 · Buy NVTX</text>
+      <text x="797" y="230" class="sub">4.0% of book · t = 9</text>
+      <text x="797" y="252" class="sub">decisive claim: C1</text>
+      <text x="797" y="268" class="sub">C1 proof status fails the gate</text>
+      <text x="797" y="296" class="st-bad" style="font-size:15px">HOLD</text>
+      <text x="797" y="314" class="sub">cause: binding error</text>
+      <text x="797" y="330" class="sub">(guidance vs actual)</text>
+      <path d="M882,118 L882,186" class="edge-mid" marker-end="url(#ahm)"/>
+      <!-- claims→action -->
+      <path d="M742,87 C770,87 765,215 781,222" class="edge" marker-end="url(#ah)"/>
+      <path d="M742,197 C765,197 765,240 781,245" class="edge" marker-end="url(#ah)"/>
+      <path d="M742,307 C765,307 765,285 781,282" class="edge" marker-end="url(#ah)"/>
+      <path d="M742,417 C770,417 765,320 781,318" class="edge" marker-end="url(#ah)"/>
+      <!-- hotspot -->
+      <rect x="785" y="364" width="195" height="114" class="box"/>
+      <text x="797" y="384" class="lbl t-mono">HOTSPOTS, RANKED</text>
+      <text x="797" y="404" class="sub">1  N2 · feeds 3 actions, 7.5%</text>
+      <text x="797" y="420" class="sub">   of book; root is the agent</text>
+      <text x="797" y="440" class="sub">2  D1→C1 · meaning shift</text>
+      <text x="797" y="460" class="sub">3  D2 · tier-0 root under T1</text>
+    </svg>
+    </div>
+    <p class="caption">Trust badges are the 0–4 provenance scale used by the engine (4 is a valid owner signature). Under today's T14 rule an agent note starts at 2. Under D14 an agent note or claim with no document anchor drops to 1, so C3 is unproven instead of quietly trusted.</p>
+  </div>
+
+  <div class="two">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Proof status</th><th>Means</th><th>Gate, if decisive</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-ok">PROVEN</span></td><td>Code matched value, unit, period and entity to a quote-anchored fact in a trusted source</td><td>passes</td></tr>
+        <tr><td><span class="pill p-ok">SUPPORTED</span></td><td>Trusted source (trust ≥ 2) and the reader says the meaning survives (fidelity ≥ τ)</td><td>passes</td></tr>
+        <tr><td><span class="pill p-mid">UNPROVEN</span></td><td>No document anchor, or only the agent's own notes. Covers chain-of-thought claims</td><td>hold above 0.5% of book; ask if preference</td></tr>
+        <tr><td><span class="pill p-mid">REINTERPRETED</span></td><td>A real quote, but the claim changes what it says: guidance → actual, could → will, wrong period, entity, metric or scope</td><td>hold; cause = binding</td></tr>
+        <tr><td><span class="pill p-bad">CONTRADICTED</span></td><td>The cited or a later trusted source says otherwise</td><td>hold</td></tr>
+        <tr><td><span class="pill p-bad">TAINTED</span></td><td>Any root of its chain is below trust 2 (tier 0–1 document, tool or external text, unsigned)</td><td>hold above 0.5% of book</td></tr>
+      </tbody></table></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Hotspot kind</th><th>How it is found</th></tr></thead>
+      <tbody>
+        <tr><td><b>Manipulation</b></td><td>Low-trust node with large downstream exposure, or text that addresses the reviewer or asserts permission (F5 scores, code-checked signature)</td></tr>
+        <tr><td><b>Reinterpretation</b></td><td>An edge where fidelity drops: the quote exists but the claim means something else (F4 per edge, code for numbers)</td></tr>
+        <tr><td><b>Self-grounding</b></td><td>A claim whose every root is agent-authored: its reasoning turned into its own evidence</td></tr>
+        <tr><td><b>Echo</b></td><td>Many mentions, one root. Support is counted per distinct root source, never per repetition</td></tr>
+        <tr><td><b>Score</b></td><td class="mono">exposure × (1 − min(trust/4, fidelity))</td></tr>
+      </tbody></table></div>
+  </div>
+
+  <div class="rules">
+    <div class="rule"><span class="rid">R1</span><div><b>Trust only falls along a chain</b><p>Each node's trust is the minimum of its own provenance and everything it cites, directly or through a chain. Least fixed point, so cycles are safe. Built (T14).</p></div></div>
+    <div class="rule new"><span class="rid">R2</span><div><b>Meaning is a second channel</b><p>Each claim-to-source edge carries a fidelity score: code for numbers, units, periods and entities; F4 for meaning. A claim's fidelity is the minimum along its chain.</p></div></div>
+    <div class="rule new"><span class="rid">R3</span><div><b>The agent's words are hypotheses</b><p>The recorder turns every factual sentence in the agent's rationale into a claim node. With no document anchor it starts at trust 1. An agent note cannot raise the trust of a claim that cites it.</p></div></div>
+    <div class="rule"><span class="rid">R4</span><div><b>Repetition adds no support</b><p>Support and exposure are grouped by root source. One feed behind several "independent" notes or agents is one source, capped in code (single-root cap, T14).</p></div></div>
+    <div class="rule new"><span class="rid">R5</span><div><b>Authority comes only from a signature</b><p>Permission exists only as a valid owner signature, checked by code. Text asserting permission is a signal, never a permission. The check covers buys, sells, rebalances, thesis changes and owner requests (T14 checked only buys).</p></div></div>
+    <div class="rule new"><span class="rid">R6</span><div><b>The decisive-claim gate</b><p>The claim with the largest share of the action's support must be proven or supported. Otherwise hold above 0.5% of book, or ask the owner where it is a preference call. Independent of any model score.</p></div></div>
+    <div class="rule"><span class="rid">R7</span><div><b>Nothing from the future</b><p>Only documents published and notes written before the action exist. A regression test enforces it (T01).</p></div></div>
+    <div class="rule new"><span class="rid">R8</span><div><b>Case memory</b><p>Once a node is found poisoned, stale or reinterpreted, every later action that leans on it inherits the finding. This is code, not model memory, so long error chains are caught at the root.</p></div></div>
+  </div>
+</section>
+
+<section aria-labelledby="a-h">
+  <div class="sec-head"><div class="eyebrow">03 · Component atlas</div><h2 id="a-h">Every part: what, why, choice, data, evidence</h2></div>
+  <div class="chips" role="group" aria-label="Filter components by kind">
+    <button class="chip" id="f-all" data-k="all" aria-pressed="true">All</button>
+    <button class="chip" id="f-code" data-k="code" aria-pressed="false"><i class="sw k-code"></i>Exact code</button>
+    <button class="chip" id="f-learned" data-k="learned" aria-pressed="false"><i class="sw k-learned"></i>Learned</button>
+    <button class="chip" id="f-stats" data-k="stats" aria-pressed="false"><i class="sw k-stats"></i>Statistics</button>
+    <button class="chip" id="f-llm" data-k="llm" aria-pressed="false"><i class="sw k-llm"></i>LLM, checked</button>
+    <button class="chip" id="f-ops" data-k="ops" aria-pressed="false"><i class="sw k-ops"></i>Operations</button>
+  </div>
+  <div class="atlas" id="atlas"></div>
+</section>
+
+<section aria-labelledby="m-h">
+  <div class="sec-head"><div class="eyebrow">04 · Models and hardware</div><h2 id="m-h">Which model sits where</h2>
+  <p class="muted">Quality first, size second (founder, 2026-11-19). Two RTX A6000 cards, 48 GB each, shared with other users; one OrderGuard job at a time on at most two cards.</p></div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Role</th><th>Chosen</th><th>Footprint</th><th>Rejected or deferred</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Hot-path reader (F4, F5)</td><td><b>Clef-flash 9B</b>, Qwen3.8 base, joint schema head, frozen; typed questions; temperature per question</td><td class="num">~18 GB bf16 · 1 card</td><td>Hosted reader (outside dependency; kept as a shadow comparator). NLI-only (not finance)</td><td><span class="pill p-ok">G1 scored</span></td></tr>
+      <tr><td>Escalation judge, teacher</td><td>The better of <b>Clef 27B</b> and <b>Karpo-decision 31B</b> on G1 and G2</td><td class="num">~54–62 GB bf16 · 2 cards</td><td>DeepSeek as judge (it wrote our data: self-preference)</td><td><span class="pill p-mid">G1 running</span></td></tr>
+      <tr><td>Check proposer (escalation, offline)</td><td>Qwen-4 Max at high reasoning; proposes checks that code runs</td><td class="num">API</td><td>Free-text verdicts from a chat model</td><td><span class="pill p-ink">proposed</span></td></tr>
+      <tr><td>CPU fail-closed reader</td><td>DeBERTa-v3-large NLI cross-encoder + keyword lists, tighter threshold</td><td class="num">~0.4B · CPU</td><td>Fine-tuned small encoder (only if every off-the-shelf reader fails)</td><td><span class="pill p-ok">T05 measured</span></td></tr>
+      <tr><td>Mandate compiler, fact extractor</td><td>An LLM drafts; code validates; a second family spot-checks</td><td class="num">API · offline</td><td>Reading the mandate at every decision</td><td><span class="pill p-ink">proposed</span></td></tr>
+      <tr><td>Combiner</td><td>Monotone gradient-boosted trees (<span class="mono">monotonic_cst</span>) + TreeSHAP</td><td class="num">CPU · &lt; 1 ms</td><td>EBM as primary (worse calibration under shift); logistic (no interactions)</td><td><span class="pill p-ok">measured</span></td></tr>
+      <tr><td>Calibration and risk control</td><td>Temperature per question; Mondrian conformal risk control per action class, α = 0.05</td><td class="num">CPU</td><td>One global threshold</td><td><span class="pill p-mid">T07</span></td></tr>
+      <tr><td>Owner adaptation</td><td>Per-owner offset with partial pooling + per-owner conformal</td><td class="num">CPU</td><td>In-context tabular learners (licence, unproven under shift): research only</td><td><span class="pill p-ink">T12</span></td></tr>
+      <tr><td>Novelty, drift</td><td>kNN on reader embeddings + conformal nonconformity; CUSUM + e-detectors</td><td class="num">CPU</td><td>Graph neural networks over the why graph</td><td><span class="pill p-mid">partly built</span></td></tr>
+    </tbody></table></div>
+</section>
+
+<section aria-labelledby="e-h">
+  <div class="sec-head"><div class="eyebrow">05 · Evidence so far</div><h2 id="e-h">What we have measured, and what nothing proves yet</h2></div>
+  <div class="two">
+    <div class="figure">
+      <div class="eyebrow">G1 · readers on the shifted split · AUROC, episode bootstrap</div>
+      <div class="scroll-x" role="img" aria-label="Bar chart. Keyword floor: hype 0.671, authority 0.845, support gap 0.843. Clef-flash 9B: 0.993, 0.919, 0.990. Hosted reader: 1.000, 0.924, 0.998.">
+      <svg viewBox="0 0 560 270" xmlns="http://www.w3.org/2000/svg" style="min-width:460px">
+        <line x1="50" y1="220" x2="550" y2="220" class="grid"/><line x1="50" y1="184" x2="550" y2="184" class="grid"/><line x1="50" y1="148" x2="550" y2="148" class="grid"/><line x1="50" y1="112" x2="550" y2="112" class="grid"/><line x1="50" y1="76" x2="550" y2="76" class="grid"/><line x1="50" y1="40" x2="550" y2="40" class="grid"/>
+        <text x="42" y="224" text-anchor="end" class="axis">0.5</text><text x="42" y="188" text-anchor="end" class="axis">0.6</text><text x="42" y="152" text-anchor="end" class="axis">0.7</text><text x="42" y="116" text-anchor="end" class="axis">0.8</text><text x="42" y="80" text-anchor="end" class="axis">0.9</text><text x="42" y="44" text-anchor="end" class="axis">1.0</text>
+        <!-- hype -->
+        <rect x="90" y="158.4" width="36" height="61.6" class="bar-floor"/><text x="108" y="153" text-anchor="middle" class="val">.671</text>
+        <rect x="134" y="42.5" width="36" height="177.5" class="bar-clef"/><text x="152" y="37" text-anchor="middle" class="val">.993</text>
+        <rect x="178" y="40" width="36" height="180" class="bar-host"/><text x="196" y="34" text-anchor="middle" class="val">1.00</text>
+        <!-- authority -->
+        <rect x="250" y="95.8" width="36" height="124.2" class="bar-floor"/><text x="268" y="90" text-anchor="middle" class="val">.845</text>
+        <rect x="294" y="69.2" width="36" height="150.8" class="bar-clef"/><text x="312" y="64" text-anchor="middle" class="val">.919</text>
+        <rect x="338" y="67.4" width="36" height="152.6" class="bar-host"/><text x="356" y="54" text-anchor="middle" class="val">.924</text>
+        <!-- support -->
+        <rect x="410" y="96.5" width="36" height="123.5" class="bar-floor"/><text x="428" y="91" text-anchor="middle" class="val">.843</text>
+        <rect x="454" y="43.6" width="36" height="176.4" class="bar-clef"/><text x="472" y="38" text-anchor="middle" class="val">.990</text>
+        <rect x="498" y="40.7" width="36" height="179.3" class="bar-host"/><text x="516" y="34" text-anchor="middle" class="val">.998</text>
+        <text x="152" y="242" text-anchor="middle" class="axis">hype</text>
+        <text x="312" y="242" text-anchor="middle" class="axis">false authority</text>
+        <text x="472" y="242" text-anchor="middle" class="axis">support gap</text>
+        <text x="50" y="264" class="axis">0.5 = coin flip · n = 1,440 actions, 358 episodes</text>
+      </svg></div>
+      <div class="legend"><span><i class="sw" style="background:var(--ops);opacity:.55"></i>Keyword floor</span><span><i class="sw" style="background:var(--learned)"></i>Clef-flash 9B, self-hosted, zero-shot</span><span><i class="sw" style="background:var(--accent);opacity:.75"></i>Hosted reader</span></div>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Measured</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Code checks, 192k simulated actions</td><td>AUROC 1.00 on 5 of 6 failure types; 0.88 on stale theses; under 1 ms</td></tr>
+        <tr><td>Calibrated combiners, reference world</td><td>AUROC ≈ 0.996, ECE ≈ 0.1%, 95% recall at 2–3% false holds</td></tr>
+        <tr><td>Taint gate (T14)</td><td>98% of poisoned-note and fake-approval actions held; 0 false holds in 24,000 clean actions</td></tr>
+        <tr><td>Self-hosted reader (G1)</td><td>Clef-flash 9B within 0.02 of the hosted reader on all three questions, shifted split</td></tr>
+        <tr><td>Chat models as open-ended judges</td><td>No better than the majority answer (0.77). Narrow questions work; open judging does not</td></tr>
+        <tr><td>Real funds, SEC N-PORT</td><td>5,934 funds tested; 184 flagged on the 80% names rule (3.1%); 134 robust</td></tr>
+        <tr><td><b>Not yet shown</b></td><td><b>Generalisation.</b> Our reference world is too easy (every model 0.97–0.99). Unseen worlds, red team, binding errors (G2) and CS-1000 decide it</td></tr>
+      </tbody></table></div>
+  </div>
+</section>
+
+<section aria-labelledby="t-h">
+  <div class="sec-head"><div class="eyebrow">06 · Data and training</div><h2 id="t-h">What it learns from, cheapest step first</h2>
+  <p class="muted">Each step must beat the one before by ≥ 0.03 headline coverage on held-out cases, or we stop and keep the cheaper one. Labels come from code, verified sources, audited case truths or owners, never from a model's opinion alone.</p></div>
+  <div class="ladder">
+    <div class="step now"><span class="n">0 · now</span><b>Zero-shot</b><p>G1: four decision models on 1,440 actions</p></div>
+    <div class="step"><span class="n">1 · minutes</span><b>Calibration</b><p>Temperature per question, conformal per action class</p></div>
+    <div class="step"><span class="n">2 · hours</span><b>Head training</b><p>Joint head on our typed questions; contrastive minimal pairs; multi-task</p></div>
+    <div class="step"><span class="n">3 · 1–2 days</span><b>LoRA</b><p>Upper layers only, if stage 2 plateaus ≥ 0.03 short</p></div>
+    <div class="step"><span class="n">4 · 1–2 days</span><b>Distil</b><p>Big reader → 9B, on verified labels only</p></div>
+    <div class="step"><span class="n">5 · last</span><b>Layer surgery</b><p>Cut above the best layer, only for latency</p></div>
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Source</th><th>Gives</th><th>Label</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td>Label factory (T19): change one factor</td><td>Boundaries for every cause, plus invariance pairs</td><td>exact</td><td>train, calibrate</td></tr>
+      <tr><td>SEC XBRL facts</td><td>Binding pairs: right value, wrong period, concept, entity or scope</td><td>exact, real</td><td>train F4: the core skill</td></tr>
+      <tr><td>SEC N-PORT holdings</td><td>Real purpose tests (80% names rule)</td><td>exact</td><td>F1, purpose drift</td></tr>
+      <tr><td>CS-1000 cases 1–700</td><td>Cluttered multi-decision cases with ideal reasoning chains</td><td>audited</td><td>train, 5-fold calibrate</td></tr>
+      <tr><td>Public finance QA and verification sets</td><td>Table and numeric reading</td><td>human</td><td>pre-train heads, after licence audit (T17)</td></tr>
+      <tr><td>Unseen worlds T02a–d, red team T06, benchmark T16</td><td>New authors, new wording, attacks</td><td>exact</td><td><b>test only</b></td></tr>
+      <tr><td>CS-1000 cases 701–1000</td><td>—</td><td>—</td><td><b>sealed test</b></td></tr>
+      <tr><td>Owner decisions + audit slice of allowed actions</td><td>Real preferences</td><td>ground truth</td><td>F11, then population model</td></tr>
+    </tbody></table></div>
+</section>
+
+<section aria-labelledby="d-h">
+  <div class="sec-head"><div class="eyebrow">07 · Decision register</div><h2 id="d-h">The decisions this map establishes</h2>
+  <p class="muted">Recorded in DECISIONS.md. D1–D9 stand (endorsement as target, tighten-only, provenance at decision time, judge theses and check orders in code, two calibration targets). The founder can overrule any entry.</p></div>
+  <div class="dec">
+    <div class="dec-row"><span class="did">D11</span><div><b>Hybrid cascade</b><p>Code and the why-graph engine decide formal truths; one self-hosted decision model reads evidence; monotone combiner; conformal risk control; a tighten-only judge for ≤ 15% of actions; per-owner adjustment. Supersedes the provisional D10.</p></div><p class="rev">No learned reader beats code-only by ≥ 0.03 coverage on CS-1000 evidential cells (ship code + calibration). Or the judge adds &lt; 0.10 recall on novel families (drop the judge).</p></div>
+    <div class="dec-row"><span class="did">D12</span><div><b>Clef-flash 9B is the hot-path reader</b><p>Self-hosted, frozen, calibrated, then head-trained. The hosted reader is kept only as a shadow comparator. The larger G1 winner is the judge and the teacher.</p></div><p class="rev">A larger sibling beats it by &gt; 0.02 after calibration on G2 or CS-1000 evidential cells (quality first: move the big model to the hot path). Or binding errors stay &lt; 0.80 after head training (build the X6 verifier).</p></div>
+    <div class="dec-row"><span class="did">D13</span><div><b>Monotone boosted trees + TreeSHAP combine the signals</b><p>Temperature per reader question, Mondrian conformal per action class, α = 0.05. EBM is kept as an audit comparator.</p></div><p class="rev">The EBM beats the trees by &gt; 0.02 AUROC or 0.03 ECE on the unseen worlds (X1).</p></div>
+    <div class="dec-row"><span class="did">D14</span><div><b>Agent words are hypotheses</b><p>Every factual sentence in the agent's reasoning becomes a claim node. Unanchored agent notes and claims start at trust 1. Self-citation cannot raise trust.</p></div><p class="rev">The rule holds more than 1 in 100 clean actions in CS-1000 and the unseen worlds, and anchoring at the harness cannot fix it.</p></div>
+    <div class="dec-row"><span class="did">D15</span><div><b>Two-channel why graph, proof status, decisive-claim gate</b><p>Trust and fidelity both propagate by minimum. The decisive claim must be proven or supported, for every action type. Hotspots are ranked by exposure × weakness.</p></div><p class="rev">The gate adds no recall over T14's taint gate on CS-1000 and the red team, at equal false holds.</p></div>
+    <div class="dec-row"><span class="did">D16</span><div><b>Readers see evidence cards, not prose</b><p>A reader gets the claim, the quote, nearby text, the matched facts and trust metadata. Agent and third-party text is passed as quoted data.</p></div><p class="rev">Experiment R shows raw text beats the structured package by &gt; 0.03 on the same model.</p></div>
+    <div class="dec-row"><span class="did">D17</span><div><b>The judge reasons through checks</b><p>Escalations go to the big decision model with evidence cards. A reasoner from another family proposes checks; code runs them; only check results and the model's typed score count. The verdict is parsed and can only tighten.</p></div><p class="rev">A plain chat-model judge (B6) beats it by &gt; 0.05 on the escalated slice (then distil that judge into the reader).</p></div>
+    <div class="dec-row"><span class="did">D18</span><div><b>Owner adaptation by partial pooling</b><p>A per-owner offset pooled toward the population, plus per-owner conformal. It loosens only within the signed mandate, from the owner's own signed decisions.</p></div><p class="rev">A commercially licensed in-context tabular learner beats the offset by ≥ 0.03 AUROC at k = 10 (X4).</p></div>
+    <div class="dec-row"><span class="did">D19</span><div><b>Training order</b><p>Calibration → head training (contrastive pairs, multi-task) → LoRA only on +0.03 → distil only for latency. No RL on the verdict, no full fine-tuning, nothing from scratch.</p></div><p class="rev">CS-1000 shows a gap none of these closes. RL from verifiable rewards is then allowed for the check proposer only.</p></div>
+  </div>
+</section>
+
+<footer>Sources: BLUEPRINT.md, ARCHITECTURE.md, COMBOS.md, PLAN.md, TRAINING_PARADIGMS.md, SCHEMA.md, og_s1/taint.py, work/G1/results.json, lab ledger. New rules R2, R3, R5, R6 and R8 are decided here and not yet built; they go to the lab as T14b. Status pills show what is measured, running or proposed.</footer>
+</div>
+
+<script>
+const C=[
+{id:"H",k:"code",name:"Harness recorder",tempo:"Every agent step · µs",what:"Records the why graph when the action happens: documents with tier and publish time, notes with author and signature, claims with source and exact quote, theses with invalidation triggers, actions with rationale.",why:"Agents' own explanations leave out what drove them, and reconstructing a cause afterwards finds only about a third to a half (D3).",choice:"Typed, append-only records (SCHEMA.md), read through model_view_at. New: the F2 extractor also runs on the agent's rationale, so each factual sentence becomes a claim node, unanchored unless the agent quoted a source.",rejected:"Reconstruction from logs; trusting the agent's own list of claims, which omits most of them.",data:"None for the recorder. The rationale extractor shares F2's data plus hand-checked rationales from CS-1000.",metric:"0 future leaks (regression test). ≥ 95% recall of factual assertions in rationales on a checked sample.",status:"Schema and causal view built (T01). Rationale extraction decided (D14), not built.",pill:"p-mid",pt:"partly built"},
+{id:"W",k:"code",name:"Why-graph engine",tempo:"Thesis and order time · ms",what:"Propagates trust and fidelity along cite edges, gives each claim a proof status, ranks hotspots, applies the decisive-claim gate and the single-root cap.",why:"An attacker's real goal is evasion: a bad action with no alarm. Provenance is structural and cannot be talked around, so it runs before any model reads text.",choice:"Least fixed point of minimum-propagation over trust 0–4 (T14), plus the fidelity channel from F4 and code binding checks, rules R1–R8.",rejected:"A graph neural network over the graph (no published gain; the signals are already exact). Learned trust scores (attackable).",data:"None. Thresholds set on the reference world; false holds measured on clean actions.",metric:"≥ 98% of poisoned and spoofed actions held; ≤ 1 false hold per 1,000 clean; 0 self-grounded claims passing as proven on probes.",status:"T14 passed: 98% held, 0 false holds in 24,000. Known gaps: the tainted-decisive-claim path never fires on reference data; the authority gate checks only buys. Fix in T14b with R2–R8.",pill:"p-mid",pt:"built, extending"},
+{id:"F1",k:"llm",name:"Mandate compiler",tempo:"Onboarding · minutes",what:"Turns the owner's written mandate into executable constraints: bands, limits, banned instruments, who may approve what, and purpose as testable predicates.",why:"A rule compiled once never has to be judged again. Exact beats learned.",choice:"An LLM drafts rules in a small typed rule language (JSON). Code parses and checks consistency. The owner confirms a plain-language rendering and signs. Clauses that won't compile stay text and go to F11 and ask-owner.",rejected:"A model reading the mandate at every decision: slow, inconsistent, and the mandate text becomes an attack surface.",data:"The 1,000 CS-1000 mandates; N-PORT names-rule purpose tests; adversarial review for looser-than-text rules.",metric:"≥ 95% of clauses compile correctly; 0 compiled clauses looser than the text.",status:"Proposed (X7).",pill:"p-ink",pt:"proposed"},
+{id:"F2",k:"llm",name:"Facts and evidence cards",tempo:"Ingest · seconds, off the order path",what:"Pulls facts (value, unit, entity, period, concept) from each document, each anchored to an exact quote, and builds one evidence card per document for the readers.",why:"Claims then get checked against a fact table by code, and readers see compact typed evidence instead of a 40-page filing.",choice:"XBRL facts first, which are exact. Otherwise LLM extraction, rejected unless the quote is an exact substring, with a second-family pass on a sample.",rejected:"Reading raw documents at decision time.",data:"SEC XBRL company facts; EDGAR text; CS-1000 messy documents (30% with no structured facts).",metric:"Fact precision ≥ 98%; 100% of facts carry an exact quote.",status:"Facts exist in the schema. Extraction is T24, pending. G2 tells us whether this or the reader is the gap.",pill:"p-ink",pt:"pending"},
+{id:"F3",k:"code",name:"Structural checks",tempo:"Thesis and order time · < 1 ms",what:"41 signals, each oriented so larger means riskier: drift (band, CUSUM, turnover), unsupported claims, misquotes (relative error, unit and scale), poisoned notes, authority spoofs, stale theses. At order time it proves the order belongs to a judged, valid thesis.",why:"These failures are facts in the record. Code finds them exactly and explains itself.",choice:"Pure code over the causal view.",rejected:"Training any model for a formal truth.",data:"None.",metric:"AUROC per failure type on unseen worlds; latency.",status:"Built (T03). AUROC 1.00 on 5 of 6 types, 0.88 on stale theses, 192k actions. The world is too easy, so unseen worlds decide.",pill:"p-ok",pt:"built"},
+{id:"F4",k:"learned",name:"Grounding verifier",tempo:"Thesis time · ~100 ms on GPU",what:"Does the cited source support the claim as stated? Catches wrong period, entity, metric or scope, guidance read as actual, and quotes lifted out of context. Its score is the fidelity on each edge of the why graph.",why:"Once code has run, this is the only real reasoning left. Code catches exact mismatches; this catches meaning mismatches.",choice:"Clef-flash 9B, frozen, asked typed questions over an evidence card, temperature-calibrated. Then head training on its joint head. Pointer: score the claim against each candidate fact and take the best match.",rejected:"Numeric embeddings and typed cross-attention (no evidence on pretrained models). NLI alone (not finance). Full fine-tuning (not needed yet).",data:"T19 minimal pairs; XBRL binding pairs; CS-1000 cases 1–700; licence-checked finance QA and verification sets.",metric:"AUROC ≥ 0.90 on binding errors and ≥ 0.85 on messy cases (G2); pointer accuracy.",status:"G1: support gap 0.990 (hosted 0.998, keyword floor 0.843). Binding errors untested until G2.",pill:"p-ok",pt:"G1 scored"},
+{id:"F5",k:"learned",name:"Manipulation reader",tempo:"Thesis time · ~100 ms on GPU",what:"Three questions: is this wording hype? Does it claim authority it lacks? Is it addressing the reviewer (prompt injection)?",why:"Hype and false authority are wording, not facts. A reader is needed, but its output can only raise risk.",choice:"The same Clef-flash backbone with separate typed questions. Prompt-injection classifiers added as hold-only signals. All text passed as quoted data.",rejected:"A generative model in the decision path: it is trained to follow instructions in its input.",data:"Red-team attacks and benign lookalikes; CS-1000 injection and authority cases; T19 pairs.",metric:"At or above the hosted reader on authority; 0 loosenings on the red team; adaptive evasion rate with 20 tries per case.",status:"G1: hype 0.993, false authority 0.919 (hosted 0.924, keyword floor 0.845).",pill:"p-ok",pt:"G1 scored"},
+{id:"F6",k:"code",name:"Trajectory monitor",tempo:"Continuous",what:"Across many actions: is the agent drifting, looping, overtrading, or acting on context that changed under it?",why:"Many small, individually fine actions can drain a book.",choice:"CUSUM, change-point tests, e-detectors, fee drag, cancel ratios, thesis churn, and the case memory (R8).",rejected:"A sequence model over agent traces. Traces are inputs, never targets to imitate.",data:"Long CS-1000 cases (150–250 decisions); swarm and drift worlds.",metric:"Recall on slow-drift and error-chain cases at a 2% hold rate.",status:"CUSUM and turnover built (T03). The rest pending.",pill:"p-mid",pt:"partly built"},
+{id:"F7",k:"code",name:"Swarm monitor and root cap",tempo:"Continuous",what:"Are agents that look independent actually driven by one root source? Caps the combined exposure to one root.",why:"One poisoned feed moves every agent that reads it.",choice:"Group exposure by root document over a 20-action window; untrusted roots capped at 4 actions or 10% of book.",rejected:"Waiting for phase 4 to cap a single root.",data:"Swarm worlds; CS-1000 multi-agent cases.",metric:"Correlated-entry detection; clean flag rate.",status:"Root cap built in T14. Cross-agent graph is phase 4.",pill:"p-mid",pt:"partly built"},
+{id:"F8",k:"stats",name:"Monotone combiner",tempo:"Thesis time · < 1 ms CPU",what:"All signals in, one calibrated p_reject out, with each signal's share.",why:"Many signals must become one number that can never fall when risk evidence rises (tighten-only).",choice:"Monotone gradient-boosted trees with TreeSHAP attribution (D13).",rejected:"EBM as primary (ECE 0.08 against 0.003 under shift in T10). Logistic regression (misses interactions). Neural combiners (no monotone certificate).",data:"Reference world, T19 pairs, CS-1000 training folds.",metric:"Monotonicity certificate; ECE ≤ 0.05 in distribution, about 0.10 under shift (D5).",status:"AUROC ≈ 0.996 and ECE ≈ 0.1% on the reference world. X1 on unseen worlds in T07.",pill:"p-ok",pt:"measured"},
+{id:"F9",k:"stats",name:"Risk control",tempo:"Thesis time · µs",what:"Turns p_reject into allow, hold or ask, with a guarantee that allowed actions the owner would reject stay at or below α.",why:"The product promise is a stated error rate, not a score.",choice:"Temperature per question, then Mondrian conformal risk control per action class at α = 0.05. An explicit ask class for preference calls and abstention.",rejected:"One global threshold (action classes differ).",data:"Calibration split from CS-1000 folds; later owner decisions.",metric:"Bad-allowed ≤ 5% per unseen author with a 95% interval (C4). Headline: coverage at 5% false-allow.",status:"T07, pending.",pill:"p-ink",pt:"pending"},
+{id:"F10",k:"llm",name:"Escalation judge",tempo:"Rare · seconds; the action waits as a hold",what:"Uncertain or novel actions go to a stronger judge that can only move the decision toward hold.",why:"Spend intelligence only where the cheap stack is unsure.",choice:"The larger decision model (Clef 27B or Karpo 31B) reads evidence cards. A reasoner from another family proposes checks; code runs them. The verdict is parsed into a fixed enum (D17).",rejected:"An always-on judge. DeepSeek as judge. Free-text verdicts.",data:"Escalated slices of CS-1000 hard and expert tiers.",metric:"≤ 15% of actions escalated; +0.10 recall on novel families, or drop it (X3).",status:"G1 big models running; cascade experiment pending.",pill:"p-mid",pt:"running"},
+{id:"F11",k:"stats",name:"Owner adaptation",tempo:"Per decision; updates per label",what:"This owner tolerates momentum language; that one never wants small caps. Learn each owner from a handful of decisions.",why:"Endorsement is per owner. Preference truths are where models fail without it.",choice:"Per-owner offset with partial pooling toward the population, plus per-owner conformal (D18). Tightens freely; loosens only within the signed mandate, from signed decisions.",rejected:"In-context tabular learners for now (licence, unproven under shift).",data:"50 simulated owners with hidden preferences (T12); later live decisions.",metric:"Per-owner lift at k = 5, 10, 20 labels.",status:"T12, pending.",pill:"p-ink",pt:"pending"},
+{id:"F12",k:"stats",name:"Novelty detection",tempo:"Thesis time",what:"Flags actions unlike anything seen.",why:"Failures nobody wrote a check for must hold or escalate, not pass.",choice:"kNN distance on reader embeddings plus conformal nonconformity. Novel actions escalate.",rejected:"No novelty handling.",data:"Training distribution embeddings.",metric:"Recall on author-invented failure families at a 2% hold rate.",status:"Proposed.",pill:"p-ink",pt:"proposed"},
+{id:"F13",k:"code",name:"Owner explanation",tempo:"Per hold",what:"\"Held: the claim '12% revenue growth' cites the Q3 note, which says guidance of 12%. Cause: binding error.\"",why:"Explanations must be reasons, not stories.",choice:"Templates filled from attribution, the pointer and proof status. Never free text.",rejected:"A model's free-form explanation.",data:"None.",metric:"Top cause equals the planted cause on ≥ 80% of flagged held-out actions (C2).",status:"Proposed.",pill:"p-ink",pt:"proposed"},
+{id:"F14",k:"ops",name:"Learning loop",tempo:"Continuous",what:"Every owner decision on a hold is a label. A random audit slice of allowed actions is shown afterwards.",why:"Learning only from holds is biased. Owner labels are the real target.",choice:"Labels feed F11 at once and the population model on a schedule. Active learning picks where models disagree.",rejected:"Self-generated labels without verification.",data:"Owner decisions, the audit slice.",metric:"Labels per owner per week; agreement drift.",status:"Phase 3.",pill:"p-ink",pt:"later"},
+{id:"F15",k:"ops",name:"Monitoring",tempo:"Continuous",what:"Calibration drift, escalation rate, hold rate per owner, latency, reader–judge agreement, novelty rate.",why:"The conformal guarantee holds only while live data resembles the calibration set.",choice:"Alarms tighten thresholds automatically and page the operator. Fail closed: if a reader is down, code plus combiner with a tighter threshold.",rejected:"Failing open.",data:"Live metrics.",metric:"Alarm precision; time to tighten.",status:"Phase 3.",pill:"p-ink",pt:"later"},
+{id:"F16",k:"ops",name:"Audit and replay",tempo:"Per decision",what:"Stores exact inputs, model, rule and calibration versions, and outputs. Any decision can be replayed.",why:"Counterfactual replay, removing one cause and re-scoring, both explains and makes training labels.",choice:"Content-addressed storage; shadow mode for every new version.",rejected:"Logging outputs only.",data:"Its own records feed the label factory.",metric:"100% of decisions replayable bit-for-bit.",status:"Phase 3.",pill:"p-ink",pt:"later"}
+];
+const atlas=document.getElementById('atlas');
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+atlas.innerHTML=C.map(c=>`<article class="card k-${c.k}" id="${c.id}" data-k="${c.k}">
+<div class="card-h"><div class="card-top"><span class="card-id">${c.id} · ${esc(c.tempo)}</span><span class="pill ${c.pill}">${esc(c.pt)}</span></div>
+<h3>${esc(c.name)}</h3><p class="what">${esc(c.what)}</p></div>
+<dl><dt>Why</dt><dd>${esc(c.why)}</dd><dt>Choice</dt><dd class="choice">${esc(c.choice)}</dd><dt>Rejected</dt><dd>${esc(c.rejected)}</dd><dt>Learns from</dt><dd>${esc(c.data)}</dd><dt>Bar</dt><dd>${esc(c.metric)}</dd><dt>Evidence</dt><dd>${esc(c.status)}</dd></dl></article>`).join('');
+const chips=[...document.querySelectorAll('.chip')];
+function setK(k){chips.forEach(b=>b.setAttribute('aria-pressed',b.dataset.k===k?'true':'false'));
+  atlas.querySelectorAll('.card').forEach(el=>{el.hidden=!(k==='all'||el.dataset.k===k)});
+  try{localStorage.setItem('s1map-k',k)}catch(e){}}
+chips.forEach(b=>b.addEventListener('click',()=>setK(b.dataset.k)));
+document.querySelectorAll('a.node').forEach(a=>a.addEventListener('click',()=>setK('all')));
+try{const k=localStorage.getItem('s1map-k');if(k&&k!=='all')setK(k)}catch(e){}
+</script>
