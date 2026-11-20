@@ -29,11 +29,14 @@ FEATURES = ("hype", "authority_language", "support_gap")
 
 
 def max_memory() -> dict:
-    """Use only what is free on each card right now (other people share this host), less a 3 GiB margin."""
+    """Use only what is free on each card right now, less headroom for the card's other users to grow into
+    (ORDERGUARD_HEADROOM_GIB, default 8). Layers that do not fit go to CPU memory: slower, never someone else's OOM."""
+    import os
+    head = int(os.environ.get("ORDERGUARD_HEADROOM_GIB", "8"))
     out = {}
     for i in range(torch.cuda.device_count()):
         free, _ = torch.cuda.mem_get_info(i)
-        out[i] = f"{max(1, int(free / 2**30) - 3)}GiB"
+        out[i] = f"{max(1, int(free / 2**30) - head)}GiB"
     print("max_memory:", out, flush=True)
     return out | {"cpu": "200GiB"}
 
@@ -41,7 +44,7 @@ def max_memory() -> dict:
 def split(module: torch.nn.Module, no_split: list[str]) -> torch.nn.Module:
     """Spread a model's layers over the visible cards (only when more than one is visible)."""
     if torch.cuda.device_count() < 2:
-        return module.to("cuda:0")
+        return module.to("cuda:0")              # a 9B model on one card: about 18 GB, well inside the free memory
     from accelerate import dispatch_model, infer_auto_device_map
     dmap = infer_auto_device_map(module, max_memory=max_memory(), no_split_module_classes=no_split)
     print("device map:", sorted({str(v) for v in dmap.values()}), flush=True)

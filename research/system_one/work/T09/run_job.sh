@@ -142,18 +142,24 @@ done
 
 num_gpus=${ORDERGUARD_NUM_GPUS:-1}
 [[ "$num_gpus" == 1 || "$num_gpus" == 2 ]] || fail "ORDERGUARD_NUM_GPUS must be 1 or 2 (the OrderGuard cap is two cards)"
+# Other people's jobs per card (founder, 2026-11-20): a card with no other process always wins; otherwise the quietest.
+declare -A bus_idx=() procs=()
+while IFS=, read -r idx bus; do bus_idx["${bus//[[:space:]]/}"]=${idx//[[:space:]]/}; done < <(nvidia-smi --query-gpu=index,gpu_bus_id --format=csv,noheader)
+while IFS=, read -r bus; do b=${bus//[[:space:]]/}; [[ -n ${bus_idx[$b]+x} ]] && procs["${bus_idx[$b]}"]=$(( ${procs[${bus_idx[$b]}]:-0} + 1 )); done < <(nvidia-smi --query-compute-apps=gpu_bus_id --format=csv,noheader)
+export ORDERGUARD_HEADROOM_GIB=${ORDERGUARD_HEADROOM_GIB:-8}   # memory our job leaves free on a shared card, for its other users
 candidates=()
 for idx in "${!a6000_seen[@]}"; do
   free_mib=${last_free[$idx]:-0}
   n=${util_n[$idx]:-0}
   (( n > 0 )) || continue
   mean=$(( ${util_sum[$idx]} / n ))
-  printf "gpu %s: mean_util=%s%% over %s samples, free=%s MiB\n" "$idx" "$mean" "$n" "$free_mib" | tee -a "$log_file"
+  np=${procs[$idx]:-0}
+  printf "gpu %s: other_processes=%s mean_util=%s%% over %s samples, free=%s MiB\n" "$idx" "$np" "$mean" "$n" "$free_mib" | tee -a "$log_file"
   if [[ ${stable[$idx]:-0} == 1 ]] && (( free_mib >= min_free_mib && mean <= max_mean_util )); then
-    candidates+=("$(printf '%04d %09d %s' "$mean" "$((999999999 - free_mib))" "$idx")")
+    candidates+=("$(printf '%03d %04d %09d %s' "$np" "$mean" "$((999999999 - free_mib))" "$idx")")
   fi
 done
-mapfile -t chosen < <(printf '%s\n' "${candidates[@]}" | sort | head -n "$num_gpus" | awk '{print $3}')
+mapfile -t chosen < <(printf '%s\n' "${candidates[@]}" | sort | head -n "$num_gpus" | awk '{print $4}')
 (( ${#chosen[@]} == num_gpus )) || {
   printf "refusing to run: needed %s A6000(s) with mean utilization <=%s%% over 30 seconds and >=%s MiB free; found %s\n" "$num_gpus" "$max_mean_util" "$min_free_mib" "${#chosen[@]}" | tee -a "$log_file" >&2
   exit 2
