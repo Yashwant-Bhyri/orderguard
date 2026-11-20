@@ -29,8 +29,13 @@ FEATURES = ("hype", "authority_language", "support_gap")
 
 
 def max_memory() -> dict:
-    n = torch.cuda.device_count()
-    return {i: "44GiB" for i in range(n)} | {"cpu": "200GiB"}
+    """Use only what is free on each card right now (other people share this host), less a 3 GiB margin."""
+    out = {}
+    for i in range(torch.cuda.device_count()):
+        free, _ = torch.cuda.mem_get_info(i)
+        out[i] = f"{max(1, int(free / 2**30) - 3)}GiB"
+    print("max_memory:", out, flush=True)
+    return out | {"cpu": "200GiB"}
 
 
 def split(module: torch.nn.Module, no_split: list[str]) -> torch.nn.Module:
